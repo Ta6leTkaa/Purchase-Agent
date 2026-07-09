@@ -67,6 +67,13 @@ curl -X POST http://127.0.0.1:8000/missions \
   }'
 ```
 
+## Provider adapters
+
+The backend includes a `ProviderAdapter` interface and a `MockTrainAdapter`
+for local development. `MockTrainAdapter` does not call real booking websites;
+it returns deterministic train options so the core matching and mission logic
+can be developed later.
+
 ## Requirements
 
 - Python 3.12+
