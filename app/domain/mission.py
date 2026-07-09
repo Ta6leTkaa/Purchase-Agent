@@ -2,7 +2,7 @@ from datetime import date
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.domain.execution import ExecutionEvent
 from app.domain.provider import ProviderOption
@@ -28,7 +28,7 @@ class TrainConstraints(BaseModel):
     from_city: str
     to_city: str
     travel_date: date
-    passengers_count: int
+    passengers_count: int = Field(ge=1)
     must_be_same_compartment: bool | None = None
     min_lower_berths: int | None = None
     max_total_price: int | None = None
@@ -46,8 +46,8 @@ class Mission(BaseModel):
     type: MissionType
     title: str
     status: MissionStatus = MissionStatus.created
-    participant_ids: list[UUID]
-    provider: str
+    participant_ids: list[UUID] = Field(min_length=1)
+    provider: str = Field(min_length=1)
     constraints: TrainConstraints
     fallback_rules: FallbackRules = FallbackRules()
     execution_log: list[ExecutionEvent] = []

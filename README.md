@@ -41,6 +41,32 @@ curl -X POST http://127.0.0.1:8000/identities \
   }'
 ```
 
+## Mission API
+
+- `POST /missions` creates a mission
+- `GET /missions` lists missions
+- `GET /missions/{mission_id}` returns one mission or `404`
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/missions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "00000000-0000-4000-8000-000000000101",
+    "type": "train_trip",
+    "title": "Moscow to Saint Petersburg",
+    "participant_ids": ["00000000-0000-4000-8000-000000000001"],
+    "provider": "rzd",
+    "constraints": {
+      "from_city": "Moscow",
+      "to_city": "Saint Petersburg",
+      "travel_date": "2026-08-01",
+      "passengers_count": 1
+    }
+  }'
+```
+
 ## Requirements
 
 - Python 3.12+
