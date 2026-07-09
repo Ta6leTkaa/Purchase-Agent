@@ -74,6 +74,12 @@ for local development. `MockTrainAdapter` does not call real booking websites;
 it returns deterministic train options so the core matching and mission logic
 can be developed later.
 
+## Rule Engine
+
+The Rule Engine deterministically scores train options against mission
+constraints and fallback rules. It returns scored options with reasons and
+violations, ordered so valid options are considered before violated ones.
+
 ## Requirements
 
 - Python 3.12+
