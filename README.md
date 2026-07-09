@@ -5,6 +5,15 @@ Backend API skeleton for Purchase Agent.
 This repository currently contains only the minimal FastAPI foundation: app
 startup, configuration defaults, a health endpoint, tests, and Python tooling.
 
+## Domain models
+
+The backend includes initial Pydantic domain models for:
+
+- Identity
+- Mission
+- ProviderOption
+- ExecutionEvent
+
 ## Requirements
 
 - Python 3.12+
