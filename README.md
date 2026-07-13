@@ -101,13 +101,28 @@ be replaced with PostgreSQL-backed repositories without changing API behavior.
 ## Database infrastructure
 
 PostgreSQL, SQLAlchemy, and Alembic infrastructure is prepared. The application
-still uses in-memory repositories; ORM models and PostgreSQL repositories will
-be added in separate steps.
+still uses in-memory repositories.
+
+The database layer currently includes ORM models for Identity and Document, plus
+the first Alembic migration that creates `identities` and `documents`. PostgreSQL
+repositories and additional ORM models will be added in separate steps.
 
 Create local database settings from the example file:
 
 ```bash
 cp .env.example .env
+```
+
+Inspect pending migrations:
+
+```bash
+uv run alembic history
+```
+
+Apply migrations:
+
+```bash
+uv run alembic upgrade head
 ```
 
 ## Requirements
