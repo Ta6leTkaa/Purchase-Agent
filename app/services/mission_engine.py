@@ -20,7 +20,7 @@ async def run_mission(
     mission_repository: MissionRepository,
     identity_repository: IdentityRepository,
 ) -> Mission:
-    mission = mission_repository.get(mission_id)
+    mission = await mission_repository.get(mission_id)
     if mission is None:
         raise MissionNotFoundError
 
@@ -32,7 +32,7 @@ async def run_mission(
             "participant_missing",
             "At least one mission participant was not found.",
         )
-        return mission_repository.update(mission)
+        return await mission_repository.update(mission)
 
     mission.status = MissionStatus.running
     _add_event(mission, "mission_started", "Mission started.")
@@ -62,7 +62,7 @@ async def run_mission(
     if best is None:
         mission.status = MissionStatus.failed
         _add_event(mission, "no_valid_option_found", "No valid option found.")
-        return mission_repository.update(mission)
+        return await mission_repository.update(mission)
 
     mission.status = MissionStatus.option_found
     mission.best_option = best.option
@@ -88,7 +88,7 @@ async def run_mission(
             "Reservation failed.",
             {"message": reservation_result.message},
         )
-        return mission_repository.update(mission)
+        return await mission_repository.update(mission)
 
     if reservation_result.requires_confirmation:
         mission.status = MissionStatus.requires_confirmation
@@ -101,7 +101,7 @@ async def run_mission(
         mission.status = MissionStatus.completed
         _add_event(mission, "mission_completed", "Mission completed.")
 
-    return mission_repository.update(mission)
+    return await mission_repository.update(mission)
 
 
 async def _get_participants(

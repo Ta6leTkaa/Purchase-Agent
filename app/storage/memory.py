@@ -26,21 +26,21 @@ class InMemoryMissionRepository:
     def __init__(self) -> None:
         self._missions: dict[UUID, Mission] = {}
 
-    def create(self, mission: Mission) -> Mission:
+    async def create(self, mission: Mission) -> Mission:
         self._missions[mission.id] = mission
         return mission
 
-    def list(self) -> list[Mission]:
+    async def list(self) -> list[Mission]:
         return list(self._missions.values())
 
-    def get(self, mission_id: UUID) -> Mission | None:
+    async def get(self, mission_id: UUID) -> Mission | None:
         return self._missions.get(mission_id)
 
-    def update(self, mission: Mission) -> Mission:
+    async def update(self, mission: Mission) -> Mission:
         self._missions[mission.id] = mission
         return mission
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         self._missions.clear()
 
 
@@ -58,24 +58,24 @@ class MemoryStore:
     async def get_identity(self, identity_id: UUID) -> Identity | None:
         return await self.identities.get(identity_id)
 
-    def create_mission(self, mission: Mission) -> Mission:
-        return self.missions.create(mission)
+    async def create_mission(self, mission: Mission) -> Mission:
+        return await self.missions.create(mission)
 
-    def list_missions(self) -> list[Mission]:
-        return self.missions.list()
+    async def list_missions(self) -> list[Mission]:
+        return await self.missions.list()
 
-    def get_mission(self, mission_id: UUID) -> Mission | None:
-        return self.missions.get(mission_id)
+    async def get_mission(self, mission_id: UUID) -> Mission | None:
+        return await self.missions.get(mission_id)
 
-    def update_mission(self, mission: Mission) -> Mission:
-        return self.missions.update(mission)
+    async def update_mission(self, mission: Mission) -> Mission:
+        return await self.missions.update(mission)
 
     async def clear_identities(self) -> None:
         await self.identities.clear()
 
     def clear(self) -> None:
         self.identities._identities.clear()
-        self.missions.clear()
+        self.missions._missions.clear()
 
 
 store = MemoryStore()

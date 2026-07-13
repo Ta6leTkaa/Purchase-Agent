@@ -21,26 +21,26 @@ IdentityRepositoryDep: TypeAlias = Annotated[
 
 
 @router.post("")
-def create_mission(
+async def create_mission(
     mission: Mission,
     repository: MissionRepositoryDep,
 ) -> Mission:
-    return repository.create(mission)
+    return await repository.create(mission)
 
 
 @router.get("")
-def list_missions(
+async def list_missions(
     repository: MissionRepositoryDep,
 ) -> list[Mission]:
-    return repository.list()
+    return await repository.list()
 
 
 @router.get("/{mission_id}")
-def get_mission(
+async def get_mission(
     mission_id: UUID,
     repository: MissionRepositoryDep,
 ) -> Mission:
-    mission = repository.get(mission_id)
+    mission = await repository.get(mission_id)
     if mission is None:
         raise HTTPException(status_code=404, detail="Mission not found")
     return mission

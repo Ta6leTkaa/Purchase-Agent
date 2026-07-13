@@ -98,8 +98,10 @@ API routes and services depend on repository interfaces instead of a concrete
 storage implementation. The current repositories are in-memory, and can later
 be replaced with PostgreSQL-backed repositories without changing API behavior.
 There is also a PostgreSQL/SQLAlchemy implementation of `IdentityRepository`,
-but the application uses the in-memory repository by default. SQLAlchemy
-repositories flush changes but do not commit transactions themselves.
+and `MissionRepository`, but the application uses the in-memory repositories by
+default. Identity and Mission now both have in-memory and SQLAlchemy
+implementations. SQLAlchemy repositories flush changes but do not commit
+transactions themselves; transaction boundaries are owned by the outer layer.
 
 ## Database infrastructure
 

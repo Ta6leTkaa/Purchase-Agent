@@ -4,18 +4,22 @@ from uuid import UUID
 from app.domain.mission import Mission
 
 
+class RepositoryEntityNotFoundError(Exception):
+    pass
+
+
 class MissionRepository(Protocol):
-    def create(self, mission: Mission) -> Mission:
+    async def create(self, mission: Mission) -> Mission:
         ...
 
-    def list(self) -> list[Mission]:
+    async def list(self) -> list[Mission]:
         ...
 
-    def get(self, mission_id: UUID) -> Mission | None:
+    async def get(self, mission_id: UUID) -> Mission | None:
         ...
 
-    def update(self, mission: Mission) -> Mission:
+    async def update(self, mission: Mission) -> Mission:
         ...
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         ...

@@ -12,10 +12,10 @@ from app.main import app
 @pytest.fixture(autouse=True)
 def clear_repositories() -> Iterator[None]:
     asyncio.run(identity_repository.clear())
-    mission_repository.clear()
+    asyncio.run(mission_repository.clear())
     yield
     asyncio.run(identity_repository.clear())
-    mission_repository.clear()
+    asyncio.run(mission_repository.clear())
 
 
 def make_mission_payload(

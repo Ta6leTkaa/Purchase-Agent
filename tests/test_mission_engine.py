@@ -25,7 +25,7 @@ def repositories() -> Iterator[
     mission_repository = InMemoryMissionRepository()
     yield identity_repository, mission_repository
     asyncio.run(identity_repository.clear())
-    mission_repository.clear()
+    asyncio.run(mission_repository.clear())
 
 
 def create_identity(
@@ -65,7 +65,7 @@ def create_mission(
             allow_adjacent_compartments=True,
         ),
     )
-    return mission_repository.create(mission)
+    return asyncio.run(mission_repository.create(mission))
 
 
 def test_run_mission_sets_requires_confirmation_and_selects_best_option(
