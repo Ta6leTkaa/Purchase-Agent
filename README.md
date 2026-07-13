@@ -106,9 +106,12 @@ repositories flush changes but do not commit transactions themselves.
 PostgreSQL, SQLAlchemy, and Alembic infrastructure is prepared. The application
 still uses in-memory repositories.
 
-The database layer currently includes ORM models for Identity and Document, plus
-the first Alembic migration that creates `identities` and `documents`. PostgreSQL
-repositories and additional ORM models will be added in separate steps.
+The database layer currently includes ORM models for Identity, Document, and
+Mission, plus Alembic migrations for their tables. Mission nested structures
+such as constraints, fallback rules, execution events, and provider options are
+temporarily stored as JSON. PostgreSQL repositories and additional ORM models
+will be added in separate steps; the API still uses the in-memory
+`MissionRepository`.
 
 Create local database settings from the example file:
 
