@@ -8,17 +8,17 @@ class InMemoryIdentityRepository:
     def __init__(self) -> None:
         self._identities: dict[UUID, Identity] = {}
 
-    def create(self, identity: Identity) -> Identity:
+    async def create(self, identity: Identity) -> Identity:
         self._identities[identity.id] = identity
         return identity
 
-    def list(self) -> list[Identity]:
+    async def list(self) -> list[Identity]:
         return list(self._identities.values())
 
-    def get(self, identity_id: UUID) -> Identity | None:
+    async def get(self, identity_id: UUID) -> Identity | None:
         return self._identities.get(identity_id)
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         self._identities.clear()
 
 
@@ -49,14 +49,14 @@ class MemoryStore:
         self.identities = InMemoryIdentityRepository()
         self.missions = InMemoryMissionRepository()
 
-    def create_identity(self, identity: Identity) -> Identity:
-        return self.identities.create(identity)
+    async def create_identity(self, identity: Identity) -> Identity:
+        return await self.identities.create(identity)
 
-    def list_identities(self) -> list[Identity]:
-        return self.identities.list()
+    async def list_identities(self) -> list[Identity]:
+        return await self.identities.list()
 
-    def get_identity(self, identity_id: UUID) -> Identity | None:
-        return self.identities.get(identity_id)
+    async def get_identity(self, identity_id: UUID) -> Identity | None:
+        return await self.identities.get(identity_id)
 
     def create_mission(self, mission: Mission) -> Mission:
         return self.missions.create(mission)
@@ -70,8 +70,11 @@ class MemoryStore:
     def update_mission(self, mission: Mission) -> Mission:
         return self.missions.update(mission)
 
+    async def clear_identities(self) -> None:
+        await self.identities.clear()
+
     def clear(self) -> None:
-        self.identities.clear()
+        self.identities._identities.clear()
         self.missions.clear()
 
 

@@ -97,6 +97,9 @@ curl -X POST http://127.0.0.1:8000/missions/{mission_id}/run
 API routes and services depend on repository interfaces instead of a concrete
 storage implementation. The current repositories are in-memory, and can later
 be replaced with PostgreSQL-backed repositories without changing API behavior.
+There is also a PostgreSQL/SQLAlchemy implementation of `IdentityRepository`,
+but the application uses the in-memory repository by default. SQLAlchemy
+repositories flush changes but do not commit transactions themselves.
 
 ## Database infrastructure
 

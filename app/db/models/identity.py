@@ -2,10 +2,11 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, func, text
+from sqlalchemy import CHAR, JSON, Date, DateTime, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from app.db.base import Base
 from app.domain.identity import (
@@ -16,19 +17,52 @@ from app.domain.identity import (
 )
 
 
+class GUID(TypeDecorator[UUID]):
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Any) -> Any:
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PostgresUUID(as_uuid=True))
+        return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(
+        self,
+        value: UUID | None,
+        dialect: Any,
+    ) -> UUID | str | None:
+        if value is None:
+            return None
+        if dialect.name == "postgresql":
+            return value
+        return str(value)
+
+    def process_result_value(
+        self,
+        value: UUID | str | None,
+        dialect: Any,
+    ) -> UUID | None:
+        if value is None or isinstance(value, UUID):
+            return value
+        return UUID(value)
+
+
+preferences_type = JSONB().with_variant(JSON(), "sqlite")
+
+
 class IdentityModel(Base):
     __tablename__ = "identities"
 
-    id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), primary_key=True)
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     display_name: Mapped[str] = mapped_column(String, nullable=False)
     first_name: Mapped[str] = mapped_column(String, nullable=False)
     last_name: Mapped[str] = mapped_column(String, nullable=False)
     birth_date: Mapped[date] = mapped_column(Date, nullable=False)
     preferences: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
+        preferences_type,
         nullable=False,
         default=dict,
-        server_default=text("'{}'::jsonb"),
+        server_default=text("'{}'"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -51,9 +85,9 @@ class IdentityModel(Base):
 class DocumentModel(Base):
     __tablename__ = "documents"
 
-    id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), primary_key=True)
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     identity_id: Mapped[UUID] = mapped_column(
-        PostgresUUID(as_uuid=True),
+        GUID(),
         ForeignKey("identities.id"),
         nullable=False,
         index=True,

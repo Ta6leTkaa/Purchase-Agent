@@ -15,26 +15,26 @@ IdentityRepositoryDep: TypeAlias = Annotated[
 
 
 @router.post("")
-def create_identity(
+async def create_identity(
     identity: Identity,
     repository: IdentityRepositoryDep,
 ) -> Identity:
-    return repository.create(identity)
+    return await repository.create(identity)
 
 
 @router.get("")
-def list_identities(
+async def list_identities(
     repository: IdentityRepositoryDep,
 ) -> list[Identity]:
-    return repository.list()
+    return await repository.list()
 
 
 @router.get("/{identity_id}")
-def get_identity(
+async def get_identity(
     identity_id: UUID,
     repository: IdentityRepositoryDep,
 ) -> Identity:
-    identity = repository.get(identity_id)
+    identity = await repository.get(identity_id)
     if identity is None:
         raise HTTPException(status_code=404, detail="Identity not found")
     return identity

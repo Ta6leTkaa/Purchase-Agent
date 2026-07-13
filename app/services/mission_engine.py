@@ -24,7 +24,7 @@ async def run_mission(
     if mission is None:
         raise MissionNotFoundError
 
-    identities = _get_participants(mission, identity_repository)
+    identities = await _get_participants(mission, identity_repository)
     if len(identities) != len(mission.participant_ids):
         mission.status = MissionStatus.failed
         _add_event(
@@ -104,13 +104,13 @@ async def run_mission(
     return mission_repository.update(mission)
 
 
-def _get_participants(
+async def _get_participants(
     mission: Mission,
     identity_repository: IdentityRepository,
 ) -> list[Identity]:
     identities: list[Identity] = []
     for participant_id in mission.participant_ids:
-        identity = identity_repository.get(participant_id)
+        identity = await identity_repository.get(participant_id)
         if identity is not None:
             identities.append(identity)
     return identities

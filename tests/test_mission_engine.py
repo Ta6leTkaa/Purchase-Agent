@@ -24,7 +24,7 @@ def repositories() -> Iterator[
     identity_repository = InMemoryIdentityRepository()
     mission_repository = InMemoryMissionRepository()
     yield identity_repository, mission_repository
-    identity_repository.clear()
+    asyncio.run(identity_repository.clear())
     mission_repository.clear()
 
 
@@ -38,7 +38,7 @@ def create_identity(
         last_name="Petrov",
         birth_date=date(1990, 1, 1),
     )
-    return identity_repository.create(identity)
+    return asyncio.run(identity_repository.create(identity))
 
 
 def create_mission(

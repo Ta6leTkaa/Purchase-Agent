@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Iterator
 from uuid import uuid4
 
@@ -10,9 +11,9 @@ from app.main import app
 
 @pytest.fixture(autouse=True)
 def clear_repository() -> Iterator[None]:
-    identity_repository.clear()
+    asyncio.run(identity_repository.clear())
     yield
-    identity_repository.clear()
+    asyncio.run(identity_repository.clear())
 
 
 def make_identity_payload() -> dict[str, object]:
