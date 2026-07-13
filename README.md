@@ -98,6 +98,18 @@ API routes and services depend on repository interfaces instead of a concrete
 storage implementation. The current repositories are in-memory, and can later
 be replaced with PostgreSQL-backed repositories without changing API behavior.
 
+## Database infrastructure
+
+PostgreSQL, SQLAlchemy, and Alembic infrastructure is prepared. The application
+still uses in-memory repositories; ORM models and PostgreSQL repositories will
+be added in separate steps.
+
+Create local database settings from the example file:
+
+```bash
+cp .env.example .env
+```
+
 ## Requirements
 
 - Python 3.12+
