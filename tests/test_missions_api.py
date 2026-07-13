@@ -4,15 +4,17 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.dependencies import identity_repository, mission_repository
 from app.main import app
-from app.storage.memory import store
 
 
 @pytest.fixture(autouse=True)
-def clear_store() -> Iterator[None]:
-    store.clear()
+def clear_repositories() -> Iterator[None]:
+    identity_repository.clear()
+    mission_repository.clear()
     yield
-    store.clear()
+    identity_repository.clear()
+    mission_repository.clear()
 
 
 def make_mission_payload(

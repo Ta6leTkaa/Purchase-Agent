@@ -14,17 +14,23 @@ from app.domain.mission import (
     TrainConstraints,
 )
 from app.services.mission_engine import MissionNotFoundError, run_mission
-from app.storage.memory import store
+from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 
-@pytest.fixture(autouse=True)
-def clear_store() -> Iterator[None]:
-    store.clear()
-    yield
-    store.clear()
+@pytest.fixture
+def repositories() -> Iterator[
+    tuple[InMemoryIdentityRepository, InMemoryMissionRepository]
+]:
+    identity_repository = InMemoryIdentityRepository()
+    mission_repository = InMemoryMissionRepository()
+    yield identity_repository, mission_repository
+    identity_repository.clear()
+    mission_repository.clear()
 
 
-def create_identity() -> Identity:
+def create_identity(
+    identity_repository: InMemoryIdentityRepository,
+) -> Identity:
     identity = Identity(
         id=uuid4(),
         display_name="Ivan Petrov",
@@ -32,10 +38,13 @@ def create_identity() -> Identity:
         last_name="Petrov",
         birth_date=date(1990, 1, 1),
     )
-    return store.create_identity(identity)
+    return identity_repository.create(identity)
 
 
-def create_mission(participant_ids: list[UUID]) -> Mission:
+def create_mission(
+    mission_repository: InMemoryMissionRepository,
+    participant_ids: list[UUID],
+) -> Mission:
     mission = Mission(
         id=uuid4(),
         type=MissionType.train_trip,
@@ -56,25 +65,41 @@ def create_mission(participant_ids: list[UUID]) -> Mission:
             allow_adjacent_compartments=True,
         ),
     )
-    return store.create_mission(mission)
+    return mission_repository.create(mission)
 
 
-def test_run_mission_sets_requires_confirmation_and_selects_best_option() -> None:
-    identities = [create_identity() for _ in range(4)]
-    mission = create_mission([identity.id for identity in identities])
+def test_run_mission_sets_requires_confirmation_and_selects_best_option(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
 
-    updated_mission = asyncio.run(run_mission(mission.id))
+    updated_mission = asyncio.run(
+        run_mission(mission.id, mission_repository, identity_repository)
+    )
 
     assert updated_mission.status is MissionStatus.requires_confirmation
     assert updated_mission.best_option is not None
     assert updated_mission.best_option.train_number == "001A"
 
 
-def test_run_mission_adds_execution_events() -> None:
-    identities = [create_identity() for _ in range(4)]
-    mission = create_mission([identity.id for identity in identities])
+def test_run_mission_adds_execution_events(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
 
-    updated_mission = asyncio.run(run_mission(mission.id))
+    updated_mission = asyncio.run(
+        run_mission(mission.id, mission_repository, identity_repository)
+    )
     event_types = [event.type for event in updated_mission.execution_log]
 
     assert "mission_started" in event_types
@@ -85,15 +110,44 @@ def test_run_mission_adds_execution_events() -> None:
     assert "waiting_for_user_confirmation" in event_types
 
 
-def test_run_mission_fails_when_participant_is_missing() -> None:
-    mission = create_mission([uuid4()])
+def test_run_mission_fails_when_participant_is_missing(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    mission = create_mission(mission_repository, [uuid4()])
 
-    updated_mission = asyncio.run(run_mission(mission.id))
+    updated_mission = asyncio.run(
+        run_mission(mission.id, mission_repository, identity_repository)
+    )
 
     assert updated_mission.status is MissionStatus.failed
     assert updated_mission.execution_log[-1].type == "participant_missing"
 
 
-def test_run_unknown_mission_raises_mission_not_found_error() -> None:
+def test_run_unknown_mission_raises_mission_not_found_error(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+
     with pytest.raises(MissionNotFoundError):
-        asyncio.run(run_mission(uuid4()))
+        asyncio.run(
+            run_mission(uuid4(), mission_repository, identity_repository)
+        )
+
+
+def test_run_mission_with_isolated_repositories() -> None:
+    identity_repository = InMemoryIdentityRepository()
+    mission_repository = InMemoryMissionRepository()
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+
+    updated_mission = asyncio.run(
+        run_mission(mission.id, mission_repository, identity_repository)
+    )
+
+    assert updated_mission.status is MissionStatus.requires_confirmation
+    assert updated_mission.best_option is not None
+    assert updated_mission.best_option.train_number == "001A"

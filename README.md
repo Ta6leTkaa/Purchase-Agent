@@ -82,15 +82,21 @@ violations, ordered so valid options are considered before violated ones.
 
 ## Mission Engine
 
-The Mission Engine runs a mission through the in-memory store, `MockTrainAdapter`,
-and Rule Engine. Execution currently stops at `requires_confirmation`; it does
-not perform automatic payment or call real booking websites.
+The Mission Engine runs a mission through repositories, `MockTrainAdapter`, and
+Rule Engine. Execution currently stops at `requires_confirmation`; it does not
+perform automatic payment or call real booking websites.
 
 Example:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/missions/{mission_id}/run
 ```
+
+## Repository abstraction
+
+API routes and services depend on repository interfaces instead of a concrete
+storage implementation. The current repositories are in-memory, and can later
+be replaced with PostgreSQL-backed repositories without changing API behavior.
 
 ## Requirements
 
