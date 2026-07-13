@@ -80,6 +80,18 @@ The Rule Engine deterministically scores train options against mission
 constraints and fallback rules. It returns scored options with reasons and
 violations, ordered so valid options are considered before violated ones.
 
+## Mission Engine
+
+The Mission Engine runs a mission through the in-memory store, `MockTrainAdapter`,
+and Rule Engine. Execution currently stops at `requires_confirmation`; it does
+not perform automatic payment or call real booking websites.
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/missions/{mission_id}/run
+```
+
 ## Requirements
 
 - Python 3.12+

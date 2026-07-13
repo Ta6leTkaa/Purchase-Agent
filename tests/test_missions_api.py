@@ -19,6 +19,7 @@ def make_mission_payload(
     *,
     participant_ids: list[str] | None = None,
     passengers_count: int = 1,
+    provider: str = "rzd",
 ) -> dict[str, object]:
     if participant_ids is None:
         participant_ids = [str(uuid4())]
@@ -28,7 +29,7 @@ def make_mission_payload(
         "type": "train_trip",
         "title": "Moscow to Saint Petersburg",
         "participant_ids": participant_ids,
-        "provider": "rzd",
+        "provider": provider,
         "constraints": {
             "from_city": "Moscow",
             "to_city": "Saint Petersburg",
@@ -95,3 +96,54 @@ def test_post_missions_with_zero_passengers_count_returns_422() -> None:
     response = client.post("/missions", json=payload)
 
     assert response.status_code == 422
+
+
+def make_identity_payload() -> dict[str, object]:
+    return {
+        "id": str(uuid4()),
+        "display_name": "Ivan Petrov",
+        "first_name": "Ivan",
+        "last_name": "Petrov",
+        "birth_date": "1990-01-01",
+        "documents": [],
+    }
+
+
+def test_post_mission_run_returns_requires_confirmation() -> None:
+    client = TestClient(app)
+    identity_payloads = [make_identity_payload() for _ in range(4)]
+    for identity_payload in identity_payloads:
+        client.post("/identities", json=identity_payload)
+    mission_payload = make_mission_payload(
+        participant_ids=[
+            str(identity_payload["id"])
+            for identity_payload in identity_payloads
+        ],
+        passengers_count=4,
+        provider="mock_train",
+    )
+    mission_payload["constraints"] = {
+        "from_city": "Moscow",
+        "to_city": "Saint Petersburg",
+        "travel_date": "2026-08-01",
+        "passengers_count": 4,
+        "must_be_same_compartment": True,
+        "min_lower_berths": 2,
+        "max_total_price": 30000,
+        "avoid_toilet": True,
+    }
+    client.post("/missions", json=mission_payload)
+
+    response = client.post(f"/missions/{mission_payload['id']}/run")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "requires_confirmation"
+    assert response.json()["best_option"]["train_number"] == "001A"
+
+
+def test_post_unknown_mission_run_returns_404() -> None:
+    client = TestClient(app)
+
+    response = client.post(f"/missions/{uuid4()}/run")
+
+    assert response.status_code == 404
