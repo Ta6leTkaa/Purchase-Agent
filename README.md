@@ -121,6 +121,43 @@ purchase_agent
 
 The database backend requires applied Alembic migrations.
 
+## Local PostgreSQL
+
+The application still runs locally through `uv`; only PostgreSQL runs in
+Docker. You can keep `STORAGE_BACKEND=memory` for the default in-memory
+development mode. To use `STORAGE_BACKEND=database`, start PostgreSQL first and
+apply Alembic migrations.
+
+Start PostgreSQL:
+
+```bash
+docker compose up -d postgres
+```
+
+Check container status:
+
+```bash
+docker compose ps
+```
+
+Apply migrations:
+
+```bash
+uv run alembic upgrade head
+```
+
+Stop PostgreSQL:
+
+```bash
+docker compose down
+```
+
+Remove PostgreSQL data completely:
+
+```bash
+docker compose down -v
+```
+
 ## Database infrastructure
 
 PostgreSQL, SQLAlchemy, and Alembic infrastructure is prepared. The application

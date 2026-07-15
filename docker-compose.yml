@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: purchase-agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: purchase_agent
+      POSTGRES_USER: purchase_agent
+      POSTGRES_PASSWORD: purchase_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - purchase_agent_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U purchase_agent -d purchase_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  purchase_agent_postgres_data:
