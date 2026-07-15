@@ -224,7 +224,8 @@ uv run pytest -m "not integration"
 ```
 
 Run PostgreSQL integration tests after starting local PostgreSQL and creating
-the test database:
+the test database. These tests cover `IdentityRepository` and
+`MissionRepository`; regular unit tests do not require PostgreSQL.
 
 ```bash
 TEST_DATABASE_URL=postgresql+asyncpg://purchase_agent:purchase_agent@localhost:5432/\
