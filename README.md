@@ -103,6 +103,24 @@ default. Identity and Mission now both have in-memory and SQLAlchemy
 implementations. SQLAlchemy repositories flush changes but do not commit
 transactions themselves; transaction boundaries are owned by the outer layer.
 
+## Storage backend
+
+The application uses in-memory repositories by default:
+
+```bash
+STORAGE_BACKEND=memory
+```
+
+To use SQLAlchemy repositories, set the database backend and database URL:
+
+```bash
+STORAGE_BACKEND=database
+DATABASE_URL=postgresql+asyncpg://purchase_agent:purchase_agent@localhost:5432/\
+purchase_agent
+```
+
+The database backend requires applied Alembic migrations.
+
 ## Database infrastructure
 
 PostgreSQL, SQLAlchemy, and Alembic infrastructure is prepared. The application

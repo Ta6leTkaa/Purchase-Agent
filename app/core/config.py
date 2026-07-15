@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +13,7 @@ class Settings(BaseSettings):
     app_name: str = "Purchase Agent API"
     environment: str = "local"
     debug: bool = False
+    storage_backend: Literal["memory", "database"] = "memory"
     database_url: str = (
         "postgresql+asyncpg://purchase_agent:purchase_agent@localhost:5432/"
         "purchase_agent"
