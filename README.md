@@ -140,6 +140,12 @@ Check container status:
 docker compose ps
 ```
 
+Create a test database for PostgreSQL integration tests:
+
+```bash
+docker compose exec postgres createdb -U purchase_agent purchase_agent_test
+```
+
 Apply migrations:
 
 ```bash
@@ -209,6 +215,20 @@ uv run uvicorn app.main:app --reload
 
 ```bash
 uv run pytest
+```
+
+Integration tests are excluded from the default test run. To make that explicit:
+
+```bash
+uv run pytest -m "not integration"
+```
+
+Run PostgreSQL integration tests after starting local PostgreSQL and creating
+the test database:
+
+```bash
+TEST_DATABASE_URL=postgresql+asyncpg://purchase_agent:purchase_agent@localhost:5432/\
+purchase_agent_test uv run pytest -m integration
 ```
 
 ## Run linting
