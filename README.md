@@ -226,8 +226,9 @@ uv run pytest -m "not integration"
 Run PostgreSQL integration tests after starting local PostgreSQL and creating
 the test database. These tests cover `IdentityRepository` and
 `MissionRepository`, plus end-to-end `Identity API` and `Mission API`
-persistence paths through FastAPI dependencies and PostgreSQL. Mission
-execution is not included in PostgreSQL integration tests yet. Regular unit
+persistence paths through FastAPI dependencies and PostgreSQL. They also cover
+the full mission execution flow through PostgreSQL repositories, `MockTrainAdapter`,
+and Rule Engine. Real browser automation is not included yet. Regular unit
 tests do not require PostgreSQL.
 
 ```bash
