@@ -9,6 +9,7 @@ from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
+    InvalidMissionRunError,
     MissionNotFoundError,
     confirm_mission,
     run_mission,
@@ -65,6 +66,8 @@ async def run_mission_endpoint(
         )
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
+    except InvalidMissionRunError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/{mission_id}/confirm")

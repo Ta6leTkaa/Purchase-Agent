@@ -20,6 +20,10 @@ class InvalidMissionConfirmationError(Exception):
     pass
 
 
+class InvalidMissionRunError(Exception):
+    pass
+
+
 async def run_mission(
     mission_id: UUID,
     mission_repository: MissionRepository,
@@ -28,6 +32,13 @@ async def run_mission(
     mission = await mission_repository.get(mission_id)
     if mission is None:
         raise MissionNotFoundError
+
+    if mission.status not in {MissionStatus.created, MissionStatus.waiting}:
+        message = (
+            "Mission cannot be started from status "
+            f"'{mission.status.value}'"
+        )
+        raise InvalidMissionRunError(message)
 
     state_machine = MissionStateMachine()
     state_machine.transition(mission, MissionStatus.running)

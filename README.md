@@ -92,6 +92,10 @@ Example:
 curl -X POST http://127.0.0.1:8000/missions/{mission_id}/run
 ```
 
+Mission execution is not a repeatable operation. Re-running a mission from an
+active or terminal status returns HTTP `409`. A future new attempt should use a
+new Mission or a dedicated retry mechanism.
+
 Confirm a mission waiting for user confirmation:
 
 ```bash

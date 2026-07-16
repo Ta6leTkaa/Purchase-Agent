@@ -144,6 +144,16 @@ def test_post_mission_run_returns_requires_confirmation() -> None:
     assert response.json()["best_option"]["train_number"] == "001A"
 
 
+def test_post_mission_run_twice_returns_409() -> None:
+    client = TestClient(app)
+    mission_id = create_requires_confirmation_mission(client)
+
+    response = client.post(f"/missions/{mission_id}/run")
+
+    assert response.status_code == 409
+    assert "requires_confirmation" in response.json()["detail"]
+
+
 def test_post_unknown_mission_run_returns_404() -> None:
     client = TestClient(app)
 
@@ -218,3 +228,14 @@ def test_post_mission_confirm_twice_returns_409() -> None:
     response = client.post(f"/missions/{mission_id}/confirm")
 
     assert response.status_code == 409
+
+
+def test_post_completed_mission_run_returns_409() -> None:
+    client = TestClient(app)
+    mission_id = create_requires_confirmation_mission(client)
+    client.post(f"/missions/{mission_id}/confirm")
+
+    response = client.post(f"/missions/{mission_id}/run")
+
+    assert response.status_code == 409
+    assert "completed" in response.json()["detail"]

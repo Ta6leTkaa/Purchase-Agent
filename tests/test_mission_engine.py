@@ -15,6 +15,7 @@ from app.domain.mission import (
 )
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
+    InvalidMissionRunError,
     MissionNotFoundError,
     confirm_mission,
     run_mission,
@@ -92,6 +93,25 @@ def test_run_mission_sets_requires_confirmation_and_selects_best_option(
     assert updated_mission.best_option.train_number == "001A"
 
 
+def test_run_waiting_mission_is_allowed(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    mission.status = MissionStatus.waiting
+    asyncio.run(mission_repository.update(mission))
+
+    updated_mission = asyncio.run(
+        run_mission(mission.id, mission_repository, identity_repository)
+    )
+
+    assert updated_mission.status is MissionStatus.requires_confirmation
+
+
 def test_run_mission_adds_execution_events(
     repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
 ) -> None:
@@ -138,6 +158,38 @@ def test_run_unknown_mission_raises_mission_not_found_error(
         asyncio.run(
             run_mission(uuid4(), mission_repository, identity_repository)
         )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        MissionStatus.running,
+        MissionStatus.searching,
+        MissionStatus.requires_confirmation,
+        MissionStatus.completed,
+        MissionStatus.failed,
+    ],
+)
+def test_run_mission_rejects_invalid_start_statuses(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+    status: MissionStatus,
+) -> None:
+    identity_repository, mission_repository = repositories
+    mission = create_mission(mission_repository, [uuid4()])
+    mission.status = status
+    mission.execution_log = []
+    asyncio.run(mission_repository.update(mission))
+
+    with pytest.raises(InvalidMissionRunError) as exc_info:
+        asyncio.run(
+            run_mission(mission.id, mission_repository, identity_repository)
+        )
+
+    stored_mission = asyncio.run(mission_repository.get(mission.id))
+    assert status.value in str(exc_info.value)
+    assert stored_mission is not None
+    assert stored_mission.status is status
+    assert stored_mission.execution_log == []
 
 
 def test_run_mission_with_isolated_repositories() -> None:

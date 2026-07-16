@@ -197,6 +197,38 @@ async def test_mission_confirmation_persists_completed_status(
     ]
 
 
+async def test_mission_rerun_is_rejected_without_persistence_changes(
+    mission_execution_client: tuple[AsyncClient, list[str]],
+    test_session: AsyncSession,
+    test_engine: AsyncEngine,
+) -> None:
+    client, _transaction_events = mission_execution_client
+    identities = [make_identity() for _ in range(4)]
+    mission = make_mission(
+        participant_ids=[identity.id for identity in identities],
+    )
+    await create_execution_data(test_session, identities, mission)
+
+    first_response = await client.post(f"/missions/{mission.id}/run")
+    persisted_after_first_run = await load_mission(test_engine, mission.id)
+    second_response = await client.post(f"/missions/{mission.id}/run")
+    persisted_after_second_run = await load_mission(test_engine, mission.id)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 409
+    assert "requires_confirmation" in second_response.json()["detail"]
+    assert persisted_after_first_run is not None
+    assert persisted_after_second_run is not None
+    assert persisted_after_second_run.status is MissionStatus.requires_confirmation
+    assert [
+        event.type
+        for event in persisted_after_second_run.execution_log
+    ] == [
+        event.type
+        for event in persisted_after_first_run.execution_log
+    ]
+
+
 async def create_execution_data(
     session: AsyncSession,
     identities: list[Identity],
