@@ -99,6 +99,12 @@ Repositories can query missions that are due for scheduled execution. This is
 only preparation for a future background worker; no scheduler, polling loop, or
 automatic `run_mission` call exists yet.
 
+## Due mission processor
+
+The due mission processor performs one pass over missions whose scheduled time
+has arrived and runs them sequentially. It is only a programmatic service for
+now; a persistent background scheduler will be added separately.
+
 ## Provider adapters
 
 The backend includes a `ProviderAdapter` interface and a `MockTrainAdapter`
