@@ -150,3 +150,71 @@ def test_post_unknown_mission_run_returns_404() -> None:
     response = client.post(f"/missions/{uuid4()}/run")
 
     assert response.status_code == 404
+
+
+def create_requires_confirmation_mission(client: TestClient) -> str:
+    identity_payloads = [make_identity_payload() for _ in range(4)]
+    for identity_payload in identity_payloads:
+        client.post("/identities", json=identity_payload)
+    mission_payload = make_mission_payload(
+        participant_ids=[
+            str(identity_payload["id"])
+            for identity_payload in identity_payloads
+        ],
+        passengers_count=4,
+        provider="mock_train",
+    )
+    mission_payload["constraints"] = {
+        "from_city": "Moscow",
+        "to_city": "Saint Petersburg",
+        "travel_date": "2026-08-01",
+        "passengers_count": 4,
+        "must_be_same_compartment": True,
+        "min_lower_berths": 2,
+        "max_total_price": 30000,
+        "avoid_toilet": True,
+    }
+    client.post("/missions", json=mission_payload)
+    client.post(f"/missions/{mission_payload['id']}/run")
+    return str(mission_payload["id"])
+
+
+def test_post_mission_confirm_returns_completed() -> None:
+    client = TestClient(app)
+    mission_id = create_requires_confirmation_mission(client)
+
+    response = client.post(f"/missions/{mission_id}/confirm")
+    event_types = [event["type"] for event in response.json()["execution_log"]]
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert "mission_confirmed" in event_types
+    assert "mission_completed" in event_types
+
+
+def test_post_mission_confirm_before_run_returns_409() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload()
+    client.post("/missions", json=payload)
+
+    response = client.post(f"/missions/{payload['id']}/confirm")
+
+    assert response.status_code == 409
+
+
+def test_post_unknown_mission_confirm_returns_404() -> None:
+    client = TestClient(app)
+
+    response = client.post(f"/missions/{uuid4()}/confirm")
+
+    assert response.status_code == 404
+
+
+def test_post_mission_confirm_twice_returns_409() -> None:
+    client = TestClient(app)
+    mission_id = create_requires_confirmation_mission(client)
+    client.post(f"/missions/{mission_id}/confirm")
+
+    response = client.post(f"/missions/{mission_id}/confirm")
+
+    assert response.status_code == 409

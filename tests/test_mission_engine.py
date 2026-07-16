@@ -13,7 +13,12 @@ from app.domain.mission import (
     MissionType,
     TrainConstraints,
 )
-from app.services.mission_engine import MissionNotFoundError, run_mission
+from app.services.mission_engine import (
+    InvalidMissionConfirmationError,
+    MissionNotFoundError,
+    confirm_mission,
+    run_mission,
+)
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 
@@ -151,3 +156,57 @@ def test_run_mission_with_isolated_repositories() -> None:
     assert updated_mission.status is MissionStatus.requires_confirmation
     assert updated_mission.best_option is not None
     assert updated_mission.best_option.train_number == "001A"
+
+
+def test_confirm_mission_sets_completed_and_adds_events(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    _identity_repository, mission_repository = repositories
+    mission = create_mission(mission_repository, [uuid4()])
+    mission.status = MissionStatus.requires_confirmation
+    asyncio.run(mission_repository.update(mission))
+
+    updated_mission = asyncio.run(
+        confirm_mission(mission.id, mission_repository)
+    )
+    event_types = [event.type for event in updated_mission.execution_log]
+
+    assert updated_mission.status is MissionStatus.completed
+    assert "mission_confirmed" in event_types
+    assert "mission_completed" in event_types
+
+
+def test_confirm_created_mission_raises_invalid_confirmation_error(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    _identity_repository, mission_repository = repositories
+    mission = create_mission(mission_repository, [uuid4()])
+
+    with pytest.raises(InvalidMissionConfirmationError) as exc_info:
+        asyncio.run(confirm_mission(mission.id, mission_repository))
+
+    assert "created" in str(exc_info.value)
+
+
+def test_confirm_unknown_mission_raises_mission_not_found_error(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    _identity_repository, mission_repository = repositories
+
+    with pytest.raises(MissionNotFoundError):
+        asyncio.run(confirm_mission(uuid4(), mission_repository))
+
+
+def test_confirm_completed_mission_twice_is_rejected(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    _identity_repository, mission_repository = repositories
+    mission = create_mission(mission_repository, [uuid4()])
+    mission.status = MissionStatus.requires_confirmation
+    asyncio.run(mission_repository.update(mission))
+    asyncio.run(confirm_mission(mission.id, mission_repository))
+
+    with pytest.raises(InvalidMissionConfirmationError) as exc_info:
+        asyncio.run(confirm_mission(mission.id, mission_repository))
+
+    assert "completed" in str(exc_info.value)

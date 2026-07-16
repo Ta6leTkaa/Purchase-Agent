@@ -92,6 +92,16 @@ Example:
 curl -X POST http://127.0.0.1:8000/missions/{mission_id}/run
 ```
 
+Confirm a mission waiting for user confirmation:
+
+```bash
+curl -X POST http://127.0.0.1:8000/missions/{mission_id}/confirm
+```
+
+The confirmation endpoint only simulates user confirmation. It does not perform
+real payment or call booking websites. `completed` means the mock scenario has
+finished successfully.
+
 ## Mission state machine
 
 Mission statuses are changed through explicit valid transitions. `completed`

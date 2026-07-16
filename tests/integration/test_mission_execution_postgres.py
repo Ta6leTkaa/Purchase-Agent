@@ -163,6 +163,40 @@ async def test_mission_execution_failure_persists_missing_participant(
     ]
 
 
+async def test_mission_confirmation_persists_completed_status(
+    mission_execution_client: tuple[AsyncClient, list[str]],
+    test_session: AsyncSession,
+    test_engine: AsyncEngine,
+) -> None:
+    client, transaction_events = mission_execution_client
+    identities = [make_identity() for _ in range(4)]
+    mission = make_mission(
+        participant_ids=[identity.id for identity in identities],
+    )
+    await create_execution_data(test_session, identities, mission)
+
+    run_response = await client.post(f"/missions/{mission.id}/run")
+    confirm_response = await client.post(f"/missions/{mission.id}/confirm")
+
+    assert run_response.status_code == 200
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["status"] == "completed"
+    assert_event_types_contain(
+        confirm_response.json()["execution_log"],
+        ["mission_confirmed", "mission_completed"],
+    )
+    assert "mission_commit" in transaction_events
+
+    persisted_mission = await load_mission(test_engine, mission.id)
+
+    assert persisted_mission is not None
+    assert persisted_mission.status is MissionStatus.completed
+    assert [event.type for event in persisted_mission.execution_log][-2:] == [
+        "mission_confirmed",
+        "mission_completed",
+    ]
+
+
 async def create_execution_data(
     session: AsyncSession,
     identities: list[Identity],

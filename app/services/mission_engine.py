@@ -16,6 +16,10 @@ class MissionNotFoundError(Exception):
     pass
 
 
+class InvalidMissionConfirmationError(Exception):
+    pass
+
+
 async def run_mission(
     mission_id: UUID,
     mission_repository: MissionRepository,
@@ -103,6 +107,29 @@ async def run_mission(
     else:
         state_machine.transition(mission, MissionStatus.completed)
         _add_event(mission, "mission_completed", "Mission completed.")
+
+    return await mission_repository.update(mission)
+
+
+async def confirm_mission(
+    mission_id: UUID,
+    mission_repository: MissionRepository,
+) -> Mission:
+    mission = await mission_repository.get(mission_id)
+    if mission is None:
+        raise MissionNotFoundError
+
+    if mission.status is not MissionStatus.requires_confirmation:
+        message = (
+            "Mission cannot be confirmed from status "
+            f"{mission.status.value}"
+        )
+        raise InvalidMissionConfirmationError(message)
+
+    state_machine = MissionStateMachine()
+    state_machine.transition(mission, MissionStatus.completed)
+    _add_event(mission, "mission_confirmed", "Mission confirmed by user")
+    _add_event(mission, "mission_completed", "Mission completed")
 
     return await mission_repository.update(mission)
 
