@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -10,6 +11,7 @@ from app.db.models.mission import (
 )
 from app.domain.mission import Mission
 from app.repositories.mission import (
+    InvalidRepositoryTimeError,
     MissionRepository,
     RepositoryEntityNotFoundError,
 )
@@ -28,6 +30,25 @@ class SqlAlchemyMissionRepository(MissionRepository):
     async def list(self) -> list[Mission]:
         result = await self._session.execute(
             select(MissionModel).order_by(MissionModel.created_at)
+        )
+        return [
+            mission_from_model(model)
+            for model in result.scalars().all()
+        ]
+
+    async def list_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> list[Mission]:
+        _validate_list_due_arguments(current_time, limit)
+        result = await self._session.execute(
+            select(MissionModel)
+            .where(MissionModel.status == "waiting")
+            .where(MissionModel.scheduled_at.is_not(None))
+            .where(MissionModel.scheduled_at <= current_time)
+            .order_by(MissionModel.scheduled_at.asc())
+            .limit(limit)
         )
         return [
             mission_from_model(model)
@@ -69,3 +90,15 @@ def get_sqlalchemy_mission_repository(
     session: AsyncSession,
 ) -> SqlAlchemyMissionRepository:
     return SqlAlchemyMissionRepository(session)
+
+
+def _validate_list_due_arguments(
+    current_time: datetime,
+    limit: int,
+) -> None:
+    if current_time.tzinfo is None or current_time.utcoffset() is None:
+        raise InvalidRepositoryTimeError(
+            "current_time must be timezone-aware"
+        )
+    if limit <= 0:
+        raise ValueError("limit must be greater than 0")

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -8,11 +9,22 @@ class RepositoryEntityNotFoundError(Exception):
     pass
 
 
+class InvalidRepositoryTimeError(ValueError):
+    pass
+
+
 class MissionRepository(Protocol):
     async def create(self, mission: Mission) -> Mission:
         ...
 
     async def list(self) -> list[Mission]:
+        ...
+
+    async def list_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> list[Mission]:
         ...
 
     async def get(self, mission_id: UUID) -> Mission | None:

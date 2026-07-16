@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import DateTime, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
 
 from app.db.base import Base
 from app.db.models.identity import GUID, preferences_type
@@ -19,6 +20,22 @@ from app.domain.mission import (
 from app.domain.provider import ProviderOption
 
 
+class AwareDateTime(TypeDecorator[datetime]):
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_result_value(
+        self,
+        value: datetime | None,
+        dialect: Any,
+    ) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
+
 class MissionModel(Base):
     __tablename__ = "missions"
 
@@ -28,7 +45,7 @@ class MissionModel(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     provider: Mapped[str] = mapped_column(String, nullable=False)
     scheduled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
+        AwareDateTime(),
         nullable=True,
     )
     participant_ids: Mapped[list[str]] = mapped_column(

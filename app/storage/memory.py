@@ -1,7 +1,9 @@
+from datetime import datetime
 from uuid import UUID
 
 from app.domain.identity import Identity
-from app.domain.mission import Mission
+from app.domain.mission import Mission, MissionStatus
+from app.repositories.mission import InvalidRepositoryTimeError
 
 
 class InMemoryIdentityRepository:
@@ -32,6 +34,24 @@ class InMemoryMissionRepository:
 
     async def list(self) -> list[Mission]:
         return list(self._missions.values())
+
+    async def list_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> list[Mission]:
+        _validate_list_due_arguments(current_time, limit)
+        due_missions = [
+            mission
+            for mission in self._missions.values()
+            if mission.status is MissionStatus.waiting
+            and mission.scheduled_at is not None
+            and mission.scheduled_at <= current_time
+        ]
+        return sorted(
+            due_missions,
+            key=lambda mission: mission.scheduled_at or current_time,
+        )[:limit]
 
     async def get(self, mission_id: UUID) -> Mission | None:
         return self._missions.get(mission_id)
@@ -79,3 +99,15 @@ class MemoryStore:
 
 
 store = MemoryStore()
+
+
+def _validate_list_due_arguments(
+    current_time: datetime,
+    limit: int,
+) -> None:
+    if current_time.tzinfo is None or current_time.utcoffset() is None:
+        raise InvalidRepositoryTimeError(
+            "current_time must be timezone-aware"
+        )
+    if limit <= 0:
+        raise ValueError("limit must be greater than 0")

@@ -1,8 +1,9 @@
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -26,6 +27,7 @@ from app.domain.provider import (
     Seat,
     SeatBerth,
 )
+from app.repositories.mission import InvalidRepositoryTimeError
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 
 
@@ -120,6 +122,60 @@ def test_repository_does_not_commit() -> None:
             async with session_maker() as session:
                 repository = SqlAlchemyMissionRepository(session)
                 assert await repository.get(mission.id) is None
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_list_due_filters_orders_and_limits_missions() -> None:
+    async def scenario() -> None:
+        await with_repository(
+            lambda repository, session: _list_due_filters_orders_and_limits(
+                repository
+            )
+        )
+
+    asyncio.run(scenario())
+
+
+def test_list_due_rejects_invalid_arguments() -> None:
+    async def scenario() -> None:
+        await with_repository(
+            lambda repository, session: _list_due_rejects_invalid_arguments(
+                repository
+            )
+        )
+
+    asyncio.run(scenario())
+
+
+def test_list_due_returns_committed_data_from_new_session() -> None:
+    async def scenario() -> None:
+        engine = create_test_engine()
+        try:
+            await create_tables(engine)
+            session_maker = async_sessionmaker(
+                engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+            )
+            current_time = aware_datetime()
+            due_mission = make_mission(
+                status=MissionStatus.waiting,
+                scheduled_at=current_time,
+            )
+
+            async with session_maker() as session:
+                repository = SqlAlchemyMissionRepository(session)
+                await repository.create(due_mission)
+                await session.commit()
+
+            async with session_maker() as session:
+                repository = SqlAlchemyMissionRepository(session)
+                due_missions = await repository.list_due(current_time)
+
+            assert [mission.id for mission in due_missions] == [due_mission.id]
         finally:
             await engine.dispose()
 
@@ -262,14 +318,61 @@ async def _clear_deletes_missions(
     assert await repository.list() == []
 
 
+async def _list_due_filters_orders_and_limits(
+    repository: SqlAlchemyMissionRepository,
+) -> None:
+    current_time = aware_datetime()
+    earlier_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time - timedelta(minutes=2),
+    )
+    later_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time - timedelta(minutes=1),
+    )
+    future_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time + timedelta(minutes=1),
+    )
+    created_mission = make_mission(
+        status=MissionStatus.created,
+        scheduled_at=current_time,
+    )
+    unscheduled_mission = make_mission(status=MissionStatus.waiting)
+    for mission in [
+        later_mission,
+        future_mission,
+        created_mission,
+        unscheduled_mission,
+        earlier_mission,
+    ]:
+        await repository.create(mission)
+
+    due_missions = await repository.list_due(current_time, limit=1)
+
+    assert [mission.id for mission in due_missions] == [earlier_mission.id]
+
+
+async def _list_due_rejects_invalid_arguments(
+    repository: SqlAlchemyMissionRepository,
+) -> None:
+    with pytest.raises(InvalidRepositoryTimeError):
+        await repository.list_due(datetime(2026, 8, 1, 10, 0))
+
+    with pytest.raises(ValueError):
+        await repository.list_due(aware_datetime(), limit=0)
+
+
 def make_mission(
     best_option: ProviderOption | None = None,
+    status: MissionStatus = MissionStatus.created,
+    scheduled_at: datetime | None = None,
 ) -> Mission:
     return Mission(
         id=uuid4(),
         type=MissionType.train_trip,
         title="Moscow to Saint Petersburg",
-        status=MissionStatus.created,
+        status=status,
         participant_ids=[uuid4(), uuid4()],
         provider="mock_train",
         constraints=TrainConstraints(
@@ -285,6 +388,7 @@ def make_mission(
         fallback_rules=FallbackRules(
             allow_adjacent_compartments=True,
         ),
+        scheduled_at=scheduled_at,
         execution_log=[
             ExecutionEvent(
                 timestamp=datetime(2026, 7, 13, 10, 0),
@@ -294,6 +398,10 @@ def make_mission(
         ],
         best_option=best_option,
     )
+
+
+def aware_datetime() -> datetime:
+    return datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
 
 
 def make_provider_option() -> ProviderOption:

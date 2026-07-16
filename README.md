@@ -95,6 +95,10 @@ There is no automatic scheduler yet. A scheduled mission is stored in
 `waiting` status and still has to be started through the run API after
 `scheduled_at`.
 
+Repositories can query missions that are due for scheduled execution. This is
+only preparation for a future background worker; no scheduler, polling loop, or
+automatic `run_mission` call exists yet.
+
 ## Provider adapters
 
 The backend includes a `ProviderAdapter` interface and a `MockTrainAdapter`
