@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends
@@ -9,6 +10,7 @@ from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
+from app.services.clock import utc_now
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 identity_repository = InMemoryIdentityRepository()
@@ -26,3 +28,7 @@ def get_mission_repository(session: DbSessionDep) -> MissionRepository:
     if settings.storage_backend == "database":
         return SqlAlchemyMissionRepository(session)
     return mission_repository
+
+
+def get_current_time() -> datetime:
+    return utc_now()

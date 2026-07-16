@@ -105,6 +105,18 @@ The due mission processor performs one pass over missions whose scheduled time
 has arrived and runs them sequentially. It is only a programmatic service for
 now; a persistent background scheduler will be added separately.
 
+Manual admin processing endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/missions/process-due \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 100}'
+```
+
+This endpoint runs only one processing pass. It is intended for local
+development and manual checks; it is not a scheduler. A future background
+worker should replace this manual trigger.
+
 ## Provider adapters
 
 The backend includes a `ProviderAdapter` interface and a `MockTrainAdapter`
