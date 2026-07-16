@@ -50,6 +50,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         model.title = updated_model.title
         model.status = updated_model.status
         model.provider = updated_model.provider
+        model.scheduled_at = updated_model.scheduled_at
         model.participant_ids = updated_model.participant_ids
         model.constraints = updated_model.constraints
         model.fallback_rules = updated_model.fallback_rules

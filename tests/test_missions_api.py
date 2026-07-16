@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -90,6 +91,52 @@ def test_post_missions_initializes_internal_fields() -> None:
     assert response.json()["status"] == "created"
     assert response.json()["execution_log"] == []
     assert response.json()["best_option"] is None
+
+
+def test_post_missions_with_scheduled_at_returns_waiting() -> None:
+    client = TestClient(app)
+    scheduled_at = datetime.now(timezone.utc) + timedelta(days=1)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "scheduled_at": scheduled_at.isoformat(),
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "waiting"
+    assert response.json()["scheduled_at"] is not None
+
+
+def test_post_missions_with_naive_scheduled_at_returns_422() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "scheduled_at": "2026-08-01T12:00:00",
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_post_missions_with_past_scheduled_at_returns_422() -> None:
+    client = TestClient(app)
+    scheduled_at = datetime.now(timezone.utc) - timedelta(days=1)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "scheduled_at": scheduled_at.isoformat(),
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
 
 
 def test_get_missions_returns_created_mission() -> None:
@@ -285,6 +332,35 @@ def test_post_mission_run_returns_requires_confirmation() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "requires_confirmation"
     assert response.json()["best_option"]["train_number"] == "001A"
+
+
+def test_post_scheduled_mission_run_before_time_returns_409() -> None:
+    client = TestClient(app)
+    identity_ids = make_existing_participant_ids(client, count=4)
+    scheduled_at = datetime.now(timezone.utc) + timedelta(days=1)
+    mission_payload = make_mission_payload(
+        participant_ids=identity_ids,
+        passengers_count=4,
+        provider="mock_train",
+    )
+    mission_payload["constraints"] = {
+        "from_city": "Moscow",
+        "to_city": "Saint Petersburg",
+        "travel_date": "2026-08-01",
+        "passengers_count": 4,
+        "must_be_same_compartment": True,
+        "min_lower_berths": 2,
+        "max_total_price": 30000,
+        "avoid_toilet": True,
+    }
+    mission_payload["scheduled_at"] = scheduled_at.isoformat()
+    create_response = client.post("/missions", json=mission_payload)
+    mission_id = create_response.json()["id"]
+
+    response = client.post(f"/missions/{mission_id}/run")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Mission is scheduled for a future time"
 
 
 def test_post_mission_run_twice_returns_409() -> None:

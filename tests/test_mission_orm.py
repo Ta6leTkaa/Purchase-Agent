@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from app.db.base import Base
@@ -71,6 +71,17 @@ def test_best_option_survives_round_trip() -> None:
     assert restored_mission.best_option.train_number == "001A"
 
 
+def test_scheduled_at_survives_round_trip() -> None:
+    scheduled_at = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+    mission = make_mission(scheduled_at=scheduled_at)
+    model = mission_to_model(mission)
+
+    restored_mission = mission_from_model(model)
+
+    assert model.scheduled_at == scheduled_at
+    assert restored_mission.scheduled_at == scheduled_at
+
+
 def test_none_best_option_survives_round_trip() -> None:
     mission = make_mission(best_option=None)
     model = mission_to_model(mission)
@@ -82,6 +93,7 @@ def test_none_best_option_survives_round_trip() -> None:
 
 def make_mission(
     best_option: ProviderOption | None | object = _USE_DEFAULT_BEST_OPTION,
+    scheduled_at: datetime | None = None,
 ) -> Mission:
     if best_option is _USE_DEFAULT_BEST_OPTION:
         best_option = make_provider_option()
@@ -106,6 +118,7 @@ def make_mission(
         fallback_rules=FallbackRules(
             allow_adjacent_compartments=True,
         ),
+        scheduled_at=scheduled_at,
         execution_log=[
             ExecutionEvent(
                 timestamp=datetime(2026, 7, 13, 10, 0),

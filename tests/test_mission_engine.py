@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -16,6 +16,7 @@ from app.domain.mission import (
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
+    MissionNotReadyError,
     MissionNotFoundError,
     confirm_mission,
     run_mission,
@@ -107,6 +108,62 @@ def test_run_waiting_mission_is_allowed(
 
     updated_mission = asyncio.run(
         run_mission(mission.id, mission_repository, identity_repository)
+    )
+
+    assert updated_mission.status is MissionStatus.requires_confirmation
+
+
+def test_run_waiting_mission_before_scheduled_time_is_rejected(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    current_time = datetime(2026, 7, 16, 10, 0, tzinfo=timezone.utc)
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    mission.status = MissionStatus.waiting
+    mission.scheduled_at = current_time + timedelta(hours=1)
+    asyncio.run(mission_repository.update(mission))
+
+    with pytest.raises(MissionNotReadyError):
+        asyncio.run(
+            run_mission(
+                mission.id,
+                mission_repository,
+                identity_repository,
+                current_time=current_time,
+            )
+        )
+
+    stored_mission = asyncio.run(mission_repository.get(mission.id))
+    assert stored_mission is not None
+    assert stored_mission.status is MissionStatus.waiting
+    assert stored_mission.execution_log == []
+
+
+def test_run_waiting_mission_after_scheduled_time_is_allowed(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    current_time = datetime(2026, 7, 16, 10, 0, tzinfo=timezone.utc)
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    mission.status = MissionStatus.waiting
+    mission.scheduled_at = current_time
+    asyncio.run(mission_repository.update(mission))
+
+    updated_mission = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            current_time=current_time,
+        )
     )
 
     assert updated_mission.status is MissionStatus.requires_confirmation

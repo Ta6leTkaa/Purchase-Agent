@@ -11,6 +11,7 @@ from app.schemas.mission import MissionCreate
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
+    MissionNotReadyError,
     MissionNotFoundError,
     confirm_mission,
     run_mission,
@@ -85,6 +86,8 @@ async def run_mission_endpoint(
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except InvalidMissionRunError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MissionNotReadyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 

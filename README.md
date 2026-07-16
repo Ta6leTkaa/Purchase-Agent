@@ -71,6 +71,30 @@ server.
 Mission creation requires existing Identity ids. `participant_ids` must be
 unique, and the number of participants must match `passengers_count`.
 
+Scheduled mission example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/missions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "train_trip",
+    "title": "Scheduled family train trip",
+    "participant_ids": ["00000000-0000-4000-8000-000000000001"],
+    "provider": "mock_train",
+    "scheduled_at": "2026-08-01T10:00:00Z",
+    "constraints": {
+      "from_city": "Moscow",
+      "to_city": "Saint Petersburg",
+      "travel_date": "2026-08-01",
+      "passengers_count": 1
+    }
+  }'
+```
+
+There is no automatic scheduler yet. A scheduled mission is stored in
+`waiting` status and still has to be started through the run API after
+`scheduled_at`.
+
 ## Provider adapters
 
 The backend includes a `ProviderAdapter` interface and a `MockTrainAdapter`

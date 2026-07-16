@@ -8,6 +8,7 @@ from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionStatus
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
+from app.services.clock import utc_now
 from app.services.mission_state_machine import MissionStateMachine
 from app.services.rule_engine import evaluate_train_options
 
@@ -24,10 +25,15 @@ class InvalidMissionRunError(Exception):
     pass
 
 
+class MissionNotReadyError(Exception):
+    pass
+
+
 async def run_mission(
     mission_id: UUID,
     mission_repository: MissionRepository,
     identity_repository: IdentityRepository,
+    current_time: datetime | None = None,
 ) -> Mission:
     mission = await mission_repository.get(mission_id)
     if mission is None:
@@ -39,6 +45,13 @@ async def run_mission(
             f"'{mission.status.value}'"
         )
         raise InvalidMissionRunError(message)
+
+    now = current_time or utc_now()
+    if mission.status is MissionStatus.waiting and _is_scheduled_for_future(
+        mission,
+        now,
+    ):
+        raise MissionNotReadyError("Mission is scheduled for a future time")
 
     state_machine = MissionStateMachine()
     state_machine.transition(mission, MissionStatus.running)
@@ -165,9 +178,19 @@ def _add_event(
 ) -> None:
     mission.execution_log.append(
         ExecutionEvent(
-            timestamp=datetime.now(),
+            timestamp=utc_now(),
             type=event_type,
             message=message,
             metadata=metadata or {},
         )
+    )
+
+
+def _is_scheduled_for_future(
+    mission: Mission,
+    current_time: datetime,
+) -> bool:
+    return (
+        mission.scheduled_at is not None
+        and mission.scheduled_at > current_time
     )

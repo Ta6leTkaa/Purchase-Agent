@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.execution import ExecutionEvent
 from app.domain.provider import ProviderOption
@@ -50,5 +50,19 @@ class Mission(BaseModel):
     provider: str = Field(min_length=1)
     constraints: TrainConstraints
     fallback_rules: FallbackRules = FallbackRules()
+    scheduled_at: datetime | None = None
     execution_log: list[ExecutionEvent] = []
     best_option: ProviderOption | None = None
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def validate_scheduled_at_timezone(
+        cls,
+        scheduled_at: datetime | None,
+    ) -> datetime | None:
+        if scheduled_at is None:
+            return None
+        if scheduled_at.tzinfo is None or scheduled_at.utcoffset() is None:
+            msg = "scheduled_at must be timezone-aware"
+            raise ValueError(msg)
+        return scheduled_at

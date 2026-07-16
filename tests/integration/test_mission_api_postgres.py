@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -112,6 +113,41 @@ async def test_mission_api_persists_mission_to_postgres(
     assert persisted_mission.fallback_rules.notify_only_if_no_match is True
     assert persisted_mission.execution_log == []
     assert persisted_mission.best_option is None
+
+
+async def test_mission_api_persists_scheduled_at_to_postgres(
+    mission_api_client: tuple[AsyncClient, list[str]],
+    test_engine: AsyncEngine,
+) -> None:
+    client, _transaction_events = mission_api_client
+    scheduled_at = datetime.now(timezone.utc) + timedelta(days=1)
+    participant_ids = [
+        await create_identity(client)
+        for _ in range(4)
+    ]
+    payload = {
+        **make_mission_payload(participant_ids),
+        "scheduled_at": scheduled_at.isoformat(),
+    }
+
+    create_response = await client.post("/missions", json=payload)
+    mission_id = create_response.json()["id"]
+
+    assert create_response.status_code in {200, 201}
+    assert create_response.json()["status"] == "waiting"
+
+    session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        persisted_mission = await repository.get(UUID(mission_id))
+
+    assert persisted_mission is not None
+    assert persisted_mission.status.value == "waiting"
+    assert persisted_mission.scheduled_at == scheduled_at
 
 
 async def test_mission_api_rejects_unknown_participants_without_persisting(

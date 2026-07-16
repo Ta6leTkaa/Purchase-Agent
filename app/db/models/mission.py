@@ -27,6 +27,10 @@ class MissionModel(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     provider: Mapped[str] = mapped_column(String, nullable=False)
+    scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     participant_ids: Mapped[list[str]] = mapped_column(
         preferences_type,
         nullable=False,
@@ -69,6 +73,7 @@ def mission_to_model(mission: Mission) -> MissionModel:
         title=mission.title,
         status=mission.status.value,
         provider=mission.provider,
+        scheduled_at=mission.scheduled_at,
         participant_ids=[
             str(participant_id)
             for participant_id in mission.participant_ids
@@ -95,6 +100,7 @@ def mission_from_model(model: MissionModel) -> Mission:
         status=MissionStatus(model.status),
         participant_ids=model.participant_ids,
         provider=model.provider,
+        scheduled_at=model.scheduled_at,
         constraints=TrainConstraints.model_validate(model.constraints),
         fallback_rules=FallbackRules.model_validate(model.fallback_rules),
         execution_log=[
