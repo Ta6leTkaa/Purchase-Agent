@@ -6,8 +6,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.dependencies import get_mission_repository
+from app.dependencies import get_identity_repository, get_mission_repository
 from app.main import app
+from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -19,18 +20,33 @@ async def mission_api_client(
 ) -> AsyncIterator[tuple[AsyncClient, list[str]]]:
     transaction_events: list[str] = []
 
+    async def override_identity_repository() -> AsyncIterator[
+        SqlAlchemyIdentityRepository
+    ]:
+        try:
+            yield SqlAlchemyIdentityRepository(test_session)
+            await test_session.commit()
+            transaction_events.append("identity_commit")
+        except Exception:
+            await test_session.rollback()
+            transaction_events.append("identity_rollback")
+            raise
+
     async def override_mission_repository() -> AsyncIterator[
         SqlAlchemyMissionRepository
     ]:
         try:
             yield SqlAlchemyMissionRepository(test_session)
             await test_session.commit()
-            transaction_events.append("commit")
+            transaction_events.append("mission_commit")
         except Exception:
             await test_session.rollback()
-            transaction_events.append("rollback")
+            transaction_events.append("mission_rollback")
             raise
 
+    app.dependency_overrides[get_identity_repository] = (
+        override_identity_repository
+    )
     app.dependency_overrides[get_mission_repository] = (
         override_mission_repository
     )
@@ -51,7 +67,10 @@ async def test_mission_api_persists_mission_to_postgres(
     test_engine: AsyncEngine,
 ) -> None:
     client, transaction_events = mission_api_client
-    participant_ids = [str(uuid4()), str(uuid4()), str(uuid4()), str(uuid4())]
+    participant_ids = [
+        await create_identity(client)
+        for _ in range(4)
+    ]
     payload = make_mission_payload(participant_ids)
 
     create_response = await client.post("/missions", json=payload)
@@ -60,7 +79,7 @@ async def test_mission_api_persists_mission_to_postgres(
     assert create_response.status_code in {200, 201}
     assert mission_id is not None
     assert create_response.json()["status"] == "created"
-    assert "commit" in transaction_events
+    assert "mission_commit" in transaction_events
 
     get_response = await client.get(f"/missions/{mission_id}")
     list_response = await client.get("/missions")
@@ -95,6 +114,44 @@ async def test_mission_api_persists_mission_to_postgres(
     assert persisted_mission.best_option is None
 
 
+async def test_mission_api_rejects_unknown_participants_without_persisting(
+    mission_api_client: tuple[AsyncClient, list[str]],
+    test_engine: AsyncEngine,
+) -> None:
+    client, _transaction_events = mission_api_client
+    known_participant_ids = [
+        await create_identity(client)
+        for _ in range(2)
+    ]
+    unknown_participant_id = str(uuid4())
+    payload = make_mission_payload(
+        [*known_participant_ids, unknown_participant_id]
+    )
+    payload["constraints"] = {
+        **payload["constraints"],
+        "passengers_count": 3,
+    }
+
+    response = await client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unknown_participants"
+    assert response.json()["detail"]["participant_ids"] == [
+        unknown_participant_id
+    ]
+
+    session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        missions = await repository.list()
+
+    assert missions == []
+
+
 async def test_mission_api_returns_404_for_unknown_mission(
     mission_api_client: tuple[AsyncClient, list[str]],
 ) -> None:
@@ -103,7 +160,7 @@ async def test_mission_api_returns_404_for_unknown_mission(
     response = await client.get(f"/missions/{uuid4()}")
 
     assert response.status_code == 404
-    assert "rollback" in transaction_events
+    assert "mission_rollback" in transaction_events
 
 
 async def test_invalid_mission_is_not_persisted(
@@ -158,3 +215,16 @@ def make_mission_payload(
             "notify_only_if_no_match": True,
         },
     }
+
+
+async def create_identity(client: AsyncClient) -> str:
+    response = await client.post(
+        "/identities",
+        json={
+            "display_name": "Ivan Petrov",
+            "first_name": "Ivan",
+            "last_name": "Petrov",
+            "birth_date": "1990-01-01",
+        },
+    )
+    return str(response.json()["id"])

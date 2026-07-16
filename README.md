@@ -68,6 +68,9 @@ Create endpoints accept only data for the new entity. Identifiers and internal
 state such as mission status, execution log, and best option are created by the
 server.
 
+Mission creation requires existing Identity ids. `participant_ids` must be
+unique, and the number of participants must match `passengers_count`.
+
 ## Provider adapters
 
 The backend includes a `ProviderAdapter` interface and a `MockTrainAdapter`

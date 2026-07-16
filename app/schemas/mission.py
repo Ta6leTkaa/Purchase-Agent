@@ -1,6 +1,8 @@
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.mission import (
     FallbackRules,
@@ -20,6 +22,18 @@ class MissionCreate(BaseModel):
     provider: str = Field(min_length=1)
     constraints: TrainConstraints
     fallback_rules: FallbackRules = Field(default_factory=FallbackRules)
+
+    @model_validator(mode="after")
+    def validate_participants(self) -> Self:
+        if len(set(self.participant_ids)) != len(self.participant_ids):
+            msg = "participant_ids must be unique"
+            raise ValueError(msg)
+
+        if self.constraints.passengers_count != len(self.participant_ids):
+            msg = "passengers_count must match participant_ids count"
+            raise ValueError(msg)
+
+        return self
 
     def to_domain(self) -> Mission:
         return Mission(

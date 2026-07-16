@@ -41,9 +41,23 @@ def make_mission_payload(
     }
 
 
+def create_identity(client: TestClient) -> str:
+    response = client.post("/identities", json=make_identity_payload())
+    return str(response.json()["id"])
+
+
+def make_existing_participant_ids(
+    client: TestClient,
+    count: int = 1,
+) -> list[str]:
+    return [create_identity(client) for _ in range(count)]
+
+
 def test_post_missions_creates_mission() -> None:
     client = TestClient(app)
-    payload = make_mission_payload()
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
 
     response = client.post("/missions", json=payload)
 
@@ -54,7 +68,9 @@ def test_post_missions_creates_mission() -> None:
 
 def test_post_missions_without_id_generates_uuid() -> None:
     client = TestClient(app)
-    payload = make_mission_payload()
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
 
     response = client.post("/missions", json=payload)
 
@@ -64,7 +80,9 @@ def test_post_missions_without_id_generates_uuid() -> None:
 
 def test_post_missions_initializes_internal_fields() -> None:
     client = TestClient(app)
-    payload = make_mission_payload()
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
 
     response = client.post("/missions", json=payload)
 
@@ -76,7 +94,9 @@ def test_post_missions_initializes_internal_fields() -> None:
 
 def test_get_missions_returns_created_mission() -> None:
     client = TestClient(app)
-    payload = make_mission_payload()
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
     create_response = client.post("/missions", json=payload)
 
     response = client.get("/missions")
@@ -87,7 +107,9 @@ def test_get_missions_returns_created_mission() -> None:
 
 def test_get_mission_by_id_returns_created_mission() -> None:
     client = TestClient(app)
-    payload = make_mission_payload()
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
     create_response = client.post("/missions", json=payload)
     mission_id = create_response.json()["id"]
 
@@ -116,11 +138,87 @@ def test_post_missions_with_empty_participant_ids_returns_422() -> None:
 
 def test_post_missions_with_zero_passengers_count_returns_422() -> None:
     client = TestClient(app)
-    payload = make_mission_payload(passengers_count=0)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client),
+        passengers_count=0,
+    )
 
     response = client.post("/missions", json=payload)
 
     assert response.status_code == 422
+
+
+def test_post_missions_with_existing_participants_creates_mission() -> None:
+    client = TestClient(app)
+    participant_ids = make_existing_participant_ids(client, count=2)
+    payload = make_mission_payload(
+        participant_ids=participant_ids,
+        passengers_count=2,
+    )
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["participant_ids"] == participant_ids
+
+
+def test_post_missions_with_unknown_participant_returns_422() -> None:
+    client = TestClient(app)
+    unknown_participant_id = str(uuid4())
+    payload = make_mission_payload(participant_ids=[unknown_participant_id])
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "unknown_participants",
+        "message": "One or more participants do not exist",
+        "participant_ids": [unknown_participant_id],
+    }
+    assert asyncio.run(mission_repository.list()) == []
+
+
+def test_post_missions_with_multiple_unknown_participants_returns_all() -> None:
+    client = TestClient(app)
+    participant_ids = [str(uuid4()), str(uuid4())]
+    payload = make_mission_payload(
+        participant_ids=participant_ids,
+        passengers_count=2,
+    )
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["participant_ids"] == participant_ids
+    assert asyncio.run(mission_repository.list()) == []
+
+
+def test_post_missions_with_duplicate_participant_ids_returns_422() -> None:
+    client = TestClient(app)
+    participant_id = create_identity(client)
+    payload = make_mission_payload(
+        participant_ids=[participant_id, participant_id],
+        passengers_count=2,
+    )
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+    assert asyncio.run(mission_repository.list()) == []
+
+
+def test_post_missions_with_passenger_count_mismatch_returns_422() -> None:
+    client = TestClient(app)
+    participant_ids = make_existing_participant_ids(client, count=2)
+    payload = make_mission_payload(
+        participant_ids=participant_ids,
+        passengers_count=1,
+    )
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+    assert asyncio.run(mission_repository.list()) == []
 
 
 @pytest.mark.parametrize(
@@ -249,7 +347,9 @@ def test_post_mission_confirm_returns_completed() -> None:
 
 def test_post_mission_confirm_before_run_returns_409() -> None:
     client = TestClient(app)
-    payload = make_mission_payload()
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
     create_response = client.post("/missions", json=payload)
     mission_id = create_response.json()["id"]
 

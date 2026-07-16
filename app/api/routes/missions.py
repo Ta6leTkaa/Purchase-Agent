@@ -30,9 +30,26 @@ IdentityRepositoryDep: TypeAlias = Annotated[
 @router.post("")
 async def create_mission(
     mission: MissionCreate,
-    repository: MissionRepositoryDep,
+    mission_repository: MissionRepositoryDep,
+    identity_repository: IdentityRepositoryDep,
 ) -> Mission:
-    return await repository.create(mission.to_domain())
+    unknown_participant_ids: list[str] = []
+    for participant_id in mission.participant_ids:
+        identity = await identity_repository.get(participant_id)
+        if identity is None:
+            unknown_participant_ids.append(str(participant_id))
+
+    if unknown_participant_ids:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "unknown_participants",
+                "message": "One or more participants do not exist",
+                "participant_ids": unknown_participant_ids,
+            },
+        )
+
+    return await mission_repository.create(mission.to_domain())
 
 
 @router.get("")
