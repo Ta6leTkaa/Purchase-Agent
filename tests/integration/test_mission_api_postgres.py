@@ -51,14 +51,14 @@ async def test_mission_api_persists_mission_to_postgres(
     test_engine: AsyncEngine,
 ) -> None:
     client, transaction_events = mission_api_client
-    mission_id = str(uuid4())
     participant_ids = [str(uuid4()), str(uuid4()), str(uuid4()), str(uuid4())]
-    payload = make_mission_payload(mission_id, participant_ids)
+    payload = make_mission_payload(participant_ids)
 
     create_response = await client.post("/missions", json=payload)
+    mission_id = create_response.json()["id"]
 
     assert create_response.status_code in {200, 201}
-    assert create_response.json()["id"] == mission_id
+    assert mission_id is not None
     assert create_response.json()["status"] == "created"
     assert "commit" in transaction_events
 
@@ -111,9 +111,8 @@ async def test_invalid_mission_is_not_persisted(
     test_engine: AsyncEngine,
 ) -> None:
     client, _transaction_events = mission_api_client
-    mission_id = str(uuid4())
     participant_ids = [str(uuid4()), str(uuid4()), str(uuid4()), str(uuid4())]
-    payload = make_mission_payload(mission_id, participant_ids)
+    payload = make_mission_payload(participant_ids)
     payload["constraints"] = {
         **payload["constraints"],
         "passengers_count": 0,
@@ -130,20 +129,17 @@ async def test_invalid_mission_is_not_persisted(
     )
     async with session_maker() as session:
         repository = SqlAlchemyMissionRepository(session)
-        persisted_mission = await repository.get(UUID(mission_id))
+        missions = await repository.list()
 
-    assert persisted_mission is None
+    assert missions == []
 
 
 def make_mission_payload(
-    mission_id: str,
     participant_ids: list[str],
 ) -> dict[str, Any]:
     return {
-        "id": mission_id,
         "type": "train_trip",
         "title": "Family train trip",
-        "status": "created",
         "participant_ids": participant_ids,
         "provider": "mock_train",
         "constraints": {

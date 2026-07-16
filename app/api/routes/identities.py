@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies import get_identity_repository
 from app.domain.identity import Identity
 from app.repositories.identity import IdentityRepository
+from app.schemas.identity import IdentityCreate
 
 router = APIRouter(prefix="/identities", tags=["identities"])
 IdentityRepositoryDep: TypeAlias = Annotated[
@@ -16,10 +17,10 @@ IdentityRepositoryDep: TypeAlias = Annotated[
 
 @router.post("")
 async def create_identity(
-    identity: Identity,
+    identity: IdentityCreate,
     repository: IdentityRepositoryDep,
 ) -> Identity:
-    return await repository.create(identity)
+    return await repository.create(identity.to_domain())
 
 
 @router.get("")

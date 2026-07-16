@@ -50,14 +50,15 @@ async def test_identity_api_persists_identity_to_postgres(
     test_engine: AsyncEngine,
 ) -> None:
     client, transaction_events = identity_api_client
-    identity_id = str(uuid4())
-    document_id = str(uuid4())
-    payload = make_identity_payload(identity_id, document_id)
+    payload = make_identity_payload()
 
     create_response = await client.post("/identities", json=payload)
+    created_identity = create_response.json()
+    identity_id = created_identity["id"]
+    document_id = created_identity["documents"][0]["id"]
 
     assert create_response.status_code in {200, 201}
-    assert create_response.json()["id"] == identity_id
+    assert identity_id is not None
     assert "commit" in transaction_events
 
     get_response = await client.get(f"/identities/{identity_id}")
@@ -97,16 +98,14 @@ async def test_identity_api_returns_404_for_unknown_identity(
     assert "rollback" in transaction_events
 
 
-def make_identity_payload(identity_id: str, document_id: str) -> dict[str, object]:
+def make_identity_payload() -> dict[str, object]:
     return {
-        "id": identity_id,
         "display_name": "Ivan Petrov",
         "first_name": "Ivan",
         "last_name": "Petrov",
         "birth_date": "1990-01-01",
         "documents": [
             {
-                "id": document_id,
                 "type": "internal_passport",
                 "number": "1234567890",
                 "expires_at": "2030-01-01",

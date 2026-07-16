@@ -7,6 +7,7 @@ from app.dependencies import get_identity_repository, get_mission_repository
 from app.domain.mission import Mission
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
+from app.schemas.mission import MissionCreate
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
@@ -28,10 +29,10 @@ IdentityRepositoryDep: TypeAlias = Annotated[
 
 @router.post("")
 async def create_mission(
-    mission: Mission,
+    mission: MissionCreate,
     repository: MissionRepositoryDep,
 ) -> Mission:
-    return await repository.create(mission)
+    return await repository.create(mission.to_domain())
 
 
 @router.get("")

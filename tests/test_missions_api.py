@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Iterator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,7 +28,6 @@ def make_mission_payload(
         participant_ids = [str(uuid4())]
 
     return {
-        "id": str(uuid4()),
         "type": "train_trip",
         "title": "Moscow to Saint Petersburg",
         "participant_ids": participant_ids,
@@ -49,30 +48,53 @@ def test_post_missions_creates_mission() -> None:
     response = client.post("/missions", json=payload)
 
     assert response.status_code == 200
-    assert response.json()["id"] == payload["id"]
+    assert response.json()["id"] is not None
     assert response.json()["status"] == "created"
+
+
+def test_post_missions_without_id_generates_uuid() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload()
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert UUID(response.json()["id"])
+
+
+def test_post_missions_initializes_internal_fields() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload()
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "created"
+    assert response.json()["execution_log"] == []
+    assert response.json()["best_option"] is None
 
 
 def test_get_missions_returns_created_mission() -> None:
     client = TestClient(app)
     payload = make_mission_payload()
-    client.post("/missions", json=payload)
+    create_response = client.post("/missions", json=payload)
 
     response = client.get("/missions")
 
     assert response.status_code == 200
-    assert response.json()[0]["id"] == payload["id"]
+    assert response.json()[0]["id"] == create_response.json()["id"]
 
 
 def test_get_mission_by_id_returns_created_mission() -> None:
     client = TestClient(app)
     payload = make_mission_payload()
-    client.post("/missions", json=payload)
+    create_response = client.post("/missions", json=payload)
+    mission_id = create_response.json()["id"]
 
-    response = client.get(f"/missions/{payload['id']}")
+    response = client.get(f"/missions/{mission_id}")
 
     assert response.status_code == 200
-    assert response.json()["id"] == payload["id"]
+    assert response.json()["id"] == mission_id
 
 
 def test_get_unknown_mission_returns_404() -> None:
@@ -101,9 +123,32 @@ def test_post_missions_with_zero_passengers_count_returns_422() -> None:
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", str(uuid4())),
+        ("status", "completed"),
+        ("execution_log", []),
+        ("best_option", None),
+    ],
+)
+def test_post_missions_with_internal_fields_returns_422(
+    field: str,
+    value: object,
+) -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(),
+        field: value,
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+
+
 def make_identity_payload() -> dict[str, object]:
     return {
-        "id": str(uuid4()),
         "display_name": "Ivan Petrov",
         "first_name": "Ivan",
         "last_name": "Petrov",
@@ -115,13 +160,12 @@ def make_identity_payload() -> dict[str, object]:
 def test_post_mission_run_returns_requires_confirmation() -> None:
     client = TestClient(app)
     identity_payloads = [make_identity_payload() for _ in range(4)]
+    identity_ids: list[str] = []
     for identity_payload in identity_payloads:
-        client.post("/identities", json=identity_payload)
+        response = client.post("/identities", json=identity_payload)
+        identity_ids.append(response.json()["id"])
     mission_payload = make_mission_payload(
-        participant_ids=[
-            str(identity_payload["id"])
-            for identity_payload in identity_payloads
-        ],
+        participant_ids=identity_ids,
         passengers_count=4,
         provider="mock_train",
     )
@@ -135,9 +179,10 @@ def test_post_mission_run_returns_requires_confirmation() -> None:
         "max_total_price": 30000,
         "avoid_toilet": True,
     }
-    client.post("/missions", json=mission_payload)
+    create_response = client.post("/missions", json=mission_payload)
+    mission_id = create_response.json()["id"]
 
-    response = client.post(f"/missions/{mission_payload['id']}/run")
+    response = client.post(f"/missions/{mission_id}/run")
 
     assert response.status_code == 200
     assert response.json()["status"] == "requires_confirmation"
@@ -164,13 +209,12 @@ def test_post_unknown_mission_run_returns_404() -> None:
 
 def create_requires_confirmation_mission(client: TestClient) -> str:
     identity_payloads = [make_identity_payload() for _ in range(4)]
+    identity_ids: list[str] = []
     for identity_payload in identity_payloads:
-        client.post("/identities", json=identity_payload)
+        response = client.post("/identities", json=identity_payload)
+        identity_ids.append(response.json()["id"])
     mission_payload = make_mission_payload(
-        participant_ids=[
-            str(identity_payload["id"])
-            for identity_payload in identity_payloads
-        ],
+        participant_ids=identity_ids,
         passengers_count=4,
         provider="mock_train",
     )
@@ -184,9 +228,10 @@ def create_requires_confirmation_mission(client: TestClient) -> str:
         "max_total_price": 30000,
         "avoid_toilet": True,
     }
-    client.post("/missions", json=mission_payload)
-    client.post(f"/missions/{mission_payload['id']}/run")
-    return str(mission_payload["id"])
+    create_response = client.post("/missions", json=mission_payload)
+    mission_id = create_response.json()["id"]
+    client.post(f"/missions/{mission_id}/run")
+    return str(mission_id)
 
 
 def test_post_mission_confirm_returns_completed() -> None:
@@ -205,9 +250,10 @@ def test_post_mission_confirm_returns_completed() -> None:
 def test_post_mission_confirm_before_run_returns_409() -> None:
     client = TestClient(app)
     payload = make_mission_payload()
-    client.post("/missions", json=payload)
+    create_response = client.post("/missions", json=payload)
+    mission_id = create_response.json()["id"]
 
-    response = client.post(f"/missions/{payload['id']}/confirm")
+    response = client.post(f"/missions/{mission_id}/confirm")
 
     assert response.status_code == 409
 

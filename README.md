@@ -26,14 +26,12 @@ Example:
 curl -X POST http://127.0.0.1:8000/identities \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "00000000-0000-4000-8000-000000000001",
     "display_name": "Ivan Petrov",
     "first_name": "Ivan",
     "last_name": "Petrov",
     "birth_date": "1990-01-01",
     "documents": [
       {
-        "id": "00000000-0000-4000-8000-000000000002",
         "type": "internal_passport",
         "number": "1234567890"
       }
@@ -53,7 +51,6 @@ Example:
 curl -X POST http://127.0.0.1:8000/missions \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "00000000-0000-4000-8000-000000000101",
     "type": "train_trip",
     "title": "Moscow to Saint Petersburg",
     "participant_ids": ["00000000-0000-4000-8000-000000000001"],
@@ -66,6 +63,10 @@ curl -X POST http://127.0.0.1:8000/missions \
     }
   }'
 ```
+
+Create endpoints accept only data for the new entity. Identifiers and internal
+state such as mission status, execution log, and best option are created by the
+server.
 
 ## Provider adapters
 
