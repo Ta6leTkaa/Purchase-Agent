@@ -8,6 +8,7 @@ from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionStatus
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
+from app.services.mission_state_machine import MissionStateMachine
 from app.services.rule_engine import evaluate_train_options
 
 
@@ -24,9 +25,12 @@ async def run_mission(
     if mission is None:
         raise MissionNotFoundError
 
+    state_machine = MissionStateMachine()
+    state_machine.transition(mission, MissionStatus.running)
+
     identities = await _get_participants(mission, identity_repository)
     if len(identities) != len(mission.participant_ids):
-        mission.status = MissionStatus.failed
+        state_machine.transition(mission, MissionStatus.failed)
         _add_event(
             mission,
             "participant_missing",
@@ -34,12 +38,11 @@ async def run_mission(
         )
         return await mission_repository.update(mission)
 
-    mission.status = MissionStatus.running
     _add_event(mission, "mission_started", "Mission started.")
 
     adapter = get_adapter(mission.provider)
 
-    mission.status = MissionStatus.searching
+    state_machine.transition(mission, MissionStatus.searching)
     _add_event(mission, "search_started", "Provider option search started.")
 
     options = await adapter.search_options(mission, identities)
@@ -60,11 +63,11 @@ async def run_mission(
         None,
     )
     if best is None:
-        mission.status = MissionStatus.failed
+        state_machine.transition(mission, MissionStatus.failed)
         _add_event(mission, "no_valid_option_found", "No valid option found.")
         return await mission_repository.update(mission)
 
-    mission.status = MissionStatus.option_found
+    state_machine.transition(mission, MissionStatus.option_found)
     mission.best_option = best.option
     _add_event(
         mission,
@@ -76,12 +79,12 @@ async def run_mission(
         },
     )
 
-    mission.status = MissionStatus.reserving
+    state_machine.transition(mission, MissionStatus.reserving)
     _add_event(mission, "reservation_started", "Reservation started.")
 
     reservation_result = await adapter.reserve_option(best.option, mission)
     if not reservation_result.success:
-        mission.status = MissionStatus.failed
+        state_machine.transition(mission, MissionStatus.failed)
         _add_event(
             mission,
             "reservation_failed",
@@ -91,14 +94,14 @@ async def run_mission(
         return await mission_repository.update(mission)
 
     if reservation_result.requires_confirmation:
-        mission.status = MissionStatus.requires_confirmation
+        state_machine.transition(mission, MissionStatus.requires_confirmation)
         _add_event(
             mission,
             "waiting_for_user_confirmation",
             "Waiting for user confirmation.",
         )
     else:
-        mission.status = MissionStatus.completed
+        state_machine.transition(mission, MissionStatus.completed)
         _add_event(mission, "mission_completed", "Mission completed.")
 
     return await mission_repository.update(mission)

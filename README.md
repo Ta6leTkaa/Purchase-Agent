@@ -92,6 +92,13 @@ Example:
 curl -X POST http://127.0.0.1:8000/missions/{mission_id}/run
 ```
 
+## Mission state machine
+
+Mission statuses are changed through explicit valid transitions. `completed`
+and `failed` are terminal statuses. The state machine does not write execution
+events and does not handle persistence; Mission Engine and repositories remain
+responsible for those concerns.
+
 ## Repository abstraction
 
 API routes and services depend on repository interfaces instead of a concrete
