@@ -109,6 +109,7 @@ Manual admin processing endpoint:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/admin/missions/process-due \
+  -H "X-Admin-API-Key: replace-with-a-long-random-value" \
   -H "Content-Type: application/json" \
   -d '{"limit": 100}'
 ```
@@ -116,6 +117,22 @@ curl -X POST http://127.0.0.1:8000/admin/missions/process-due \
 This endpoint runs only one processing pass. It is intended for local
 development and manual checks; it is not a scheduler. A future background
 worker should replace this manual trigger.
+
+## Admin API key
+
+Administrative endpoints require `X-Admin-API-Key`. The key protects only
+admin routes and is a temporary local-development guard until full
+authentication exists.
+
+```bash
+curl -X POST http://localhost:8000/admin/missions/process-due \
+  -H "X-Admin-API-Key: replace-with-a-long-random-value" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 100}'
+```
+
+Set `ADMIN_API_KEY` through environment or secret management. Do not store real
+keys in Git.
 
 ## Provider adapters
 

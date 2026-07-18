@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://purchase_agent:purchase_agent@localhost:5432/"
         "purchase_agent"
     )
+    admin_api_key: SecretStr | None = None
 
 
 settings = Settings()

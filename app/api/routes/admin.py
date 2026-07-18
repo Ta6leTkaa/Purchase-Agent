@@ -4,6 +4,7 @@ from typing import Annotated, TypeAlias
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.dependencies.auth import require_admin_api_key
 from app.dependencies import (
     get_current_time,
     get_identity_repository,
@@ -26,6 +27,7 @@ IdentityRepositoryDep: TypeAlias = Annotated[
     Depends(get_identity_repository),
 ]
 CurrentTimeDep: TypeAlias = Annotated[datetime, Depends(get_current_time)]
+AdminApiKeyDep: TypeAlias = Annotated[None, Depends(require_admin_api_key)]
 
 
 class ProcessDueMissionsRequest(BaseModel):
@@ -37,6 +39,7 @@ class ProcessDueMissionsRequest(BaseModel):
 @router.post("/missions/process-due")
 async def process_due_missions_endpoint(
     request: ProcessDueMissionsRequest,
+    _admin_api_key: AdminApiKeyDep,
     mission_repository: MissionRepositoryDep,
     identity_repository: IdentityRepositoryDep,
     current_time: CurrentTimeDep,

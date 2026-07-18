@@ -5,7 +5,9 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
+from app.core.config import settings
 from app.dependencies import get_current_time, identity_repository, mission_repository
 from app.domain.identity import Identity
 from app.domain.mission import (
@@ -18,15 +20,19 @@ from app.domain.mission import (
 from app.main import app
 
 CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+ADMIN_HEADERS = {"X-Admin-API-Key": "test-admin-key"}
 
 
 @pytest.fixture(autouse=True)
 def clear_repositories() -> Iterator[None]:
+    original_admin_api_key = settings.admin_api_key
+    settings.admin_api_key = SecretStr("test-admin-key")
     asyncio.run(identity_repository.clear())
     asyncio.run(mission_repository.clear())
     app.dependency_overrides[get_current_time] = lambda: CURRENT_TIME
     yield
     app.dependency_overrides.clear()
+    settings.admin_api_key = original_admin_api_key
     asyncio.run(identity_repository.clear())
     asyncio.run(mission_repository.clear())
 
@@ -34,7 +40,11 @@ def clear_repositories() -> Iterator[None]:
 def test_process_due_returns_empty_result_without_due_missions() -> None:
     client = TestClient(app)
 
-    response = client.post("/admin/missions/process-due", json={})
+    response = client.post(
+        "/admin/missions/process-due",
+        json={},
+        headers=ADMIN_HEADERS,
+    )
 
     assert response.status_code == 200
     assert response.json() == {
@@ -53,7 +63,11 @@ def test_process_due_runs_due_mission() -> None:
         scheduled_at=CURRENT_TIME,
     )
 
-    response = client.post("/admin/missions/process-due", json={})
+    response = client.post(
+        "/admin/missions/process-due",
+        json={},
+        headers=ADMIN_HEADERS,
+    )
     stored_mission = asyncio.run(mission_repository.get(mission.id))
 
     assert response.status_code == 200
@@ -75,7 +89,11 @@ def test_process_due_skips_future_mission() -> None:
         scheduled_at=CURRENT_TIME + timedelta(minutes=1),
     )
 
-    response = client.post("/admin/missions/process-due", json={})
+    response = client.post(
+        "/admin/missions/process-due",
+        json={},
+        headers=ADMIN_HEADERS,
+    )
     stored_mission = asyncio.run(mission_repository.get(mission.id))
 
     assert response.status_code == 200
@@ -100,6 +118,7 @@ def test_process_due_passes_limit_to_processor() -> None:
     response = client.post(
         "/admin/missions/process-due",
         json={"limit": 1},
+        headers=ADMIN_HEADERS,
     )
     stored_first_mission = asyncio.run(
         mission_repository.get(first_mission.id)
@@ -126,6 +145,7 @@ def test_process_due_rejects_invalid_limit(limit: int) -> None:
     response = client.post(
         "/admin/missions/process-due",
         json={"limit": limit},
+        headers=ADMIN_HEADERS,
     )
 
     assert response.status_code == 422

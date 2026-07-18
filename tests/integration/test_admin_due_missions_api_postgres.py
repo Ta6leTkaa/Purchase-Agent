@@ -4,8 +4,10 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.core.config import settings
 from app.dependencies import (
     get_current_time,
     get_identity_repository,
@@ -26,12 +28,16 @@ from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+ADMIN_HEADERS = {"X-Admin-API-Key": "test-admin-key"}
 
 
 @pytest.fixture()
 async def admin_client(
     test_session: AsyncSession,
 ) -> AsyncIterator[AsyncClient]:
+    original_admin_api_key = settings.admin_api_key
+    settings.admin_api_key = SecretStr("test-admin-key")
+
     async def override_identity_repository() -> AsyncIterator[
         SqlAlchemyIdentityRepository
     ]:
@@ -69,6 +75,7 @@ async def admin_client(
             yield client
     finally:
         app.dependency_overrides.clear()
+        settings.admin_api_key = original_admin_api_key
 
 
 async def test_admin_process_due_persists_postgres_updates(
@@ -83,6 +90,7 @@ async def test_admin_process_due_persists_postgres_updates(
     response = await admin_client.post(
         "/admin/missions/process-due",
         json={"limit": 100},
+        headers=ADMIN_HEADERS,
     )
     persisted_mission = await load_mission(test_engine, mission.id)
 
