@@ -255,6 +255,10 @@ async def test_claim_due_uses_skip_locked_for_concurrent_claims(
         mission.status is MissionStatus.processing
         for mission in [*first_claim, *second_claim]
     )
+    assert all(
+        mission.claimed_at == current_time
+        for mission in [*first_claim, *second_claim]
+    )
 
     async with session_maker() as session:
         repository = SqlAlchemyMissionRepository(session)
@@ -269,10 +273,16 @@ async def test_claim_due_uses_skip_locked_for_concurrent_claims(
         mission is not None and mission.status is MissionStatus.processing
         for mission in persisted_due_missions
     )
+    assert all(
+        mission is not None and mission.claimed_at == current_time
+        for mission in persisted_due_missions
+    )
     assert persisted_future_mission is not None
     assert persisted_future_mission.status is MissionStatus.waiting
+    assert persisted_future_mission.claimed_at is None
     assert persisted_created_mission is not None
     assert persisted_created_mission.status is MissionStatus.created
+    assert persisted_created_mission.claimed_at is None
 
 
 def make_mission(

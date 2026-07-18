@@ -82,6 +82,33 @@ def test_scheduled_at_survives_round_trip() -> None:
     assert restored_mission.scheduled_at == scheduled_at
 
 
+def test_claimed_at_survives_round_trip() -> None:
+    claimed_at = datetime(2026, 8, 1, 12, 30, tzinfo=timezone.utc)
+    mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=claimed_at,
+    )
+    model = mission_to_model(mission)
+
+    restored_mission = mission_from_model(model)
+
+    assert model.claimed_at == claimed_at
+    assert restored_mission.claimed_at == claimed_at
+    assert restored_mission.status is MissionStatus.processing
+
+
+def test_legacy_processing_without_claimed_at_can_be_restored() -> None:
+    mission = make_mission(status=MissionStatus.created)
+    model = mission_to_model(mission)
+    model.status = MissionStatus.processing.value
+    model.claimed_at = None
+
+    restored_mission = mission_from_model(model)
+
+    assert restored_mission.status is MissionStatus.processing
+    assert restored_mission.claimed_at is None
+
+
 def test_none_best_option_survives_round_trip() -> None:
     mission = make_mission(best_option=None)
     model = mission_to_model(mission)
@@ -94,6 +121,8 @@ def test_none_best_option_survives_round_trip() -> None:
 def make_mission(
     best_option: ProviderOption | None | object = _USE_DEFAULT_BEST_OPTION,
     scheduled_at: datetime | None = None,
+    claimed_at: datetime | None = None,
+    status: MissionStatus = MissionStatus.requires_confirmation,
 ) -> Mission:
     if best_option is _USE_DEFAULT_BEST_OPTION:
         best_option = make_provider_option()
@@ -102,7 +131,7 @@ def make_mission(
         id=uuid4(),
         type=MissionType.train_trip,
         title="Moscow to Saint Petersburg",
-        status=MissionStatus.requires_confirmation,
+        status=status,
         participant_ids=[uuid4(), uuid4()],
         provider="mock_train",
         constraints=TrainConstraints(
@@ -119,6 +148,7 @@ def make_mission(
             allow_adjacent_compartments=True,
         ),
         scheduled_at=scheduled_at,
+        claimed_at=claimed_at,
         execution_log=[
             ExecutionEvent(
                 timestamp=datetime(2026, 7, 13, 10, 0),

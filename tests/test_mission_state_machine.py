@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -51,6 +51,84 @@ def test_processing_status_can_transition_to_terminal_results() -> None:
         state_machine.transition(mission, target)
 
         assert mission.status is target
+        assert mission.claimed_at is None
+
+
+def test_waiting_to_processing_sets_claimed_at() -> None:
+    state_machine = MissionStateMachine()
+    current_time = aware_datetime()
+    mission = make_mission(status=MissionStatus.waiting)
+
+    state_machine.transition(
+        mission,
+        MissionStatus.processing,
+        current_time=current_time,
+    )
+
+    assert mission.status is MissionStatus.processing
+    assert mission.claimed_at == current_time
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        MissionStatus.requires_confirmation,
+        MissionStatus.completed,
+        MissionStatus.failed,
+    ],
+)
+def test_processing_exit_clears_claimed_at(target: MissionStatus) -> None:
+    state_machine = MissionStateMachine()
+    mission = make_mission(status=MissionStatus.processing)
+
+    state_machine.transition(mission, target)
+
+    assert mission.status is target
+    assert mission.claimed_at is None
+
+
+def test_processing_transition_rejects_naive_current_time() -> None:
+    state_machine = MissionStateMachine()
+    mission = make_mission(status=MissionStatus.waiting)
+
+    with pytest.raises(InvalidMissionTransitionError):
+        state_machine.transition(
+            mission,
+            MissionStatus.processing,
+            current_time=datetime(2026, 8, 1, 10, 0),
+        )
+
+    assert mission.status is MissionStatus.waiting
+    assert mission.claimed_at is None
+
+
+def test_processing_transition_requires_current_time() -> None:
+    state_machine = MissionStateMachine()
+    mission = make_mission(status=MissionStatus.waiting)
+
+    with pytest.raises(InvalidMissionTransitionError):
+        state_machine.transition(mission, MissionStatus.processing)
+
+    assert mission.status is MissionStatus.waiting
+    assert mission.claimed_at is None
+
+
+def test_processing_mission_requires_claimed_at() -> None:
+    with pytest.raises(ValueError):
+        Mission(
+            id=uuid4(),
+            type=MissionType.train_trip,
+            title="Family train trip",
+            status=MissionStatus.processing,
+            participant_ids=[uuid4()],
+            provider="mock_train",
+            constraints=TrainConstraints(
+                from_city="Moscow",
+                to_city="Saint Petersburg",
+                travel_date=date(2026, 8, 1),
+                passengers_count=1,
+            ),
+        )
 
 
 @pytest.mark.parametrize(
@@ -130,4 +208,13 @@ def make_mission(
             travel_date=date(2026, 8, 1),
             passengers_count=1,
         ),
+        claimed_at=(
+            aware_datetime()
+            if status is MissionStatus.processing
+            else None
+        ),
     )
+
+
+def aware_datetime() -> datetime:
+    return datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)

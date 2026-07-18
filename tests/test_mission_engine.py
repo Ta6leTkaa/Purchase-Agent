@@ -179,6 +179,7 @@ def test_run_processing_mission_is_allowed_for_processor(
         [identity.id for identity in identities],
     )
     mission.status = MissionStatus.processing
+    mission.claimed_at = datetime.now(timezone.utc)
     asyncio.run(mission_repository.update(mission))
 
     updated_mission = asyncio.run(
@@ -191,6 +192,7 @@ def test_run_processing_mission_is_allowed_for_processor(
     )
 
     assert updated_mission.status is MissionStatus.requires_confirmation
+    assert updated_mission.claimed_at is None
 
 
 def test_run_mission_adds_execution_events(

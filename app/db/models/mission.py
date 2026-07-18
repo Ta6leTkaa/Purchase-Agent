@@ -48,6 +48,10 @@ class MissionModel(Base):
         AwareDateTime(),
         nullable=True,
     )
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        AwareDateTime(),
+        nullable=True,
+    )
     participant_ids: Mapped[list[str]] = mapped_column(
         preferences_type,
         nullable=False,
@@ -91,6 +95,7 @@ def mission_to_model(mission: Mission) -> MissionModel:
         status=mission.status.value,
         provider=mission.provider,
         scheduled_at=mission.scheduled_at,
+        claimed_at=mission.claimed_at,
         participant_ids=[
             str(participant_id)
             for participant_id in mission.participant_ids
@@ -110,23 +115,35 @@ def mission_to_model(mission: Mission) -> MissionModel:
 
 
 def mission_from_model(model: MissionModel) -> Mission:
-    return Mission(
-        id=model.id,
-        type=MissionType(model.type),
-        title=model.title,
-        status=MissionStatus(model.status),
-        participant_ids=model.participant_ids,
-        provider=model.provider,
-        scheduled_at=model.scheduled_at,
-        constraints=TrainConstraints.model_validate(model.constraints),
-        fallback_rules=FallbackRules.model_validate(model.fallback_rules),
-        execution_log=[
+    mission_data = {
+        "id": model.id,
+        "type": MissionType(model.type),
+        "title": model.title,
+        "status": MissionStatus(model.status),
+        "participant_ids": [
+            UUID(str(participant_id))
+            for participant_id in model.participant_ids
+        ],
+        "provider": model.provider,
+        "scheduled_at": model.scheduled_at,
+        "claimed_at": model.claimed_at,
+        "constraints": TrainConstraints.model_validate(model.constraints),
+        "fallback_rules": FallbackRules.model_validate(model.fallback_rules),
+        "execution_log": [
             ExecutionEvent.model_validate(event)
             for event in model.execution_log
         ],
-        best_option=(
+        "best_option": (
             ProviderOption.model_validate(model.best_option)
             if model.best_option is not None
             else None
         ),
-    )
+    }
+
+    if (
+        mission_data["status"] is MissionStatus.processing
+        and mission_data["claimed_at"] is None
+    ):
+        return Mission.model_construct(**mission_data)
+
+    return Mission(**mission_data)

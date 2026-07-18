@@ -69,6 +69,7 @@ async def _mark_claimed_mission_failed(
     stored_mission = await mission_repository.get(mission.id)
     failed_mission = stored_mission or mission
     failed_mission.status = MissionStatus.failed
+    failed_mission.claimed_at = None
     _add_event(
         failed_mission,
         "mission_processing_failed",

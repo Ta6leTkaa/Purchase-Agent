@@ -2,7 +2,7 @@ from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.domain.execution import ExecutionEvent
 from app.domain.provider import ProviderOption
@@ -52,18 +52,32 @@ class Mission(BaseModel):
     constraints: TrainConstraints
     fallback_rules: FallbackRules = FallbackRules()
     scheduled_at: datetime | None = None
+    claimed_at: datetime | None = None
     execution_log: list[ExecutionEvent] = []
     best_option: ProviderOption | None = None
 
-    @field_validator("scheduled_at")
+    @field_validator("scheduled_at", "claimed_at")
     @classmethod
-    def validate_scheduled_at_timezone(
+    def validate_datetime_timezone(
         cls,
-        scheduled_at: datetime | None,
+        value: datetime | None,
     ) -> datetime | None:
-        if scheduled_at is None:
+        if value is None:
             return None
-        if scheduled_at.tzinfo is None or scheduled_at.utcoffset() is None:
-            msg = "scheduled_at must be timezone-aware"
+        if value.tzinfo is None or value.utcoffset() is None:
+            msg = "datetime value must be timezone-aware"
             raise ValueError(msg)
-        return scheduled_at
+        return value
+
+    @model_validator(mode="after")
+    def validate_claimed_at_for_status(self) -> "Mission":
+        if self.status is MissionStatus.processing and self.claimed_at is None:
+            msg = "claimed_at is required for processing missions"
+            raise ValueError(msg)
+        if (
+            self.status is not MissionStatus.processing
+            and self.claimed_at is not None
+        ):
+            msg = "claimed_at is allowed only for processing missions"
+            raise ValueError(msg)
+        return self

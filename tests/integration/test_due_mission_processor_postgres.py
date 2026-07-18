@@ -64,6 +64,7 @@ async def test_due_mission_processor_persists_postgres_updates(
     for persisted_mission in persisted_missions:
         assert persisted_mission is not None
         assert persisted_mission.status is MissionStatus.requires_confirmation
+        assert persisted_mission.claimed_at is None
         assert persisted_mission.best_option is not None
         assert persisted_mission.best_option.train_number == "001A"
         assert "waiting_for_user_confirmation" in [

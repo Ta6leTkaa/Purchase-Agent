@@ -75,6 +75,7 @@ class InMemoryMissionRepository:
             )[:limit]
             for mission in claimed_missions:
                 mission.status = MissionStatus.processing
+                mission.claimed_at = current_time
                 self._missions[mission.id] = mission
             return claimed_missions
 

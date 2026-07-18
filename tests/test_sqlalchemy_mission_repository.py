@@ -238,6 +238,7 @@ def test_claim_due_commits_processing_status() -> None:
             ]
             assert loaded_mission is not None
             assert loaded_mission.status is MissionStatus.processing
+            assert loaded_mission.claimed_at == current_time
         finally:
             await engine.dispose()
 
@@ -457,6 +458,13 @@ async def _claim_due_filters_orders_limits(
 
     assert [mission.id for mission in claimed_missions] == [earlier_mission.id]
     assert claimed_missions[0].status is MissionStatus.processing
+    assert claimed_missions[0].claimed_at == current_time
+    loaded_future_mission = await repository.get(future_mission.id)
+    loaded_created_mission = await repository.get(created_mission.id)
+    assert loaded_future_mission is not None
+    assert loaded_future_mission.claimed_at is None
+    assert loaded_created_mission is not None
+    assert loaded_created_mission.claimed_at is None
 
 
 async def _claim_due_does_not_claim_twice(
@@ -470,10 +478,16 @@ async def _claim_due_does_not_claim_twice(
     await repository.create(mission)
 
     first_claim = await repository.claim_due(current_time)
-    second_claim = await repository.claim_due(current_time)
+    second_claim = await repository.claim_due(
+        current_time + timedelta(minutes=5)
+    )
+    loaded_mission = await repository.get(mission.id)
 
     assert [mission.id for mission in first_claim] == [mission.id]
     assert second_claim == []
+    assert first_claim[0].claimed_at == current_time
+    assert loaded_mission is not None
+    assert loaded_mission.claimed_at == current_time
 
 
 def make_mission(

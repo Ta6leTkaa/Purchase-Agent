@@ -275,6 +275,7 @@ def test_post_missions_with_passenger_count_mismatch_returns_422() -> None:
         ("status", "completed"),
         ("execution_log", []),
         ("best_option", None),
+        ("claimed_at", datetime.now(timezone.utc).isoformat()),
     ],
 )
 def test_post_missions_with_internal_fields_returns_422(

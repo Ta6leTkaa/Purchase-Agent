@@ -108,13 +108,14 @@ now; a persistent background scheduler will be added separately.
 ## Mission claiming
 
 Before execution, each due mission is atomically claimed by moving it from
-`waiting` to `processing`. PostgreSQL claiming uses `FOR UPDATE SKIP LOCKED`,
-so multiple processing cycles can run without selecting the same mission at the
-same time.
+`waiting` to `processing` and setting `claimed_at` to the claim time.
+PostgreSQL claiming uses `FOR UPDATE SKIP LOCKED`, so multiple processing
+cycles can run without selecting the same mission at the same time.
 
 This prevents concurrent processing of one mission, but it is not a full
-exactly-once guarantee. Recovery for missions stuck in `processing` will be
-added separately.
+exactly-once guarantee. After normal completion, `claimed_at` is cleared. A
+mission left in `processing` with `claimed_at` may be stuck; automatic detection
+and recovery for that case will be added separately.
 
 Manual admin processing endpoint:
 

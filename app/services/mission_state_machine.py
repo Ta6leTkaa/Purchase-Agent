@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from app.domain.mission import Mission, MissionStatus
 
 
@@ -45,7 +47,12 @@ class MissionStateMachine:
         MissionStatus.failed: set(),
     }
 
-    def transition(self, mission: Mission, target: MissionStatus) -> Mission:
+    def transition(
+        self,
+        mission: Mission,
+        target: MissionStatus,
+        current_time: datetime | None = None,
+    ) -> Mission:
         current = mission.status
         if not self.can_transition(current, target):
             message = (
@@ -54,7 +61,21 @@ class MissionStateMachine:
             )
             raise InvalidMissionTransitionError(message)
 
+        if current is MissionStatus.waiting and target is MissionStatus.processing:
+            if current_time is None:
+                message = "current_time is required for processing transition"
+                raise InvalidMissionTransitionError(message)
+            if current_time.tzinfo is None or current_time.utcoffset() is None:
+                message = "current_time must be timezone-aware"
+                raise InvalidMissionTransitionError(message)
+
         mission.status = target
+        if current is MissionStatus.waiting and target is MissionStatus.processing:
+            mission.claimed_at = current_time
+        elif current is MissionStatus.processing:
+            mission.claimed_at = None
+        else:
+            mission.claimed_at = None
         return mission
 
     def can_transition(

@@ -158,6 +158,9 @@ def test_claim_due_returns_due_waiting_missions_as_processing() -> None:
             due_mission.id
         ]
         assert claimed_missions[0].status is MissionStatus.processing
+        assert claimed_missions[0].claimed_at == current_time
+        assert future_mission.claimed_at is None
+        assert created_mission.claimed_at is None
 
     asyncio.run(scenario())
 
@@ -173,10 +176,16 @@ def test_claim_due_does_not_return_same_mission_twice() -> None:
         await repository.create(mission)
 
         first_claim = await repository.claim_due(current_time)
-        second_claim = await repository.claim_due(current_time)
+        second_claim = await repository.claim_due(
+            current_time + timedelta(minutes=5)
+        )
+        stored_mission = await repository.get(mission.id)
 
         assert [mission.id for mission in first_claim] == [mission.id]
         assert second_claim == []
+        assert first_claim[0].claimed_at == current_time
+        assert stored_mission is not None
+        assert stored_mission.claimed_at == current_time
 
     asyncio.run(scenario())
 
@@ -211,6 +220,10 @@ def test_claim_due_concurrent_calls_do_not_overlap() -> None:
             mission.status is MissionStatus.processing
             for mission in [*first_claim, *second_claim]
         )
+        assert all(
+            mission.claimed_at == current_time + timedelta(seconds=10)
+            for mission in [*first_claim, *second_claim]
+        )
 
     asyncio.run(scenario())
 
@@ -235,6 +248,7 @@ def test_claim_due_sorts_by_scheduled_at_and_applies_limit() -> None:
         assert [mission.id for mission in claimed_missions] == [
             earlier_mission.id
         ]
+        assert claimed_missions[0].claimed_at == current_time
 
     asyncio.run(scenario())
 
