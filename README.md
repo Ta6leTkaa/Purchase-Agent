@@ -118,6 +118,20 @@ This endpoint runs only one processing pass. It is intended for local
 development and manual checks; it is not a scheduler. A future background
 worker should replace this manual trigger.
 
+## CLI processing
+
+Due missions can also be processed without starting the FastAPI server:
+
+```bash
+python -m app.cli process-due
+python -m app.cli process-due --limit 50
+```
+
+The command runs exactly one processing cycle, uses `DATABASE_URL` from
+configuration, and writes a JSON result to stdout. It can be run manually today
+and later called by cron or another external scheduler. The CLI itself does not
+contain a polling loop.
+
 ## Admin API key
 
 Administrative endpoints require `X-Admin-API-Key`. The key protects only
