@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -82,6 +82,31 @@ class SqlAlchemyMissionRepository(MissionRepository):
             for model in models
         ]
 
+    async def list_stale_processing(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+        limit: int = 100,
+    ) -> list[Mission]:
+        _validate_stale_processing_arguments(
+            current_time,
+            claim_timeout,
+            limit,
+        )
+        stale_before = current_time - claim_timeout
+        result = await self._session.execute(
+            select(MissionModel)
+            .where(MissionModel.status == MissionStatus.processing.value)
+            .where(MissionModel.claimed_at.is_not(None))
+            .where(MissionModel.claimed_at <= stale_before)
+            .order_by(MissionModel.claimed_at.asc())
+            .limit(limit)
+        )
+        return [
+            mission_from_model(model)
+            for model in result.scalars().all()
+        ]
+
     async def get(self, mission_id: UUID) -> Mission | None:
         model = await self._session.get(MissionModel, mission_id)
         if model is None:
@@ -130,3 +155,13 @@ def _validate_list_due_arguments(
         )
     if limit <= 0:
         raise ValueError("limit must be greater than 0")
+
+
+def _validate_stale_processing_arguments(
+    current_time: datetime,
+    claim_timeout: timedelta,
+    limit: int,
+) -> None:
+    _validate_list_due_arguments(current_time, limit)
+    if claim_timeout <= timedelta(0):
+        raise ValueError("claim_timeout must be greater than 0")

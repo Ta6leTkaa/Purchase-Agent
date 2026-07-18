@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -30,6 +30,14 @@ class MissionRepository(Protocol):
     async def claim_due(
         self,
         current_time: datetime,
+        limit: int = 100,
+    ) -> list[Mission]:
+        ...
+
+    async def list_stale_processing(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
         limit: int = 100,
     ) -> list[Mission]:
         ...

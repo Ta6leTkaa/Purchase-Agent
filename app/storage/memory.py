@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from app.domain.identity import Identity
@@ -79,6 +79,30 @@ class InMemoryMissionRepository:
                 self._missions[mission.id] = mission
             return claimed_missions
 
+    async def list_stale_processing(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+        limit: int = 100,
+    ) -> list[Mission]:
+        _validate_stale_processing_arguments(
+            current_time,
+            claim_timeout,
+            limit,
+        )
+        stale_before = current_time - claim_timeout
+        stale_missions = [
+            mission
+            for mission in self._missions.values()
+            if mission.status is MissionStatus.processing
+            and mission.claimed_at is not None
+            and mission.claimed_at <= stale_before
+        ]
+        return sorted(
+            stale_missions,
+            key=lambda mission: mission.claimed_at or current_time,
+        )[:limit]
+
     async def get(self, mission_id: UUID) -> Mission | None:
         return self._missions.get(mission_id)
 
@@ -137,3 +161,13 @@ def _validate_list_due_arguments(
         )
     if limit <= 0:
         raise ValueError("limit must be greater than 0")
+
+
+def _validate_stale_processing_arguments(
+    current_time: datetime,
+    claim_timeout: timedelta,
+    limit: int,
+) -> None:
+    _validate_list_due_arguments(current_time, limit)
+    if claim_timeout <= timedelta(0):
+        raise ValueError("claim_timeout must be greater than 0")

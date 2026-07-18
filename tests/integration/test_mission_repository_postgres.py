@@ -285,11 +285,112 @@ async def test_claim_due_uses_skip_locked_for_concurrent_claims(
     assert persisted_created_mission.claimed_at is None
 
 
+async def test_list_stale_processing_is_read_only_and_filters_in_database(
+    test_engine: AsyncEngine,
+    clean_database: None,
+) -> None:
+    session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    oldest_mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=current_time - timedelta(minutes=30),
+    )
+    boundary_mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=current_time - timedelta(minutes=15),
+    )
+    fresh_mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=current_time - timedelta(minutes=14),
+    )
+    waiting_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time,
+    )
+    legacy_processing_mission = Mission.model_construct(
+        **{
+            **make_mission(
+                status=MissionStatus.processing,
+                claimed_at=current_time,
+            ).model_dump(),
+            "claimed_at": None,
+        }
+    )
+    for mission in [
+        boundary_mission,
+        fresh_mission,
+        waiting_mission,
+        legacy_processing_mission,
+        oldest_mission,
+    ]:
+        mission.execution_log = [make_execution_event()]
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        for mission in [
+            boundary_mission,
+            fresh_mission,
+            waiting_mission,
+            legacy_processing_mission,
+            oldest_mission,
+        ]:
+            await repository.create(mission)
+        await session.commit()
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        stale_missions = await repository.list_stale_processing(
+            current_time,
+            timedelta(minutes=15),
+        )
+        limited_missions = await repository.list_stale_processing(
+            current_time,
+            timedelta(minutes=15),
+            limit=1,
+        )
+
+    assert [mission.id for mission in stale_missions] == [
+        oldest_mission.id,
+        boundary_mission.id,
+    ]
+    assert [mission.id for mission in limited_missions] == [
+        oldest_mission.id
+    ]
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        persisted_oldest_mission = await repository.get(oldest_mission.id)
+        persisted_boundary_mission = await repository.get(boundary_mission.id)
+        persisted_fresh_mission = await repository.get(fresh_mission.id)
+        persisted_waiting_mission = await repository.get(waiting_mission.id)
+        persisted_legacy_mission = await repository.get(
+            legacy_processing_mission.id
+        )
+
+    assert persisted_oldest_mission is not None
+    assert persisted_oldest_mission.status is MissionStatus.processing
+    assert persisted_oldest_mission.claimed_at == oldest_mission.claimed_at
+    assert persisted_oldest_mission.execution_log == oldest_mission.execution_log
+    assert persisted_boundary_mission is not None
+    assert persisted_boundary_mission.claimed_at == boundary_mission.claimed_at
+    assert persisted_fresh_mission is not None
+    assert persisted_fresh_mission.claimed_at == fresh_mission.claimed_at
+    assert persisted_waiting_mission is not None
+    assert persisted_waiting_mission.status is MissionStatus.waiting
+    assert persisted_legacy_mission is not None
+    assert persisted_legacy_mission.claimed_at is None
+
+
 def make_mission(
     participant_ids: list[UUID] | None = None,
     best_option: ProviderOption | None = None,
     status: MissionStatus = MissionStatus.created,
     scheduled_at: datetime | None = None,
+    claimed_at: datetime | None = None,
 ) -> Mission:
     return Mission(
         id=uuid4(),
@@ -319,6 +420,7 @@ def make_mission(
             notify_only_if_no_match=False,
         ),
         scheduled_at=scheduled_at,
+        claimed_at=claimed_at,
         execution_log=[],
         best_option=best_option,
     )

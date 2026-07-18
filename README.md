@@ -117,6 +117,24 @@ exactly-once guarantee. After normal completion, `claimed_at` is cleared. A
 mission left in `processing` with `claimed_at` may be stuck; automatic detection
 and recovery for that case will be added separately.
 
+## Stale processing missions
+
+A stale mission is a mission in `processing` whose `claimed_at` is older than a
+chosen timeout. Repositories can diagnose these records with a read-only query:
+
+```python
+from datetime import timedelta
+
+stale_missions = await mission_repository.list_stale_processing(
+    current_time=clock.now(),
+    claim_timeout=timedelta(minutes=15),
+    limit=100,
+)
+```
+
+Missions with `claimed_at=None` are not returned or recovered automatically.
+Recovery and retry behavior will be added in a separate step.
+
 Manual admin processing endpoint:
 
 ```bash

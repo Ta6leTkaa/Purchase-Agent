@@ -1,7 +1,7 @@
 import asyncio
 import io
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -207,6 +207,14 @@ class BrokenMissionRepository:
         limit: int = 100,
     ) -> list[Mission]:
         raise RuntimeError(self._message)
+
+    async def list_stale_processing(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+        limit: int = 100,
+    ) -> list[Mission]:
+        raise NotImplementedError
 
     async def get(self, mission_id: UUID) -> Mission | None:
         raise NotImplementedError
