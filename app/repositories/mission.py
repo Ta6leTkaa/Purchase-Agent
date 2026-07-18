@@ -27,6 +27,13 @@ class MissionRepository(Protocol):
     ) -> list[Mission]:
         ...
 
+    async def claim_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> list[Mission]:
+        ...
+
     async def get(self, mission_id: UUID) -> Mission | None:
         ...
 

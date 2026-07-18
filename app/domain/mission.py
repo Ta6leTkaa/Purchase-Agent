@@ -15,6 +15,7 @@ class MissionType(str, Enum):
 class MissionStatus(str, Enum):
     created = "created"
     waiting = "waiting"
+    processing = "processing"
     running = "running"
     searching = "searching"
     option_found = "option_found"

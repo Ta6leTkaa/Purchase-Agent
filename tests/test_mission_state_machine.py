@@ -38,6 +38,21 @@ def test_allowed_status_transitions() -> None:
     assert mission.status is MissionStatus.completed
 
 
+def test_processing_status_can_transition_to_terminal_results() -> None:
+    state_machine = MissionStateMachine()
+
+    for target in [
+        MissionStatus.requires_confirmation,
+        MissionStatus.completed,
+        MissionStatus.failed,
+    ]:
+        mission = make_mission(status=MissionStatus.processing)
+
+        state_machine.transition(mission, target)
+
+        assert mission.status is target
+
+
 @pytest.mark.parametrize(
     ("current", "target"),
     [
@@ -67,7 +82,11 @@ def test_invalid_status_transitions_are_rejected(
     [
         (MissionStatus.created, MissionStatus.running, True),
         (MissionStatus.created, MissionStatus.waiting, True),
+        (MissionStatus.waiting, MissionStatus.processing, True),
         (MissionStatus.waiting, MissionStatus.running, True),
+        (MissionStatus.processing, MissionStatus.requires_confirmation, True),
+        (MissionStatus.processing, MissionStatus.completed, True),
+        (MissionStatus.processing, MissionStatus.failed, True),
         (MissionStatus.running, MissionStatus.searching, True),
         (MissionStatus.running, MissionStatus.failed, True),
         (MissionStatus.searching, MissionStatus.option_found, True),

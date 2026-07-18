@@ -169,6 +169,30 @@ def test_run_waiting_mission_after_scheduled_time_is_allowed(
     assert updated_mission.status is MissionStatus.requires_confirmation
 
 
+def test_run_processing_mission_is_allowed_for_processor(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    mission.status = MissionStatus.processing
+    asyncio.run(mission_repository.update(mission))
+
+    updated_mission = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            allow_processing=True,
+        )
+    )
+
+    assert updated_mission.status is MissionStatus.requires_confirmation
+
+
 def test_run_mission_adds_execution_events(
     repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
 ) -> None:
@@ -221,6 +245,7 @@ def test_run_unknown_mission_raises_mission_not_found_error(
     "status",
     [
         MissionStatus.running,
+        MissionStatus.processing,
         MissionStatus.searching,
         MissionStatus.requires_confirmation,
         MissionStatus.completed,

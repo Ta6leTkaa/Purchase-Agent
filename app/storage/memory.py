@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from uuid import UUID
 
@@ -27,6 +28,7 @@ class InMemoryIdentityRepository:
 class InMemoryMissionRepository:
     def __init__(self) -> None:
         self._missions: dict[UUID, Mission] = {}
+        self._claim_lock = asyncio.Lock()
 
     async def create(self, mission: Mission) -> Mission:
         self._missions[mission.id] = mission
@@ -52,6 +54,29 @@ class InMemoryMissionRepository:
             due_missions,
             key=lambda mission: mission.scheduled_at or current_time,
         )[:limit]
+
+    async def claim_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> list[Mission]:
+        _validate_list_due_arguments(current_time, limit)
+        async with self._claim_lock:
+            due_missions = [
+                mission
+                for mission in self._missions.values()
+                if mission.status is MissionStatus.waiting
+                and mission.scheduled_at is not None
+                and mission.scheduled_at <= current_time
+            ]
+            claimed_missions = sorted(
+                due_missions,
+                key=lambda mission: mission.scheduled_at or current_time,
+            )[:limit]
+            for mission in claimed_missions:
+                mission.status = MissionStatus.processing
+                self._missions[mission.id] = mission
+            return claimed_missions
 
     async def get(self, mission_id: UUID) -> Mission | None:
         return self._missions.get(mission_id)

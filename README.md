@@ -105,6 +105,17 @@ The due mission processor performs one pass over missions whose scheduled time
 has arrived and runs them sequentially. It is only a programmatic service for
 now; a persistent background scheduler will be added separately.
 
+## Mission claiming
+
+Before execution, each due mission is atomically claimed by moving it from
+`waiting` to `processing`. PostgreSQL claiming uses `FOR UPDATE SKIP LOCKED`,
+so multiple processing cycles can run without selecting the same mission at the
+same time.
+
+This prevents concurrent processing of one mission, but it is not a full
+exactly-once guarantee. Recovery for missions stuck in `processing` will be
+added separately.
+
 Manual admin processing endpoint:
 
 ```bash

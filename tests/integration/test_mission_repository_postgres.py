@@ -1,4 +1,5 @@
-from datetime import date, datetime
+import asyncio
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -199,15 +200,92 @@ async def test_repository_does_not_commit_without_external_commit(
     assert loaded_mission is None
 
 
+async def test_claim_due_uses_skip_locked_for_concurrent_claims(
+    test_engine: AsyncEngine,
+    clean_database: None,
+) -> None:
+    session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    due_missions = [
+        make_mission(
+            status=MissionStatus.waiting,
+            scheduled_at=current_time - timedelta(minutes=index),
+        )
+        for index in range(4)
+    ]
+    future_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time + timedelta(minutes=1),
+    )
+    created_mission = make_mission(
+        status=MissionStatus.created,
+        scheduled_at=current_time,
+    )
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        for mission in [*due_missions, future_mission, created_mission]:
+            await repository.create(mission)
+        await session.commit()
+
+    async with session_maker() as first_session:
+        async with session_maker() as second_session:
+            first_repository = SqlAlchemyMissionRepository(first_session)
+            second_repository = SqlAlchemyMissionRepository(second_session)
+            first_claim, second_claim = await asyncio.wait_for(
+                asyncio.gather(
+                    first_repository.claim_due(current_time, limit=2),
+                    second_repository.claim_due(current_time, limit=2),
+                ),
+                timeout=5,
+            )
+
+    first_claim_ids = {mission.id for mission in first_claim}
+    second_claim_ids = {mission.id for mission in second_claim}
+    claimed_ids = first_claim_ids | second_claim_ids
+
+    assert first_claim_ids.isdisjoint(second_claim_ids)
+    assert len(claimed_ids) == 4
+    assert claimed_ids == {mission.id for mission in due_missions}
+    assert all(
+        mission.status is MissionStatus.processing
+        for mission in [*first_claim, *second_claim]
+    )
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        persisted_due_missions = [
+            await repository.get(mission.id)
+            for mission in due_missions
+        ]
+        persisted_future_mission = await repository.get(future_mission.id)
+        persisted_created_mission = await repository.get(created_mission.id)
+
+    assert all(
+        mission is not None and mission.status is MissionStatus.processing
+        for mission in persisted_due_missions
+    )
+    assert persisted_future_mission is not None
+    assert persisted_future_mission.status is MissionStatus.waiting
+    assert persisted_created_mission is not None
+    assert persisted_created_mission.status is MissionStatus.created
+
+
 def make_mission(
     participant_ids: list[UUID] | None = None,
     best_option: ProviderOption | None = None,
+    status: MissionStatus = MissionStatus.created,
+    scheduled_at: datetime | None = None,
 ) -> Mission:
     return Mission(
         id=uuid4(),
         type=MissionType.train_trip,
         title="Moscow to Saint Petersburg",
-        status=MissionStatus.created,
+        status=status,
         participant_ids=participant_ids or [
             uuid4(),
             uuid4(),
@@ -230,6 +308,7 @@ def make_mission(
             allow_any_coupe_seats=True,
             notify_only_if_no_match=False,
         ),
+        scheduled_at=scheduled_at,
         execution_log=[],
         best_option=best_option,
     )

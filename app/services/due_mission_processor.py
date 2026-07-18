@@ -1,12 +1,15 @@
 import asyncio
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.domain.mission import MissionStatus
+from app.domain.execution import ExecutionEvent
+from app.domain.mission import Mission, MissionStatus
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
+from app.services.clock import utc_now
 from app.services.mission_engine import run_mission
 
 
@@ -23,20 +26,26 @@ async def process_due_missions(
     current_time: datetime,
     limit: int = 100,
 ) -> DueMissionProcessingResult:
-    due_missions = await mission_repository.list_due(current_time, limit)
-    result = DueMissionProcessingResult(processed_count=len(due_missions))
+    claimed_missions = await mission_repository.claim_due(current_time, limit)
+    result = DueMissionProcessingResult(processed_count=len(claimed_missions))
 
-    for mission in due_missions:
+    for mission in claimed_missions:
         try:
             updated_mission = await run_mission(
                 mission.id,
                 mission_repository,
                 identity_repository,
                 current_time=current_time,
+                allow_processing=True,
             )
         except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
             raise
         except Exception as exc:
+            await _mark_claimed_mission_failed(
+                mission,
+                mission_repository,
+                str(exc),
+            )
             result.failed_mission_ids.append(mission.id)
             result.errors[mission.id] = str(exc)
             continue
@@ -50,3 +59,36 @@ async def process_due_missions(
             result.failed_mission_ids.append(updated_mission.id)
 
     return result
+
+
+async def _mark_claimed_mission_failed(
+    mission: Mission,
+    mission_repository: MissionRepository,
+    message: str,
+) -> None:
+    stored_mission = await mission_repository.get(mission.id)
+    failed_mission = stored_mission or mission
+    failed_mission.status = MissionStatus.failed
+    _add_event(
+        failed_mission,
+        "mission_processing_failed",
+        "Mission processing failed.",
+        {"message": message},
+    )
+    await mission_repository.update(failed_mission)
+
+
+def _add_event(
+    mission: Mission,
+    event_type: str,
+    message: str,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    mission.execution_log.append(
+        ExecutionEvent(
+            timestamp=utc_now(),
+            type=event_type,
+            message=message,
+            metadata=metadata or {},
+        )
+    )

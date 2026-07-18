@@ -182,6 +182,68 @@ def test_list_due_returns_committed_data_from_new_session() -> None:
     asyncio.run(scenario())
 
 
+def test_claim_due_filters_orders_limits_and_sets_processing() -> None:
+    async def scenario() -> None:
+        await with_repository(
+            lambda repository, session: _claim_due_filters_orders_limits(
+                repository
+            )
+        )
+
+    asyncio.run(scenario())
+
+
+def test_claim_due_does_not_claim_same_mission_twice() -> None:
+    async def scenario() -> None:
+        await with_repository(
+            lambda repository, session: _claim_due_does_not_claim_twice(
+                repository
+            )
+        )
+
+    asyncio.run(scenario())
+
+
+def test_claim_due_commits_processing_status() -> None:
+    async def scenario() -> None:
+        engine = create_test_engine()
+        try:
+            await create_tables(engine)
+            session_maker = async_sessionmaker(
+                engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+            )
+            current_time = aware_datetime()
+            mission = make_mission(
+                status=MissionStatus.waiting,
+                scheduled_at=current_time,
+            )
+
+            async with session_maker() as session:
+                repository = SqlAlchemyMissionRepository(session)
+                await repository.create(mission)
+                await session.commit()
+
+            async with session_maker() as session:
+                repository = SqlAlchemyMissionRepository(session)
+                claimed_missions = await repository.claim_due(current_time)
+
+            async with session_maker() as session:
+                repository = SqlAlchemyMissionRepository(session)
+                loaded_mission = await repository.get(mission.id)
+
+            assert [mission.id for mission in claimed_missions] == [
+                mission.id
+            ]
+            assert loaded_mission is not None
+            assert loaded_mission.status is MissionStatus.processing
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 async def with_repository(
     callback: Callable[
         [SqlAlchemyMissionRepository, AsyncSession],
@@ -361,6 +423,57 @@ async def _list_due_rejects_invalid_arguments(
 
     with pytest.raises(ValueError):
         await repository.list_due(aware_datetime(), limit=0)
+
+
+async def _claim_due_filters_orders_limits(
+    repository: SqlAlchemyMissionRepository,
+) -> None:
+    current_time = aware_datetime()
+    earlier_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time - timedelta(minutes=2),
+    )
+    later_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time - timedelta(minutes=1),
+    )
+    future_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time + timedelta(minutes=1),
+    )
+    created_mission = make_mission(
+        status=MissionStatus.created,
+        scheduled_at=current_time,
+    )
+    for mission in [
+        later_mission,
+        future_mission,
+        created_mission,
+        earlier_mission,
+    ]:
+        await repository.create(mission)
+
+    claimed_missions = await repository.claim_due(current_time, limit=1)
+
+    assert [mission.id for mission in claimed_missions] == [earlier_mission.id]
+    assert claimed_missions[0].status is MissionStatus.processing
+
+
+async def _claim_due_does_not_claim_twice(
+    repository: SqlAlchemyMissionRepository,
+) -> None:
+    current_time = aware_datetime()
+    mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time,
+    )
+    await repository.create(mission)
+
+    first_claim = await repository.claim_due(current_time)
+    second_claim = await repository.claim_due(current_time)
+
+    assert [mission.id for mission in first_claim] == [mission.id]
+    assert second_claim == []
 
 
 def make_mission(

@@ -133,6 +133,112 @@ def test_list_due_does_not_change_status_or_execution_log() -> None:
     asyncio.run(scenario())
 
 
+def test_claim_due_returns_due_waiting_missions_as_processing() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        due_mission = make_mission(
+            status=MissionStatus.waiting,
+            scheduled_at=current_time,
+        )
+        future_mission = make_mission(
+            status=MissionStatus.waiting,
+            scheduled_at=current_time + timedelta(minutes=1),
+        )
+        created_mission = make_mission(
+            status=MissionStatus.created,
+            scheduled_at=current_time,
+        )
+        for mission in [due_mission, future_mission, created_mission]:
+            await repository.create(mission)
+
+        claimed_missions = await repository.claim_due(current_time)
+
+        assert [mission.id for mission in claimed_missions] == [
+            due_mission.id
+        ]
+        assert claimed_missions[0].status is MissionStatus.processing
+
+    asyncio.run(scenario())
+
+
+def test_claim_due_does_not_return_same_mission_twice() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        mission = make_mission(
+            status=MissionStatus.waiting,
+            scheduled_at=current_time,
+        )
+        await repository.create(mission)
+
+        first_claim = await repository.claim_due(current_time)
+        second_claim = await repository.claim_due(current_time)
+
+        assert [mission.id for mission in first_claim] == [mission.id]
+        assert second_claim == []
+
+    asyncio.run(scenario())
+
+
+def test_claim_due_concurrent_calls_do_not_overlap() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        missions = [
+            make_mission(
+                status=MissionStatus.waiting,
+                scheduled_at=current_time + timedelta(seconds=index),
+            )
+            for index in range(4)
+        ]
+        for mission in missions:
+            await repository.create(mission)
+
+        first_claim, second_claim = await asyncio.gather(
+            repository.claim_due(current_time + timedelta(seconds=10), limit=2),
+            repository.claim_due(current_time + timedelta(seconds=10), limit=2),
+        )
+        claimed_ids = [
+            mission.id
+            for mission in [*first_claim, *second_claim]
+        ]
+
+        assert len(claimed_ids) == 4
+        assert len(set(claimed_ids)) == 4
+        assert set(claimed_ids) == {mission.id for mission in missions}
+        assert all(
+            mission.status is MissionStatus.processing
+            for mission in [*first_claim, *second_claim]
+        )
+
+    asyncio.run(scenario())
+
+
+def test_claim_due_sorts_by_scheduled_at_and_applies_limit() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        later_mission = make_mission(
+            status=MissionStatus.waiting,
+            scheduled_at=current_time - timedelta(minutes=1),
+        )
+        earlier_mission = make_mission(
+            status=MissionStatus.waiting,
+            scheduled_at=current_time - timedelta(minutes=2),
+        )
+        await repository.create(later_mission)
+        await repository.create(earlier_mission)
+
+        claimed_missions = await repository.claim_due(current_time, limit=1)
+
+        assert [mission.id for mission in claimed_missions] == [
+            earlier_mission.id
+        ]
+
+    asyncio.run(scenario())
+
+
 def make_mission(
     status: MissionStatus,
     scheduled_at: datetime | None = None,

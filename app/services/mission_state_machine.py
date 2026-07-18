@@ -12,7 +12,13 @@ class MissionStateMachine:
             MissionStatus.running,
         },
         MissionStatus.waiting: {
+            MissionStatus.processing,
             MissionStatus.running,
+        },
+        MissionStatus.processing: {
+            MissionStatus.requires_confirmation,
+            MissionStatus.completed,
+            MissionStatus.failed,
         },
         MissionStatus.running: {
             MissionStatus.searching,

@@ -47,6 +47,7 @@ def test_due_mission_is_started_and_future_mission_is_skipped() -> None:
         assert result.failed_mission_ids == []
         assert stored_due_mission is not None
         assert stored_due_mission.status is MissionStatus.requires_confirmation
+        assert stored_due_mission.status is not MissionStatus.processing
         assert stored_future_mission is not None
         assert stored_future_mission.status is MissionStatus.waiting
         assert stored_future_mission.execution_log == []
@@ -168,6 +169,47 @@ def test_exception_for_one_mission_does_not_stop_next_due_mission() -> None:
         assert result.succeeded_mission_ids == [successful_mission.id]
         assert broken_mission.id in result.errors
         assert "unknown_provider" in result.errors[broken_mission.id]
+        stored_broken_mission = await mission_repository.get(broken_mission.id)
+        assert stored_broken_mission is not None
+        assert stored_broken_mission.status is MissionStatus.failed
+        assert stored_broken_mission.execution_log[-1].type == (
+            "mission_processing_failed"
+        )
+
+    asyncio.run(scenario())
+
+
+def test_second_processing_cycle_does_not_reprocess_same_mission() -> None:
+    async def scenario() -> None:
+        identity_repository = InMemoryIdentityRepository()
+        mission_repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        identities = [
+            await identity_repository.create(make_identity())
+            for _ in range(4)
+        ]
+        mission = make_mission(
+            [identity.id for identity in identities],
+            scheduled_at=current_time,
+        )
+        await mission_repository.create(mission)
+
+        first_result = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            current_time,
+        )
+        second_result = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            current_time,
+        )
+        stored_mission = await mission_repository.get(mission.id)
+
+        assert first_result.processed_count == 1
+        assert second_result.processed_count == 0
+        assert stored_mission is not None
+        assert stored_mission.status is MissionStatus.requires_confirmation
 
     asyncio.run(scenario())
 

@@ -34,12 +34,17 @@ async def run_mission(
     mission_repository: MissionRepository,
     identity_repository: IdentityRepository,
     current_time: datetime | None = None,
+    allow_processing: bool = False,
 ) -> Mission:
     mission = await mission_repository.get(mission_id)
     if mission is None:
         raise MissionNotFoundError
 
-    if mission.status not in {MissionStatus.created, MissionStatus.waiting}:
+    allowed_statuses = {MissionStatus.created, MissionStatus.waiting}
+    if allow_processing:
+        allowed_statuses.add(MissionStatus.processing)
+
+    if mission.status not in allowed_statuses:
         message = (
             "Mission cannot be started from status "
             f"'{mission.status.value}'"
@@ -54,7 +59,9 @@ async def run_mission(
         raise MissionNotReadyError("Mission is scheduled for a future time")
 
     state_machine = MissionStateMachine()
-    state_machine.transition(mission, MissionStatus.running)
+    is_processing_run = mission.status is MissionStatus.processing
+    if not is_processing_run:
+        state_machine.transition(mission, MissionStatus.running)
 
     identities = await _get_participants(mission, identity_repository)
     if len(identities) != len(mission.participant_ids):
@@ -70,7 +77,8 @@ async def run_mission(
 
     adapter = get_adapter(mission.provider)
 
-    state_machine.transition(mission, MissionStatus.searching)
+    if not is_processing_run:
+        state_machine.transition(mission, MissionStatus.searching)
     _add_event(mission, "search_started", "Provider option search started.")
 
     options = await adapter.search_options(mission, identities)
@@ -95,7 +103,8 @@ async def run_mission(
         _add_event(mission, "no_valid_option_found", "No valid option found.")
         return await mission_repository.update(mission)
 
-    state_machine.transition(mission, MissionStatus.option_found)
+    if not is_processing_run:
+        state_machine.transition(mission, MissionStatus.option_found)
     mission.best_option = best.option
     _add_event(
         mission,
@@ -107,7 +116,8 @@ async def run_mission(
         },
     )
 
-    state_machine.transition(mission, MissionStatus.reserving)
+    if not is_processing_run:
+        state_machine.transition(mission, MissionStatus.reserving)
     _add_event(mission, "reservation_started", "Reservation started.")
 
     reservation_result = await adapter.reserve_option(best.option, mission)

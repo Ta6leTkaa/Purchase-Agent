@@ -84,12 +84,52 @@ def test_process_due_command_returns_zero_and_writes_json_on_success() -> None:
             stdout=stdout,
         )
         output = json.loads(stdout.getvalue())
+        stored_mission = await mission_repository.get(mission.id)
 
         assert exit_code == 0
         assert output["processed_count"] == 1
         assert output["succeeded_mission_ids"] == [str(mission.id)]
         assert isinstance(output["succeeded_mission_ids"][0], str)
         assert UUID(output["succeeded_mission_ids"][0]) == mission.id
+        assert stored_mission is not None
+        assert stored_mission.status is MissionStatus.requires_confirmation
+        assert stored_mission.status is not MissionStatus.processing
+
+    asyncio.run(scenario())
+
+
+def test_process_due_command_does_not_process_same_mission_twice() -> None:
+    async def scenario() -> None:
+        identity_repository = InMemoryIdentityRepository()
+        mission_repository = InMemoryMissionRepository()
+        identities = [
+            await identity_repository.create(make_identity())
+            for _ in range(4)
+        ]
+        mission = make_mission([identity.id for identity in identities])
+        await mission_repository.create(mission)
+        first_stdout = io.StringIO()
+        second_stdout = io.StringIO()
+
+        first_exit_code = await cli.process_due_command(
+            100,
+            mission_repository=mission_repository,
+            identity_repository=identity_repository,
+            current_time=CURRENT_TIME,
+            stdout=first_stdout,
+        )
+        second_exit_code = await cli.process_due_command(
+            100,
+            mission_repository=mission_repository,
+            identity_repository=identity_repository,
+            current_time=CURRENT_TIME,
+            stdout=second_stdout,
+        )
+
+        assert first_exit_code == 0
+        assert second_exit_code == 0
+        assert json.loads(first_stdout.getvalue())["processed_count"] == 1
+        assert json.loads(second_stdout.getvalue())["processed_count"] == 0
 
     asyncio.run(scenario())
 
@@ -155,6 +195,13 @@ class BrokenMissionRepository:
         raise NotImplementedError
 
     async def list_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> list[Mission]:
+        raise NotImplementedError
+
+    async def claim_due(
         self,
         current_time: datetime,
         limit: int = 100,

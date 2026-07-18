@@ -77,6 +77,7 @@ def test_process_due_runs_due_mission() -> None:
     assert response.json()["errors"] == {}
     assert stored_mission is not None
     assert stored_mission.status is MissionStatus.requires_confirmation
+    assert stored_mission.status is not MissionStatus.processing
     assert stored_mission.best_option is not None
     assert stored_mission.best_option.train_number == "001A"
 
@@ -136,6 +137,34 @@ def test_process_due_passes_limit_to_processor() -> None:
     assert stored_first_mission.status is MissionStatus.requires_confirmation
     assert stored_second_mission is not None
     assert stored_second_mission.status is MissionStatus.waiting
+
+
+def test_process_due_does_not_process_same_mission_twice() -> None:
+    client = TestClient(app)
+    participant_ids = create_identities(4)
+    mission = create_mission(
+        participant_ids,
+        scheduled_at=CURRENT_TIME,
+    )
+
+    first_response = client.post(
+        "/admin/missions/process-due",
+        json={},
+        headers=ADMIN_HEADERS,
+    )
+    second_response = client.post(
+        "/admin/missions/process-due",
+        json={},
+        headers=ADMIN_HEADERS,
+    )
+    stored_mission = asyncio.run(mission_repository.get(mission.id))
+
+    assert first_response.status_code == 200
+    assert first_response.json()["processed_count"] == 1
+    assert second_response.status_code == 200
+    assert second_response.json()["processed_count"] == 0
+    assert stored_mission is not None
+    assert stored_mission.status is MissionStatus.requires_confirmation
 
 
 @pytest.mark.parametrize("limit", [0, 501])
