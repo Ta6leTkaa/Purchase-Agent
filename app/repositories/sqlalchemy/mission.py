@@ -169,6 +169,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         updated_model = mission_to_model(mission)
         model.type = updated_model.type
         model.mission_type = updated_model.mission_type
+        model.payload = updated_model.payload
         model.title = updated_model.title
         model.status = updated_model.status
         model.provider = updated_model.provider

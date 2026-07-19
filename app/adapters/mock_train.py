@@ -22,7 +22,7 @@ class MockTrainAdapter(ProviderAdapter):
         identities: list[Identity],
     ) -> list[ProviderOption]:
         departure_at = datetime.combine(
-            mission.constraints.travel_date,
+            mission.payload.departure_date,
             time(hour=20),
         )
         arrival_at = departure_at + timedelta(hours=10)
@@ -108,8 +108,8 @@ class MockTrainAdapter(ProviderAdapter):
             id=uuid4(),
             type=ProviderOptionType.train_option,
             train_number=train_number,
-            from_city=mission.constraints.from_city,
-            to_city=mission.constraints.to_city,
+            from_city=mission.payload.origin,
+            to_city=mission.payload.destination,
             departure_at=departure_at,
             arrival_at=arrival_at,
             total_price=total_price,

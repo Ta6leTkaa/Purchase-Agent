@@ -15,6 +15,7 @@ from app.domain.mission import (
     Mission,
     MissionStatus,
     MissionType,
+    TrainTicketMissionPayload,
     TrainConstraints,
 )
 from app.domain.provider import ProviderOption
@@ -46,6 +47,10 @@ class MissionModel(Base):
         nullable=False,
         default=MissionType.TRAIN_TICKET.value,
         server_default=text("'train_ticket'"),
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB().with_variant(preferences_type, "sqlite"),
+        nullable=False,
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
@@ -110,6 +115,7 @@ def mission_to_model(mission: Mission) -> MissionModel:
         id=mission.id,
         type="train_trip",
         mission_type=mission.mission_type.value,
+        payload=mission.payload.model_dump(mode="json"),
         title=mission.title,
         status=mission.status.value,
         provider=mission.provider,
@@ -145,6 +151,7 @@ def mission_from_model(model: MissionModel) -> Mission:
             getattr(model, "mission_type", MissionType.TRAIN_TICKET.value)
             or MissionType.TRAIN_TICKET.value
         ),
+        "payload": TrainTicketMissionPayload.model_validate(model.payload),
         "title": model.title,
         "status": MissionStatus(model.status),
         "participant_ids": [

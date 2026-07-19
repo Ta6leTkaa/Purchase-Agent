@@ -2,7 +2,7 @@ from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.execution import ExecutionEvent
 from app.domain.provider import ProviderOption
@@ -43,6 +43,28 @@ class FallbackRules(BaseModel):
     notify_only_if_no_match: bool | None = None
 
 
+class TrainTicketMissionPayload(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    origin: str = Field(max_length=200)
+    destination: str = Field(max_length=200)
+    departure_date: date
+
+    @field_validator("origin", "destination")
+    @classmethod
+    def normalize_city(cls, value: str) -> str:
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("city must not be empty")
+        return normalized_value
+
+    @model_validator(mode="after")
+    def validate_distinct_cities(self) -> "TrainTicketMissionPayload":
+        if self.origin.casefold() == self.destination.casefold():
+            raise ValueError("origin and destination must be different")
+        return self
+
+
 class Mission(BaseModel):
     id: UUID
     type: MissionType = MissionType.TRAIN_TICKET
@@ -50,6 +72,7 @@ class Mission(BaseModel):
         default=MissionType.TRAIN_TICKET,
         frozen=True,
     )
+    payload: TrainTicketMissionPayload | None = Field(default=None, frozen=True)
     title: str
     status: MissionStatus = MissionStatus.created
     participant_ids: list[UUID] = Field(min_length=1)
@@ -62,6 +85,16 @@ class Mission(BaseModel):
     max_execution_attempts: int = Field(default=3, ge=1, le=100)
     execution_log: list[ExecutionEvent] = []
     best_option: ProviderOption | None = None
+
+    @field_validator("payload", mode="before")
+    @classmethod
+    def require_typed_payload(
+        cls,
+        value: TrainTicketMissionPayload | dict[str, object] | None,
+    ) -> TrainTicketMissionPayload | None:
+        if isinstance(value, dict):
+            raise ValueError("payload must be a TrainTicketMissionPayload")
+        return value
 
     @field_validator("scheduled_at", "claimed_at")
     @classmethod
@@ -78,6 +111,16 @@ class Mission(BaseModel):
 
     @model_validator(mode="after")
     def validate_claimed_at_for_status(self) -> "Mission":
+        if self.payload is None:
+            object.__setattr__(
+                self,
+                "payload",
+                TrainTicketMissionPayload(
+                    origin=self.constraints.from_city,
+                    destination=self.constraints.to_city,
+                    departure_date=self.constraints.travel_date,
+                ),
+            )
         if self.max_execution_attempts < self.execution_attempts:
             msg = "max_execution_attempts cannot be less than execution_attempts"
             raise ValueError(msg)
@@ -91,6 +134,24 @@ class Mission(BaseModel):
             msg = "claimed_at is allowed only for processing missions"
             raise ValueError(msg)
         return self
+
+    @property
+    def origin(self) -> str:
+        """Temporary compatibility helper; prefer payload.origin."""
+        assert self.payload is not None
+        return self.payload.origin
+
+    @property
+    def destination(self) -> str:
+        """Temporary compatibility helper; prefer payload.destination."""
+        assert self.payload is not None
+        return self.payload.destination
+
+    @property
+    def departure_date(self) -> date:
+        """Temporary compatibility helper; prefer payload.departure_date."""
+        assert self.payload is not None
+        return self.payload.departure_date
 
     @property
     def has_exhausted_attempts(self) -> bool:

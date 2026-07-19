@@ -88,6 +88,7 @@ async def test_mission_api_persists_mission_to_postgres(
     assert get_response.status_code == 200
     assert get_response.json()["participant_ids"] == participant_ids
     assert get_response.json()["constraints"] == payload["constraints"]
+    assert get_response.json()["payload"] == payload["payload"]
     assert get_response.json()["fallback_rules"] == payload["fallback_rules"]
     assert get_response.json()["execution_log"] == []
     assert get_response.json()["best_option"] is None
@@ -235,6 +236,11 @@ def make_mission_payload(
         "title": "Family train trip",
         "participant_ids": participant_ids,
         "provider": "mock_train",
+        "payload": {
+            "origin": "Moscow",
+            "destination": "Saint Petersburg",
+            "departure_date": "2026-08-01",
+        },
         "constraints": {
             "from_city": "Moscow",
             "to_city": "Saint Petersburg",

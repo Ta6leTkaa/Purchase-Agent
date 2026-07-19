@@ -142,6 +142,26 @@ type is `train_ticket`. Future types will include `flight_ticket`,
 The Mission Engine currently handles all missions the same way; specialized
 behavior will be introduced in later steps.
 
+## Mission payloads
+
+`mission_type` defines a mission's semantics, while `payload` contains its
+typed data. Only `train_ticket` is supported today. Its payload is validated
+before storage and is persisted as JSONB in PostgreSQL; the domain layer uses a
+`TrainTicketMissionPayload` object instead of raw JSON.
+
+```json
+{
+  "mission_type": "train_ticket",
+  "payload": {
+    "origin": "Amsterdam",
+    "destination": "Berlin",
+    "departure_date": "2026-09-15"
+  }
+}
+```
+
+Future mission types will define their own payload models.
+
 ## Maximum execution attempts
 
 `max_execution_attempts` limits claims per mission and defaults to `3`. The

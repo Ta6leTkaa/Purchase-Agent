@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Self
 from uuid import UUID, uuid4
 
@@ -9,9 +9,21 @@ from app.domain.mission import (
     Mission,
     MissionStatus,
     MissionType,
+    TrainTicketMissionPayload,
     TrainConstraints,
 )
 from app.services.clock import utc_now
+
+
+class TrainTicketMissionPayloadCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    origin: str
+    destination: str
+    departure_date: date
+
+    def to_domain(self) -> TrainTicketMissionPayload:
+        return TrainTicketMissionPayload.model_validate(self.model_dump())
 
 
 class MissionCreate(BaseModel):
@@ -19,6 +31,7 @@ class MissionCreate(BaseModel):
 
     type: str | None = None
     mission_type: MissionType = MissionType.TRAIN_TICKET
+    payload: TrainTicketMissionPayloadCreate
     title: str
     participant_ids: list[UUID] = Field(min_length=1)
     provider: str = Field(min_length=1)
@@ -65,6 +78,7 @@ class MissionCreate(BaseModel):
             id=uuid4(),
             type=MissionType.TRAIN_TICKET,
             mission_type=self.mission_type,
+            payload=self.payload.to_domain(),
             title=self.title,
             status=status,
             participant_ids=self.participant_ids,

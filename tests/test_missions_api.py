@@ -33,6 +33,11 @@ def make_mission_payload(
         "title": "Moscow to Saint Petersburg",
         "participant_ids": participant_ids,
         "provider": provider,
+        "payload": {
+            "origin": "Moscow",
+            "destination": "Saint Petersburg",
+            "departure_date": "2026-08-01",
+        },
         "constraints": {
             "from_city": "Moscow",
             "to_city": "Saint Petersburg",
@@ -94,6 +99,7 @@ def test_post_missions_initializes_internal_fields() -> None:
     assert response.json()["execution_attempts"] == 0
     assert response.json()["max_execution_attempts"] == 3
     assert response.json()["mission_type"] == "train_ticket"
+    assert response.json()["payload"] == payload["payload"]
 
 
 def test_post_missions_accepts_train_ticket_mission_type() -> None:
