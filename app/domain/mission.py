@@ -54,6 +54,7 @@ class Mission(BaseModel):
     scheduled_at: datetime | None = None
     claimed_at: datetime | None = None
     execution_attempts: int = Field(default=0, ge=0)
+    max_execution_attempts: int = Field(default=3, ge=1, le=100)
     execution_log: list[ExecutionEvent] = []
     best_option: ProviderOption | None = None
 
@@ -72,6 +73,9 @@ class Mission(BaseModel):
 
     @model_validator(mode="after")
     def validate_claimed_at_for_status(self) -> "Mission":
+        if self.max_execution_attempts < self.execution_attempts:
+            msg = "max_execution_attempts cannot be less than execution_attempts"
+            raise ValueError(msg)
         if self.status is MissionStatus.processing and self.claimed_at is None:
             msg = "claimed_at is required for processing missions"
             raise ValueError(msg)
@@ -82,3 +86,7 @@ class Mission(BaseModel):
             msg = "claimed_at is allowed only for processing missions"
             raise ValueError(msg)
         return self
+
+    @property
+    def has_exhausted_attempts(self) -> bool:
+        return self.execution_attempts >= self.max_execution_attempts

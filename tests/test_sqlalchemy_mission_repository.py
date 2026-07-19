@@ -204,6 +204,15 @@ def test_claim_due_does_not_claim_same_mission_twice() -> None:
     asyncio.run(scenario())
 
 
+def test_claim_due_skips_missions_with_exhausted_attempts() -> None:
+    async def scenario() -> None:
+        await with_repository(
+            lambda repository, session: _claim_due_skips_exhausted(repository)
+        )
+
+    asyncio.run(scenario())
+
+
 def test_claim_due_commits_processing_status() -> None:
     async def scenario() -> None:
         engine = create_test_engine()
@@ -492,6 +501,35 @@ async def _claim_due_does_not_claim_twice(
     assert loaded_mission is not None
     assert loaded_mission.claimed_at == current_time
     assert loaded_mission.execution_attempts == 1
+
+
+async def _claim_due_skips_exhausted(
+    repository: SqlAlchemyMissionRepository,
+) -> None:
+    current_time = aware_datetime()
+    available_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time,
+    )
+    exhausted_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time,
+    )
+    exhausted_mission.execution_attempts = 2
+    exhausted_mission.max_execution_attempts = 2
+    await repository.create(available_mission)
+    await repository.create(exhausted_mission)
+
+    claimed_missions = await repository.claim_due(current_time)
+    loaded_exhausted_mission = await repository.get(exhausted_mission.id)
+
+    assert [mission.id for mission in claimed_missions] == [
+        available_mission.id
+    ]
+    assert claimed_missions[0].execution_attempts == 1
+    assert loaded_exhausted_mission is not None
+    assert loaded_exhausted_mission.status is MissionStatus.waiting
+    assert loaded_exhausted_mission.execution_attempts == 2
 
 
 def make_mission(

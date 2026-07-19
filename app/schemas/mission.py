@@ -24,6 +24,7 @@ class MissionCreate(BaseModel):
     constraints: TrainConstraints
     fallback_rules: FallbackRules = Field(default_factory=FallbackRules)
     scheduled_at: datetime | None = None
+    max_execution_attempts: int = Field(default=3, ge=1, le=100)
 
     @field_validator("scheduled_at")
     @classmethod
@@ -69,6 +70,7 @@ class MissionCreate(BaseModel):
             constraints=self.constraints,
             fallback_rules=self.fallback_rules,
             scheduled_at=self.scheduled_at,
+            max_execution_attempts=self.max_execution_attempts,
             execution_log=[],
             best_option=None,
         )

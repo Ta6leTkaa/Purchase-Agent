@@ -48,6 +48,10 @@ class SqlAlchemyMissionRepository(MissionRepository):
             .where(MissionModel.status == "waiting")
             .where(MissionModel.scheduled_at.is_not(None))
             .where(MissionModel.scheduled_at <= current_time)
+            .where(
+                MissionModel.execution_attempts
+                < MissionModel.max_execution_attempts
+            )
             .order_by(MissionModel.scheduled_at.asc())
             .limit(limit)
         )
@@ -67,6 +71,10 @@ class SqlAlchemyMissionRepository(MissionRepository):
             .where(MissionModel.status == MissionStatus.waiting.value)
             .where(MissionModel.scheduled_at.is_not(None))
             .where(MissionModel.scheduled_at <= current_time)
+            .where(
+                MissionModel.execution_attempts
+                < MissionModel.max_execution_attempts
+            )
             .order_by(MissionModel.scheduled_at.asc())
             .limit(limit)
             .with_for_update(skip_locked=True)
@@ -166,6 +174,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         model.scheduled_at = updated_model.scheduled_at
         model.claimed_at = updated_model.claimed_at
         model.execution_attempts = updated_model.execution_attempts
+        model.max_execution_attempts = updated_model.max_execution_attempts
         model.participant_ids = updated_model.participant_ids
         model.constraints = updated_model.constraints
         model.fallback_rules = updated_model.fallback_rules

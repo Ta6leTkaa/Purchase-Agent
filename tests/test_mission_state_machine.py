@@ -212,6 +212,49 @@ def test_mission_execution_attempts_defaults_to_zero_and_rejects_negative() -> N
         )
 
 
+def test_mission_max_execution_attempts_validation_and_exhaustion() -> None:
+    mission = make_mission()
+
+    assert mission.max_execution_attempts == 3
+    assert mission.has_exhausted_attempts is False
+    mission.execution_attempts = 3
+    assert mission.has_exhausted_attempts is True
+
+    for max_execution_attempts in [0, 101]:
+        with pytest.raises(ValueError):
+            Mission(
+                id=uuid4(),
+                type=MissionType.train_trip,
+                title="Family train trip",
+                participant_ids=[uuid4()],
+                provider="mock_train",
+                constraints=TrainConstraints(
+                    from_city="Moscow",
+                    to_city="Saint Petersburg",
+                    travel_date=date(2026, 8, 1),
+                    passengers_count=1,
+                ),
+                max_execution_attempts=max_execution_attempts,
+            )
+
+    with pytest.raises(ValueError):
+        Mission(
+            id=uuid4(),
+            type=MissionType.train_trip,
+            title="Family train trip",
+            participant_ids=[uuid4()],
+            provider="mock_train",
+            constraints=TrainConstraints(
+                from_city="Moscow",
+                to_city="Saint Petersburg",
+                travel_date=date(2026, 8, 1),
+                passengers_count=1,
+            ),
+            execution_attempts=2,
+            max_execution_attempts=1,
+        )
+
+
 @pytest.mark.parametrize(
     ("current", "target"),
     [

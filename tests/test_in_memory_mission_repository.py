@@ -288,6 +288,36 @@ def test_claim_after_recovery_increments_execution_attempts_again() -> None:
     asyncio.run(scenario())
 
 
+def test_claim_due_skips_missions_with_exhausted_attempts() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        available_mission = make_mission(
+            status=MissionStatus.waiting,
+            scheduled_at=current_time,
+        )
+        exhausted_mission = make_mission(
+            status=MissionStatus.waiting,
+            scheduled_at=current_time,
+        )
+        exhausted_mission.execution_attempts = 2
+        exhausted_mission.max_execution_attempts = 2
+        await repository.create(available_mission)
+        await repository.create(exhausted_mission)
+
+        claimed_missions = await repository.claim_due(current_time)
+
+        assert [mission.id for mission in claimed_missions] == [
+            available_mission.id
+        ]
+        assert claimed_missions[0].execution_attempts == 1
+        assert exhausted_mission.status is MissionStatus.waiting
+        assert exhausted_mission.claimed_at is None
+        assert exhausted_mission.execution_attempts == 2
+
+    asyncio.run(scenario())
+
+
 def make_mission(
     status: MissionStatus,
     scheduled_at: datetime | None = None,

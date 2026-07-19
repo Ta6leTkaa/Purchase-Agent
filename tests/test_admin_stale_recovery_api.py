@@ -110,6 +110,28 @@ def test_recover_stale_returns_empty_result() -> None:
     ]
 
 
+def test_recover_stale_returns_exhausted_mission_as_failed() -> None:
+    client = TestClient(app)
+    mission = create_mission(
+        claimed_at=CURRENT_TIME - timedelta(minutes=16)
+    )
+    mission.execution_attempts = 2
+    mission.max_execution_attempts = 2
+    asyncio.run(mission_repository.update(mission))
+
+    response = client.post(ENDPOINT, json={}, headers=ADMIN_HEADERS)
+    stored_mission = asyncio.run(mission_repository.get(mission.id))
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "recovered_count": 1,
+        "recovered_mission_ids": [str(mission.id)],
+    }
+    assert stored_mission is not None
+    assert stored_mission.status is MissionStatus.failed
+    assert stored_mission.execution_attempts == 2
+
+
 def test_recover_stale_passes_custom_timeout_and_limit() -> None:
     repository = CapturingMissionRepository()
     app.dependency_overrides[get_mission_repository] = lambda: repository

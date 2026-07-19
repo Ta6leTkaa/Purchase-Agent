@@ -226,10 +226,21 @@ async def test_claim_due_uses_skip_locked_for_concurrent_claims(
         status=MissionStatus.created,
         scheduled_at=current_time,
     )
+    exhausted_mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time,
+    )
+    exhausted_mission.execution_attempts = 2
+    exhausted_mission.max_execution_attempts = 2
 
     async with session_maker() as session:
         repository = SqlAlchemyMissionRepository(session)
-        for mission in [*due_missions, future_mission, created_mission]:
+        for mission in [
+            *due_missions,
+            future_mission,
+            created_mission,
+            exhausted_mission,
+        ]:
             await repository.create(mission)
         await session.commit()
 
@@ -273,6 +284,7 @@ async def test_claim_due_uses_skip_locked_for_concurrent_claims(
         ]
         persisted_future_mission = await repository.get(future_mission.id)
         persisted_created_mission = await repository.get(created_mission.id)
+        persisted_exhausted_mission = await repository.get(exhausted_mission.id)
 
     assert all(
         mission is not None and mission.status is MissionStatus.processing
@@ -292,6 +304,9 @@ async def test_claim_due_uses_skip_locked_for_concurrent_claims(
     assert persisted_created_mission is not None
     assert persisted_created_mission.status is MissionStatus.created
     assert persisted_created_mission.claimed_at is None
+    assert persisted_exhausted_mission is not None
+    assert persisted_exhausted_mission.status is MissionStatus.waiting
+    assert persisted_exhausted_mission.execution_attempts == 2
 
 
 async def test_list_stale_processing_is_read_only_and_filters_in_database(

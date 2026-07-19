@@ -85,9 +85,14 @@ class MissionStateMachine:
         current_time: datetime,
     ) -> Mission:
         previous_claimed_at = mission.claimed_at
+        target = (
+            MissionStatus.failed
+            if mission.has_exhausted_attempts
+            else MissionStatus.waiting
+        )
         self.transition(
             mission,
-            MissionStatus.waiting,
+            target,
             current_time=current_time,
             recovery=True,
         )
@@ -95,11 +100,17 @@ class MissionStateMachine:
             ExecutionEvent(
                 timestamp=current_time,
                 type="claim_recovered",
-                message="Mission recovered after a stale claim.",
+                message=(
+                    "Mission failed after a stale claim because execution "
+                    "attempts are exhausted."
+                    if target is MissionStatus.failed
+                    else "Mission recovered after a stale claim."
+                ),
                 metadata={
                     "previous_claimed_at": previous_claimed_at.isoformat()
                     if previous_claimed_at is not None
                     else None,
+                    "attempts_exhausted": target is MissionStatus.failed,
                 },
             )
         )

@@ -58,6 +58,12 @@ class MissionModel(Base):
         default=0,
         server_default=text("0"),
     )
+    max_execution_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=3,
+        server_default=text("3"),
+    )
     participant_ids: Mapped[list[str]] = mapped_column(
         preferences_type,
         nullable=False,
@@ -103,6 +109,7 @@ def mission_to_model(mission: Mission) -> MissionModel:
         scheduled_at=mission.scheduled_at,
         claimed_at=mission.claimed_at,
         execution_attempts=mission.execution_attempts,
+        max_execution_attempts=mission.max_execution_attempts,
         participant_ids=[
             str(participant_id)
             for participant_id in mission.participant_ids
@@ -122,6 +129,8 @@ def mission_to_model(mission: Mission) -> MissionModel:
 
 
 def mission_from_model(model: MissionModel) -> Mission:
+    execution_attempts = getattr(model, "execution_attempts", 0) or 0
+    max_execution_attempts = getattr(model, "max_execution_attempts", 3) or 3
     mission_data = {
         "id": model.id,
         "type": MissionType(model.type),
@@ -134,7 +143,11 @@ def mission_from_model(model: MissionModel) -> Mission:
         "provider": model.provider,
         "scheduled_at": model.scheduled_at,
         "claimed_at": model.claimed_at,
-        "execution_attempts": getattr(model, "execution_attempts", 0) or 0,
+        "execution_attempts": execution_attempts,
+        "max_execution_attempts": max(
+            max_execution_attempts,
+            execution_attempts,
+        ),
         "constraints": TrainConstraints.model_validate(model.constraints),
         "fallback_rules": FallbackRules.model_validate(model.fallback_rules),
         "execution_log": [

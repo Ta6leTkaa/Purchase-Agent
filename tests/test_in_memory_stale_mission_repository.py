@@ -254,6 +254,30 @@ def test_recover_stale_processing_rejects_invalid_arguments() -> None:
     asyncio.run(scenario())
 
 
+def test_recover_stale_processing_fails_mission_with_exhausted_attempts() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        mission = make_mission(
+            claimed_at=aware_datetime() - timedelta(minutes=15)
+        )
+        mission.execution_attempts = 2
+        mission.max_execution_attempts = 2
+        await repository.create(mission)
+
+        recovered_missions = await repository.recover_stale_processing(
+            aware_datetime(),
+            timedelta(minutes=15),
+        )
+
+        assert recovered_missions == [mission]
+        assert mission.status is MissionStatus.failed
+        assert mission.claimed_at is None
+        assert mission.execution_attempts == 2
+        assert mission.execution_log[-1].metadata["attempts_exhausted"] is True
+
+    asyncio.run(scenario())
+
+
 def make_mission(
     status: MissionStatus = MissionStatus.processing,
     claimed_at: datetime | None = None,

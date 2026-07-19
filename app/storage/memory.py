@@ -50,6 +50,7 @@ class InMemoryMissionRepository:
             if mission.status is MissionStatus.waiting
             and mission.scheduled_at is not None
             and mission.scheduled_at <= current_time
+            and not mission.has_exhausted_attempts
         ]
         return sorted(
             due_missions,
@@ -69,6 +70,7 @@ class InMemoryMissionRepository:
                 if mission.status is MissionStatus.waiting
                 and mission.scheduled_at is not None
                 and mission.scheduled_at <= current_time
+                and not mission.has_exhausted_attempts
             ]
             claimed_missions = sorted(
                 due_missions,

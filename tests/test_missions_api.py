@@ -92,6 +92,22 @@ def test_post_missions_initializes_internal_fields() -> None:
     assert response.json()["execution_log"] == []
     assert response.json()["best_option"] is None
     assert response.json()["execution_attempts"] == 0
+    assert response.json()["max_execution_attempts"] == 3
+
+
+def test_post_missions_accepts_custom_max_execution_attempts() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "max_execution_attempts": 5,
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["max_execution_attempts"] == 5
 
 
 def test_post_missions_with_scheduled_at_returns_waiting() -> None:
@@ -288,6 +304,23 @@ def test_post_missions_with_internal_fields_returns_422(
     payload = {
         **make_mission_payload(),
         field: value,
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("max_execution_attempts", [0, 101])
+def test_post_missions_rejects_invalid_max_execution_attempts(
+    max_execution_attempts: int,
+) -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "max_execution_attempts": max_execution_attempts,
     }
 
     response = client.post("/missions", json=payload)

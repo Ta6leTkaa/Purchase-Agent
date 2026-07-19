@@ -134,6 +134,23 @@ second claim: attempts=2
 
 Attempt limits and retry policy will be added separately.
 
+## Maximum execution attempts
+
+`max_execution_attempts` limits claims per mission and defaults to `3`. The
+last available claim may enter `processing`; if it later becomes stale, recovery
+marks the mission as `failed`. Exhausted missions in `waiting` are not claimed.
+Manual execution from `created` remains outside this limit for now.
+
+```text
+max=2, attempts=0
+first claim -> attempts=1
+stale recovery -> waiting
+second claim -> attempts=2
+stale recovery -> failed
+```
+
+Backoff and retry scheduling are not implemented yet.
+
 ## Stale processing missions
 
 A stale mission is a mission in `processing` whose `claimed_at` is older than a
