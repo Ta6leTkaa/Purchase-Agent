@@ -216,6 +216,14 @@ class BrokenMissionRepository:
     ) -> list[Mission]:
         raise NotImplementedError
 
+    async def recover_stale_processing(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+        limit: int = 100,
+    ) -> list[Mission]:
+        raise NotImplementedError
+
     async def get(self, mission_id: UUID) -> Mission | None:
         raise NotImplementedError
 

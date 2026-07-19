@@ -5,6 +5,7 @@ from uuid import UUID
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionStatus
 from app.repositories.mission import InvalidRepositoryTimeError
+from app.services.mission_state_machine import MissionStateMachine
 
 
 class InMemoryIdentityRepository:
@@ -102,6 +103,36 @@ class InMemoryMissionRepository:
             stale_missions,
             key=lambda mission: mission.claimed_at or current_time,
         )[:limit]
+
+    async def recover_stale_processing(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+        limit: int = 100,
+    ) -> list[Mission]:
+        _validate_stale_processing_arguments(
+            current_time,
+            claim_timeout,
+            limit,
+        )
+        stale_before = current_time - claim_timeout
+        async with self._claim_lock:
+            stale_missions = [
+                mission
+                for mission in self._missions.values()
+                if mission.status is MissionStatus.processing
+                and mission.claimed_at is not None
+                and mission.claimed_at <= stale_before
+            ]
+            recovered_missions = sorted(
+                stale_missions,
+                key=lambda mission: mission.claimed_at or current_time,
+            )[:limit]
+            state_machine = MissionStateMachine()
+            for mission in recovered_missions:
+                state_machine.recover_stale(mission, current_time)
+                self._missions[mission.id] = mission
+            return recovered_missions
 
     async def get(self, mission_id: UUID) -> Mission | None:
         return self._missions.get(mission_id)

@@ -135,6 +135,16 @@ stale_missions = await mission_repository.list_stale_processing(
 Missions with `claimed_at=None` are not returned or recovered automatically.
 Recovery and retry behavior will be added in a separate step.
 
+## Stale mission recovery
+
+The repository can atomically recover stale missions from `processing` to
+`waiting`. PostgreSQL uses `FOR UPDATE SKIP LOCKED`; recovery clears
+`claimed_at` and records a `claim_recovered` event in the mission log.
+
+Recovery does not start a mission in the same operation. A later processing
+cycle can claim the recovered mission again. Retry policy and retry limits are
+not implemented yet.
+
 Manual admin processing endpoint:
 
 ```bash

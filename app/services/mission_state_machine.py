@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from app.domain.execution import ExecutionEvent
 from app.domain.mission import Mission, MissionStatus
 
 
@@ -52,22 +53,22 @@ class MissionStateMachine:
         mission: Mission,
         target: MissionStatus,
         current_time: datetime | None = None,
+        *,
+        recovery: bool = False,
     ) -> Mission:
         current = mission.status
-        if not self.can_transition(current, target):
+        if not self.can_transition(current, target, recovery=recovery):
             message = (
                 "Invalid mission status transition: "
                 f"{current.value} -> {target.value}"
             )
             raise InvalidMissionTransitionError(message)
 
-        if current is MissionStatus.waiting and target is MissionStatus.processing:
-            if current_time is None:
-                message = "current_time is required for processing transition"
-                raise InvalidMissionTransitionError(message)
-            if current_time.tzinfo is None or current_time.utcoffset() is None:
-                message = "current_time must be timezone-aware"
-                raise InvalidMissionTransitionError(message)
+        if (
+            current is MissionStatus.waiting
+            and target is MissionStatus.processing
+        ) or recovery:
+            _require_aware_current_time(current_time)
 
         mission.status = target
         if current is MissionStatus.waiting and target is MissionStatus.processing:
@@ -78,9 +79,51 @@ class MissionStateMachine:
             mission.claimed_at = None
         return mission
 
+    def recover_stale(
+        self,
+        mission: Mission,
+        current_time: datetime,
+    ) -> Mission:
+        previous_claimed_at = mission.claimed_at
+        self.transition(
+            mission,
+            MissionStatus.waiting,
+            current_time=current_time,
+            recovery=True,
+        )
+        mission.execution_log.append(
+            ExecutionEvent(
+                timestamp=current_time,
+                type="claim_recovered",
+                message="Mission recovered after a stale claim.",
+                metadata={
+                    "previous_claimed_at": previous_claimed_at.isoformat()
+                    if previous_claimed_at is not None
+                    else None,
+                },
+            )
+        )
+        return mission
+
     def can_transition(
         self,
         current: MissionStatus,
         target: MissionStatus,
+        *,
+        recovery: bool = False,
     ) -> bool:
+        if (
+            current is MissionStatus.processing
+            and target is MissionStatus.waiting
+        ):
+            return recovery
         return target in self._allowed_transitions[current]
+
+
+def _require_aware_current_time(current_time: datetime | None) -> None:
+    if current_time is None:
+        message = "current_time is required for processing transition"
+        raise InvalidMissionTransitionError(message)
+    if current_time.tzinfo is None or current_time.utcoffset() is None:
+        message = "current_time must be timezone-aware"
+        raise InvalidMissionTransitionError(message)

@@ -15,6 +15,7 @@ from app.repositories.mission import (
     MissionRepository,
     RepositoryEntityNotFoundError,
 )
+from app.services.mission_state_machine import MissionStateMachine
 
 
 class SqlAlchemyMissionRepository(MissionRepository):
@@ -106,6 +107,44 @@ class SqlAlchemyMissionRepository(MissionRepository):
             mission_from_model(model)
             for model in result.scalars().all()
         ]
+
+    async def recover_stale_processing(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+        limit: int = 100,
+    ) -> list[Mission]:
+        _validate_stale_processing_arguments(
+            current_time,
+            claim_timeout,
+            limit,
+        )
+        stale_before = current_time - claim_timeout
+        result = await self._session.execute(
+            select(MissionModel)
+            .where(MissionModel.status == MissionStatus.processing.value)
+            .where(MissionModel.claimed_at.is_not(None))
+            .where(MissionModel.claimed_at <= stale_before)
+            .order_by(MissionModel.claimed_at.asc())
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        state_machine = MissionStateMachine()
+        recovered_missions: list[Mission] = []
+        for model in result.scalars().all():
+            mission = mission_from_model(model)
+            state_machine.recover_stale(mission, current_time)
+            model.status = mission.status.value
+            model.claimed_at = mission.claimed_at
+            model.execution_log = [
+                event.model_dump(mode="json")
+                for event in mission.execution_log
+            ]
+            recovered_missions.append(mission)
+
+        await self._session.flush()
+        await self._session.commit()
+        return recovered_missions
 
     async def get(self, mission_id: UUID) -> Mission | None:
         model = await self._session.get(MissionModel, mission_id)

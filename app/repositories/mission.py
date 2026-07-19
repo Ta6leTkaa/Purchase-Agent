@@ -42,6 +42,14 @@ class MissionRepository(Protocol):
     ) -> list[Mission]:
         ...
 
+    async def recover_stale_processing(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+        limit: int = 100,
+    ) -> list[Mission]:
+        ...
+
     async def get(self, mission_id: UUID) -> Mission | None:
         ...
 

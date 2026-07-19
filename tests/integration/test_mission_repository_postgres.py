@@ -385,6 +385,155 @@ async def test_list_stale_processing_is_read_only_and_filters_in_database(
     assert persisted_legacy_mission.claimed_at is None
 
 
+async def test_recover_stale_processing_persists_recovery_event(
+    test_engine: AsyncEngine,
+    clean_database: None,
+) -> None:
+    session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    stale_mission = make_mission(
+        status=MissionStatus.processing,
+        scheduled_at=current_time - timedelta(hours=1),
+        claimed_at=current_time - timedelta(minutes=30),
+    )
+    boundary_mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=current_time - timedelta(minutes=15),
+    )
+    fresh_mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=current_time - timedelta(minutes=14),
+    )
+    legacy_processing_mission = Mission.model_construct(
+        **{
+            **make_mission(
+                status=MissionStatus.processing,
+                claimed_at=current_time,
+            ).model_dump(),
+            "claimed_at": None,
+        }
+    )
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        for mission in [
+            stale_mission,
+            boundary_mission,
+            fresh_mission,
+            legacy_processing_mission,
+        ]:
+            await repository.create(mission)
+        await session.commit()
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        recovered_missions = await repository.recover_stale_processing(
+            current_time,
+            timedelta(minutes=15),
+        )
+
+    assert [mission.id for mission in recovered_missions] == [
+        stale_mission.id,
+        boundary_mission.id,
+    ]
+    assert all(
+        mission.status is MissionStatus.waiting
+        and mission.claimed_at is None
+        for mission in recovered_missions
+    )
+    assert all(
+        mission.execution_log[-1].type == "claim_recovered"
+        and mission.execution_log[-1].timestamp == current_time
+        for mission in recovered_missions
+    )
+    assert stale_mission.scheduled_at == current_time - timedelta(hours=1)
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        persisted_stale_mission = await repository.get(stale_mission.id)
+        persisted_boundary_mission = await repository.get(boundary_mission.id)
+        persisted_fresh_mission = await repository.get(fresh_mission.id)
+        persisted_legacy_mission = await repository.get(
+            legacy_processing_mission.id
+        )
+
+    assert persisted_stale_mission is not None
+    assert persisted_stale_mission.status is MissionStatus.waiting
+    assert persisted_stale_mission.claimed_at is None
+    assert persisted_stale_mission.scheduled_at == stale_mission.scheduled_at
+    assert persisted_stale_mission.execution_log[-1].type == "claim_recovered"
+    assert persisted_boundary_mission is not None
+    assert persisted_boundary_mission.status is MissionStatus.waiting
+    assert persisted_fresh_mission is not None
+    assert persisted_fresh_mission.status is MissionStatus.processing
+    assert persisted_fresh_mission.claimed_at == fresh_mission.claimed_at
+    assert persisted_legacy_mission is not None
+    assert persisted_legacy_mission.status is MissionStatus.processing
+    assert persisted_legacy_mission.claimed_at is None
+
+
+async def test_recover_stale_processing_uses_skip_locked_concurrently(
+    test_engine: AsyncEngine,
+    clean_database: None,
+) -> None:
+    session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    missions = [
+        make_mission(
+            status=MissionStatus.processing,
+            claimed_at=current_time - timedelta(minutes=30 - index),
+        )
+        for index in range(4)
+    ]
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        for mission in missions:
+            await repository.create(mission)
+        await session.commit()
+
+    async with session_maker() as first_session:
+        async with session_maker() as second_session:
+            first_repository = SqlAlchemyMissionRepository(first_session)
+            second_repository = SqlAlchemyMissionRepository(second_session)
+            first_recovery, second_recovery = await asyncio.wait_for(
+                asyncio.gather(
+                    first_repository.recover_stale_processing(
+                        current_time,
+                        timedelta(minutes=15),
+                        limit=2,
+                    ),
+                    second_repository.recover_stale_processing(
+                        current_time,
+                        timedelta(minutes=15),
+                        limit=2,
+                    ),
+                ),
+                timeout=5,
+            )
+
+    first_ids = {mission.id for mission in first_recovery}
+    second_ids = {mission.id for mission in second_recovery}
+    recovered_ids = first_ids | second_ids
+
+    assert first_ids.isdisjoint(second_ids)
+    assert recovered_ids == {mission.id for mission in missions}
+    assert all(
+        mission.status is MissionStatus.waiting
+        and mission.claimed_at is None
+        and mission.execution_log[-1].type == "claim_recovered"
+        for mission in [*first_recovery, *second_recovery]
+    )
+
+
 def make_mission(
     participant_ids: list[UUID] | None = None,
     best_option: ProviderOption | None = None,

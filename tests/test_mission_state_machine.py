@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -113,6 +113,61 @@ def test_processing_transition_requires_current_time() -> None:
     assert mission.claimed_at is None
 
 
+def test_recover_stale_returns_processing_mission_to_waiting() -> None:
+    state_machine = MissionStateMachine()
+    current_time = aware_datetime() + timedelta(minutes=15)
+    scheduled_at = aware_datetime() - timedelta(minutes=30)
+    mission = make_mission(status=MissionStatus.processing)
+    mission.scheduled_at = scheduled_at
+    original_title = mission.title
+
+    state_machine.recover_stale(mission, current_time)
+
+    assert mission.status is MissionStatus.waiting
+    assert mission.claimed_at is None
+    assert mission.scheduled_at == scheduled_at
+    assert mission.title == original_title
+    assert mission.execution_log[-1].type == "claim_recovered"
+    assert mission.execution_log[-1].timestamp == current_time
+    assert mission.execution_log[-1].metadata["previous_claimed_at"] == (
+        aware_datetime().isoformat()
+    )
+
+
+def test_recover_stale_rejects_naive_current_time() -> None:
+    state_machine = MissionStateMachine()
+    mission = make_mission(status=MissionStatus.processing)
+
+    with pytest.raises(InvalidMissionTransitionError):
+        state_machine.recover_stale(
+            mission,
+            datetime(2026, 8, 1, 10, 0),
+        )
+
+    assert mission.status is MissionStatus.processing
+    assert mission.claimed_at == aware_datetime()
+    assert mission.execution_log == []
+
+
+def test_processing_to_waiting_requires_recovery_context() -> None:
+    state_machine = MissionStateMachine()
+    mission = make_mission(status=MissionStatus.processing)
+
+    with pytest.raises(InvalidMissionTransitionError):
+        state_machine.transition(mission, MissionStatus.waiting)
+
+    assert state_machine.can_transition(
+        MissionStatus.processing,
+        MissionStatus.waiting,
+    ) is False
+    assert state_machine.can_transition(
+        MissionStatus.processing,
+        MissionStatus.waiting,
+        recovery=True,
+    ) is True
+    assert mission.status is MissionStatus.processing
+
+
 def test_processing_mission_requires_claimed_at() -> None:
     with pytest.raises(ValueError):
         Mission(
@@ -165,6 +220,7 @@ def test_invalid_status_transitions_are_rejected(
         (MissionStatus.processing, MissionStatus.requires_confirmation, True),
         (MissionStatus.processing, MissionStatus.completed, True),
         (MissionStatus.processing, MissionStatus.failed, True),
+        (MissionStatus.processing, MissionStatus.waiting, False),
         (MissionStatus.running, MissionStatus.searching, True),
         (MissionStatus.running, MissionStatus.failed, True),
         (MissionStatus.searching, MissionStatus.option_found, True),
