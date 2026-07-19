@@ -32,6 +32,7 @@ def test_mission_to_model_saves_core_fields() -> None:
 
     assert model.id == mission.id
     assert model.type == "train_trip"
+    assert model.mission_type == "train_ticket"
     assert model.status == "requires_confirmation"
     assert model.participant_ids == [
         str(participant_id)
@@ -49,6 +50,7 @@ def test_mission_from_model_restores_domain_mission() -> None:
     restored_mission = mission_from_model(model)
 
     assert restored_mission == mission
+    assert restored_mission.mission_type is MissionType.TRAIN_TICKET
 
 
 def test_execution_log_survives_round_trip() -> None:

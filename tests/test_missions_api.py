@@ -93,6 +93,36 @@ def test_post_missions_initializes_internal_fields() -> None:
     assert response.json()["best_option"] is None
     assert response.json()["execution_attempts"] == 0
     assert response.json()["max_execution_attempts"] == 3
+    assert response.json()["mission_type"] == "train_ticket"
+
+
+def test_post_missions_accepts_train_ticket_mission_type() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "mission_type": "train_ticket",
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["mission_type"] == "train_ticket"
+
+
+def test_post_missions_rejects_unknown_mission_type() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "mission_type": "flight_ticket",
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
 
 
 def test_post_missions_accepts_custom_max_execution_attempts() -> None:

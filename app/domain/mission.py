@@ -9,7 +9,8 @@ from app.domain.provider import ProviderOption
 
 
 class MissionType(str, Enum):
-    train_trip = "train_trip"
+    TRAIN_TICKET = "train_ticket"
+    train_trip = "train_ticket"
 
 
 class MissionStatus(str, Enum):
@@ -44,7 +45,11 @@ class FallbackRules(BaseModel):
 
 class Mission(BaseModel):
     id: UUID
-    type: MissionType
+    type: MissionType = MissionType.TRAIN_TICKET
+    mission_type: MissionType = Field(
+        default=MissionType.TRAIN_TICKET,
+        frozen=True,
+    )
     title: str
     status: MissionStatus = MissionStatus.created
     participant_ids: list[UUID] = Field(min_length=1)

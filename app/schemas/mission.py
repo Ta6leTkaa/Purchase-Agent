@@ -17,7 +17,8 @@ from app.services.clock import utc_now
 class MissionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    type: MissionType
+    type: str | None = None
+    mission_type: MissionType = MissionType.TRAIN_TICKET
     title: str
     participant_ids: list[UUID] = Field(min_length=1)
     provider: str = Field(min_length=1)
@@ -62,7 +63,8 @@ class MissionCreate(BaseModel):
         )
         return Mission(
             id=uuid4(),
-            type=self.type,
+            type=MissionType.TRAIN_TICKET,
+            mission_type=self.mission_type,
             title=self.title,
             status=status,
             participant_ids=self.participant_ids,

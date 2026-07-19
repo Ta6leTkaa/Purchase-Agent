@@ -134,6 +134,14 @@ second claim: attempts=2
 
 Attempt limits and retry policy will be added separately.
 
+## Mission types
+
+Missions now expose a canonical `mission_type`. Currently the only supported
+type is `train_ticket`. Future types will include `flight_ticket`,
+`hotel_booking`, `event_ticket`, `appointment`, `visa`, and `insurance`.
+The Mission Engine currently handles all missions the same way; specialized
+behavior will be introduced in later steps.
+
 ## Maximum execution attempts
 
 `max_execution_attempts` limits claims per mission and defaults to `3`. The

@@ -43,6 +43,7 @@ def test_create_train_trip_mission_with_default_created_status() -> None:
     )
 
     assert mission.type is MissionType.train_trip
+    assert mission.mission_type is MissionType.TRAIN_TICKET
     assert mission.status is MissionStatus.created
 
 

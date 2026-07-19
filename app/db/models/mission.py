@@ -41,6 +41,12 @@ class MissionModel(Base):
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     type: Mapped[str] = mapped_column(String, nullable=False)
+    mission_type: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default=MissionType.TRAIN_TICKET.value,
+        server_default=text("'train_ticket'"),
+    )
     title: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     provider: Mapped[str] = mapped_column(String, nullable=False)
@@ -102,7 +108,8 @@ class MissionModel(Base):
 def mission_to_model(mission: Mission) -> MissionModel:
     return MissionModel(
         id=mission.id,
-        type=mission.type.value,
+        type="train_trip",
+        mission_type=mission.mission_type.value,
         title=mission.title,
         status=mission.status.value,
         provider=mission.provider,
@@ -133,7 +140,11 @@ def mission_from_model(model: MissionModel) -> Mission:
     max_execution_attempts = getattr(model, "max_execution_attempts", 3) or 3
     mission_data = {
         "id": model.id,
-        "type": MissionType(model.type),
+        "type": MissionType.TRAIN_TICKET,
+        "mission_type": MissionType(
+            getattr(model, "mission_type", MissionType.TRAIN_TICKET.value)
+            or MissionType.TRAIN_TICKET.value
+        ),
         "title": model.title,
         "status": MissionStatus(model.status),
         "participant_ids": [
