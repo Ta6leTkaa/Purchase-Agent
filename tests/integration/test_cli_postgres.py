@@ -52,6 +52,7 @@ async def test_cli_process_due_persists_postgres_updates(
     assert persisted_mission is not None
     assert persisted_mission.status is MissionStatus.requires_confirmation
     assert persisted_mission.claimed_at is None
+    assert persisted_mission.execution_attempts == 1
     assert persisted_mission.best_option is not None
     assert persisted_mission.best_option.train_number == "001A"
     assert "waiting_for_user_confirmation" in [
@@ -67,6 +68,7 @@ async def test_cli_recover_stale_persists_postgres_updates(
         status=MissionStatus.processing,
         claimed_at=CURRENT_TIME - timedelta(minutes=16),
     )
+    stale_mission.execution_attempts = 1
     fresh_mission = make_mission(
         status=MissionStatus.processing,
         claimed_at=CURRENT_TIME - timedelta(minutes=14),
@@ -99,6 +101,7 @@ async def test_cli_recover_stale_persists_postgres_updates(
     assert persisted_stale_mission is not None
     assert persisted_stale_mission.status is MissionStatus.waiting
     assert persisted_stale_mission.claimed_at is None
+    assert persisted_stale_mission.execution_attempts == 1
     assert persisted_stale_mission.execution_log[-1].type == "claim_recovered"
     assert persisted_fresh_mission is not None
     assert persisted_fresh_mission.status is MissionStatus.processing

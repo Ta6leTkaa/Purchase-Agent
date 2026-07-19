@@ -159,6 +159,9 @@ def test_claim_due_returns_due_waiting_missions_as_processing() -> None:
         ]
         assert claimed_missions[0].status is MissionStatus.processing
         assert claimed_missions[0].claimed_at == current_time
+        assert claimed_missions[0].execution_attempts == 1
+        assert future_mission.execution_attempts == 0
+        assert created_mission.execution_attempts == 0
         assert future_mission.claimed_at is None
         assert created_mission.claimed_at is None
 
@@ -186,6 +189,7 @@ def test_claim_due_does_not_return_same_mission_twice() -> None:
         assert first_claim[0].claimed_at == current_time
         assert stored_mission is not None
         assert stored_mission.claimed_at == current_time
+        assert stored_mission.execution_attempts == 1
 
     asyncio.run(scenario())
 
@@ -224,6 +228,10 @@ def test_claim_due_concurrent_calls_do_not_overlap() -> None:
             mission.claimed_at == current_time + timedelta(seconds=10)
             for mission in [*first_claim, *second_claim]
         )
+        assert all(
+            mission.execution_attempts == 1
+            for mission in [*first_claim, *second_claim]
+        )
 
     asyncio.run(scenario())
 
@@ -249,6 +257,33 @@ def test_claim_due_sorts_by_scheduled_at_and_applies_limit() -> None:
             earlier_mission.id
         ]
         assert claimed_missions[0].claimed_at == current_time
+        assert claimed_missions[0].execution_attempts == 1
+
+    asyncio.run(scenario())
+
+
+def test_claim_after_recovery_increments_execution_attempts_again() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        mission = make_mission(
+            status=MissionStatus.waiting,
+            scheduled_at=current_time,
+        )
+        await repository.create(mission)
+
+        first_claim = await repository.claim_due(current_time)
+        recovered_missions = await repository.recover_stale_processing(
+            current_time + timedelta(minutes=16),
+            timedelta(minutes=15),
+        )
+        second_claim = await repository.claim_due(
+            current_time + timedelta(minutes=16)
+        )
+
+        assert first_claim[0].execution_attempts == 1
+        assert recovered_missions[0].execution_attempts == 1
+        assert second_claim[0].execution_attempts == 2
 
     asyncio.run(scenario())
 

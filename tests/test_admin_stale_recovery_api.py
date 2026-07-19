@@ -45,6 +45,8 @@ def test_recover_stale_recovers_only_eligible_missions() -> None:
     stale_mission = create_mission(
         claimed_at=CURRENT_TIME - timedelta(minutes=16)
     )
+    stale_mission.execution_attempts = 1
+    asyncio.run(mission_repository.update(stale_mission))
     boundary_mission = create_mission(
         claimed_at=CURRENT_TIME - timedelta(minutes=15)
     )
@@ -88,6 +90,7 @@ def test_recover_stale_recovers_only_eligible_missions() -> None:
     recovered_mission = asyncio.run(mission_repository.get(stale_mission.id))
     assert recovered_mission is not None
     assert recovered_mission.execution_log[-1].type == "claim_recovered"
+    assert recovered_mission.execution_attempts == 1
 
 
 def test_recover_stale_returns_empty_result() -> None:

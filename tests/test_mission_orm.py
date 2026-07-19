@@ -97,6 +97,17 @@ def test_claimed_at_survives_round_trip() -> None:
     assert restored_mission.status is MissionStatus.processing
 
 
+def test_execution_attempts_survives_round_trip() -> None:
+    mission = make_mission()
+    mission.execution_attempts = 2
+
+    model = mission_to_model(mission)
+    restored_mission = mission_from_model(model)
+
+    assert model.execution_attempts == 2
+    assert restored_mission.execution_attempts == 2
+
+
 def test_legacy_processing_without_claimed_at_can_be_restored() -> None:
     mission = make_mission(status=MissionStatus.created)
     model = mission_to_model(mission)

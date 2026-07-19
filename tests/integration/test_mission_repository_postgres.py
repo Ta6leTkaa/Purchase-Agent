@@ -33,6 +33,7 @@ async def test_create_saves_mission(test_session: AsyncSession) -> None:
 
     assert created_mission == mission
     assert loaded_mission == mission
+    assert created_mission.execution_attempts == 0
 
 
 async def test_get_returns_created_mission(test_session: AsyncSession) -> None:
@@ -259,6 +260,10 @@ async def test_claim_due_uses_skip_locked_for_concurrent_claims(
         mission.claimed_at == current_time
         for mission in [*first_claim, *second_claim]
     )
+    assert all(
+        mission.execution_attempts == 1
+        for mission in [*first_claim, *second_claim]
+    )
 
     async with session_maker() as session:
         repository = SqlAlchemyMissionRepository(session)
@@ -275,6 +280,10 @@ async def test_claim_due_uses_skip_locked_for_concurrent_claims(
     )
     assert all(
         mission is not None and mission.claimed_at == current_time
+        for mission in persisted_due_missions
+    )
+    assert all(
+        mission is not None and mission.execution_attempts == 1
         for mission in persisted_due_missions
     )
     assert persisted_future_mission is not None

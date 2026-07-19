@@ -75,6 +75,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         for model in models:
             model.status = MissionStatus.processing.value
             model.claimed_at = current_time
+            model.execution_attempts += 1
 
         await self._session.flush()
         await self._session.commit()
@@ -164,6 +165,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         model.provider = updated_model.provider
         model.scheduled_at = updated_model.scheduled_at
         model.claimed_at = updated_model.claimed_at
+        model.execution_attempts = updated_model.execution_attempts
         model.participant_ids = updated_model.participant_ids
         model.constraints = updated_model.constraints
         model.fallback_rules = updated_model.fallback_rules

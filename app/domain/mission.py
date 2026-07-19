@@ -53,6 +53,7 @@ class Mission(BaseModel):
     fallback_rules: FallbackRules = FallbackRules()
     scheduled_at: datetime | None = None
     claimed_at: datetime | None = None
+    execution_attempts: int = Field(default=0, ge=0)
     execution_log: list[ExecutionEvent] = []
     best_option: ProviderOption | None = None
 

@@ -77,6 +77,7 @@ class InMemoryMissionRepository:
             for mission in claimed_missions:
                 mission.status = MissionStatus.processing
                 mission.claimed_at = current_time
+                mission.execution_attempts += 1
                 self._missions[mission.id] = mission
             return claimed_missions
 

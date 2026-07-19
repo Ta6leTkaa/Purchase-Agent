@@ -91,6 +91,7 @@ def test_post_missions_initializes_internal_fields() -> None:
     assert response.json()["status"] == "created"
     assert response.json()["execution_log"] == []
     assert response.json()["best_option"] is None
+    assert response.json()["execution_attempts"] == 0
 
 
 def test_post_missions_with_scheduled_at_returns_waiting() -> None:
@@ -276,6 +277,7 @@ def test_post_missions_with_passenger_count_mismatch_returns_422() -> None:
         ("execution_log", []),
         ("best_option", None),
         ("claimed_at", datetime.now(timezone.utc).isoformat()),
+        ("execution_attempts", 1),
     ],
 )
 def test_post_missions_with_internal_fields_returns_422(
@@ -333,6 +335,7 @@ def test_post_mission_run_returns_requires_confirmation() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "requires_confirmation"
     assert response.json()["best_option"]["train_number"] == "001A"
+    assert response.json()["execution_attempts"] == 0
 
 
 def test_post_scheduled_mission_run_before_time_returns_409() -> None:

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, String, func, text
+from sqlalchemy import DateTime, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
@@ -52,6 +52,12 @@ class MissionModel(Base):
         AwareDateTime(),
         nullable=True,
     )
+    execution_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     participant_ids: Mapped[list[str]] = mapped_column(
         preferences_type,
         nullable=False,
@@ -96,6 +102,7 @@ def mission_to_model(mission: Mission) -> MissionModel:
         provider=mission.provider,
         scheduled_at=mission.scheduled_at,
         claimed_at=mission.claimed_at,
+        execution_attempts=mission.execution_attempts,
         participant_ids=[
             str(participant_id)
             for participant_id in mission.participant_ids
@@ -127,6 +134,7 @@ def mission_from_model(model: MissionModel) -> Mission:
         "provider": model.provider,
         "scheduled_at": model.scheduled_at,
         "claimed_at": model.claimed_at,
+        "execution_attempts": getattr(model, "execution_attempts", 0) or 0,
         "constraints": TrainConstraints.model_validate(model.constraints),
         "fallback_rules": FallbackRules.model_validate(model.fallback_rules),
         "execution_log": [

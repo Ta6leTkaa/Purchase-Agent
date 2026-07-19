@@ -80,11 +80,13 @@ def test_waiting_to_processing_sets_claimed_at() -> None:
 def test_processing_exit_clears_claimed_at(target: MissionStatus) -> None:
     state_machine = MissionStateMachine()
     mission = make_mission(status=MissionStatus.processing)
+    mission.execution_attempts = 1
 
     state_machine.transition(mission, target)
 
     assert mission.status is target
     assert mission.claimed_at is None
+    assert mission.execution_attempts == 1
 
 
 def test_processing_transition_rejects_naive_current_time() -> None:
@@ -119,6 +121,7 @@ def test_recover_stale_returns_processing_mission_to_waiting() -> None:
     scheduled_at = aware_datetime() - timedelta(minutes=30)
     mission = make_mission(status=MissionStatus.processing)
     mission.scheduled_at = scheduled_at
+    mission.execution_attempts = 2
     original_title = mission.title
 
     state_machine.recover_stale(mission, current_time)
@@ -127,6 +130,7 @@ def test_recover_stale_returns_processing_mission_to_waiting() -> None:
     assert mission.claimed_at is None
     assert mission.scheduled_at == scheduled_at
     assert mission.title == original_title
+    assert mission.execution_attempts == 2
     assert mission.execution_log[-1].type == "claim_recovered"
     assert mission.execution_log[-1].timestamp == current_time
     assert mission.execution_log[-1].metadata["previous_claimed_at"] == (
@@ -183,6 +187,28 @@ def test_processing_mission_requires_claimed_at() -> None:
                 travel_date=date(2026, 8, 1),
                 passengers_count=1,
             ),
+        )
+
+
+def test_mission_execution_attempts_defaults_to_zero_and_rejects_negative() -> None:
+    mission = make_mission()
+
+    assert mission.execution_attempts == 0
+
+    with pytest.raises(ValueError):
+        Mission(
+            id=uuid4(),
+            type=MissionType.train_trip,
+            title="Family train trip",
+            participant_ids=[uuid4()],
+            provider="mock_train",
+            constraints=TrainConstraints(
+                from_city="Moscow",
+                to_city="Saint Petersburg",
+                travel_date=date(2026, 8, 1),
+                passengers_count=1,
+            ),
+            execution_attempts=-1,
         )
 
 

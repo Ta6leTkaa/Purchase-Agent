@@ -78,6 +78,7 @@ def test_process_due_runs_due_mission() -> None:
     assert stored_mission is not None
     assert stored_mission.status is MissionStatus.requires_confirmation
     assert stored_mission.status is not MissionStatus.processing
+    assert stored_mission.execution_attempts == 1
     assert stored_mission.best_option is not None
     assert stored_mission.best_option.train_number == "001A"
 

@@ -117,6 +117,23 @@ exactly-once guarantee. After normal completion, `claimed_at` is cleared. A
 mission left in `processing` with `claimed_at` may be stuck; automatic detection
 and recovery for that case will be added separately.
 
+## Execution attempts
+
+`execution_attempts` counts successful claim operations, not provider calls or
+internal execution steps. A transition from `waiting` to `processing` increases
+the counter; stale recovery keeps its value unchanged. Manual execution from
+`created` does not count as an attempt yet.
+
+```text
+created: attempts=0
+scheduled waiting: attempts=0
+first claim: attempts=1
+stale recovery: attempts=1
+second claim: attempts=2
+```
+
+Attempt limits and retry policy will be added separately.
+
 ## Stale processing missions
 
 A stale mission is a mission in `processing` whose `claimed_at` is older than a
