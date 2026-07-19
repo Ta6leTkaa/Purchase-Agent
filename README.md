@@ -172,6 +172,22 @@ configuration, and writes a JSON result to stdout. It can be run manually today
 and later called by cron or another external scheduler. The CLI itself does not
 contain a polling loop.
 
+## CLI stale recovery
+
+Recover stale processing missions without starting the FastAPI server:
+
+```bash
+python -m app.cli recover-stale
+python -m app.cli recover-stale \
+  --claim-timeout-seconds 1800 \
+  --limit 50
+```
+
+The timeout defines the maximum acceptable claim age. The command performs one
+recovery cycle, returns matching missions to `waiting`, and does not run them.
+Run `process-due` separately to claim and execute them. PostgreSQL uses
+`SKIP LOCKED`, so multiple recovery processes can safely run at once.
+
 ## Admin API key
 
 Administrative endpoints require `X-Admin-API-Key`. The key protects only
