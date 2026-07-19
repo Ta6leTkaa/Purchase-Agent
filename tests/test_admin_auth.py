@@ -15,7 +15,10 @@ from app.dependencies import (
 from app.main import app
 
 CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
-ADMIN_ENDPOINT = "/admin/missions/process-due"
+ADMIN_ENDPOINTS = [
+    "/admin/missions/process-due",
+    "/admin/missions/recover-stale",
+]
 ADMIN_KEY = "test-admin-key"
 
 
@@ -32,32 +35,41 @@ def reset_state() -> Iterator[None]:
     asyncio.run(mission_repository.clear())
 
 
-def test_admin_endpoint_returns_503_when_key_is_not_configured() -> None:
+@pytest.mark.parametrize("endpoint", ADMIN_ENDPOINTS)
+def test_admin_endpoint_returns_503_when_key_is_not_configured(
+    endpoint: str,
+) -> None:
     settings.admin_api_key = None
     client = TestClient(app)
 
-    response = client.post(ADMIN_ENDPOINT, json={})
+    response = client.post(endpoint, json={})
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Admin API key is not configured"
 
 
-def test_admin_endpoint_returns_401_when_header_is_missing() -> None:
+@pytest.mark.parametrize("endpoint", ADMIN_ENDPOINTS)
+def test_admin_endpoint_returns_401_when_header_is_missing(
+    endpoint: str,
+) -> None:
     settings.admin_api_key = SecretStr(ADMIN_KEY)
     client = TestClient(app)
 
-    response = client.post(ADMIN_ENDPOINT, json={})
+    response = client.post(endpoint, json={})
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Admin API key is required"
 
 
-def test_admin_endpoint_returns_403_when_key_is_invalid() -> None:
+@pytest.mark.parametrize("endpoint", ADMIN_ENDPOINTS)
+def test_admin_endpoint_returns_403_when_key_is_invalid(
+    endpoint: str,
+) -> None:
     settings.admin_api_key = SecretStr(ADMIN_KEY)
     client = TestClient(app)
 
     response = client.post(
-        ADMIN_ENDPOINT,
+        endpoint,
         json={},
         headers={"X-Admin-API-Key": "wrong-key"},
     )
@@ -66,20 +78,33 @@ def test_admin_endpoint_returns_403_when_key_is_invalid() -> None:
     assert response.json()["detail"] == "Invalid admin API key"
 
 
+@pytest.mark.parametrize("endpoint", ADMIN_ENDPOINTS)
 def test_admin_endpoint_runs_when_key_is_valid(
+    endpoint: str,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     settings.admin_api_key = SecretStr(ADMIN_KEY)
     client = TestClient(app)
 
     response = client.post(
-        ADMIN_ENDPOINT,
+        endpoint,
         json={},
         headers={"X-Admin-API-Key": ADMIN_KEY},
     )
 
     assert response.status_code == 200
-    assert response.json()["processed_count"] == 0
+    assert response.json() in [
+        {
+            "processed_count": 0,
+            "succeeded_mission_ids": [],
+            "failed_mission_ids": [],
+            "errors": {},
+        },
+        {
+            "recovered_count": 0,
+            "recovered_mission_ids": [],
+        },
+    ]
     assert ADMIN_KEY not in response.text
     assert ADMIN_KEY not in caplog.text
 

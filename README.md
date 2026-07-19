@@ -158,6 +158,26 @@ This endpoint runs only one processing pass. It is intended for local
 development and manual checks; it is not a scheduler. A future background
 worker should replace this manual trigger.
 
+## Admin stale recovery
+
+Run one stale mission recovery cycle through the protected admin endpoint:
+
+```bash
+curl -X POST \
+  -H "X-Admin-API-Key: replace-with-a-long-random-value" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "claim_timeout_seconds": 900,
+    "limit": 100
+  }' \
+  http://localhost:8000/admin/missions/recover-stale
+```
+
+The endpoint returns stale missions from `processing` to `waiting` without
+starting them. Call `/admin/missions/process-due` separately to process a
+recovered mission. It is protected by the admin API key; concurrent recovery
+requests are safe because the repository uses `SKIP LOCKED`.
+
 ## CLI processing
 
 Due missions can also be processed without starting the FastAPI server:

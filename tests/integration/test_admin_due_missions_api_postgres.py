@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -108,6 +108,46 @@ async def test_admin_process_due_persists_postgres_updates(
     ]
 
 
+async def test_admin_recover_stale_persists_postgres_updates(
+    admin_client: AsyncClient,
+    test_session: AsyncSession,
+    test_engine: AsyncEngine,
+) -> None:
+    stale_mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=CURRENT_TIME - timedelta(minutes=16),
+    )
+    fresh_mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=CURRENT_TIME - timedelta(minutes=14),
+    )
+    mission_repository = SqlAlchemyMissionRepository(test_session)
+    await mission_repository.create(stale_mission)
+    await mission_repository.create(fresh_mission)
+    await test_session.commit()
+
+    response = await admin_client.post(
+        "/admin/missions/recover-stale",
+        json={"claim_timeout_seconds": 900, "limit": 100},
+        headers=ADMIN_HEADERS,
+    )
+    persisted_stale_mission = await load_mission(test_engine, stale_mission.id)
+    persisted_fresh_mission = await load_mission(test_engine, fresh_mission.id)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "recovered_count": 1,
+        "recovered_mission_ids": [str(stale_mission.id)],
+    }
+    assert persisted_stale_mission is not None
+    assert persisted_stale_mission.status is MissionStatus.waiting
+    assert persisted_stale_mission.claimed_at is None
+    assert persisted_stale_mission.execution_log[-1].type == "claim_recovered"
+    assert persisted_fresh_mission is not None
+    assert persisted_fresh_mission.status is MissionStatus.processing
+    assert persisted_fresh_mission.claimed_at == fresh_mission.claimed_at
+
+
 async def create_execution_data(
     session: AsyncSession,
     identities: list[Identity],
@@ -146,19 +186,29 @@ def make_identity() -> Identity:
     )
 
 
-def make_mission(participant_ids: list[UUID]) -> Mission:
+def make_mission(
+    participant_ids: list[UUID] | None = None,
+    status: MissionStatus = MissionStatus.waiting,
+    claimed_at: datetime | None = None,
+) -> Mission:
+    participants = participant_ids or [
+        uuid4(),
+        uuid4(),
+        uuid4(),
+        uuid4(),
+    ]
     return Mission(
         id=uuid4(),
         type=MissionType.train_trip,
         title="Family train trip",
-        status=MissionStatus.waiting,
-        participant_ids=participant_ids,
+        status=status,
+        participant_ids=participants,
         provider="mock_train",
         constraints=TrainConstraints(
             from_city="Moscow",
             to_city="Saint Petersburg",
             travel_date=date(2026, 8, 1),
-            passengers_count=len(participant_ids),
+            passengers_count=len(participants),
             must_be_same_compartment=True,
             min_lower_berths=2,
             max_total_price=30000,
@@ -166,6 +216,7 @@ def make_mission(participant_ids: list[UUID]) -> Mission:
         ),
         fallback_rules=FallbackRules(allow_adjacent_compartments=True),
         scheduled_at=CURRENT_TIME,
+        claimed_at=claimed_at,
         execution_log=[],
         best_option=None,
     )
