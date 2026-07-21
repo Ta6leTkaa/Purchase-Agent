@@ -440,6 +440,14 @@ uv run alembic upgrade head
 handle. Capabilities are immutable, and `MissionEngine` verifies compatibility
 before it searches or reserves through a provider.
 
+## Provider registry
+
+`ProviderRegistry` is an immutable application-level catalog of configured
+provider adapter instances. It supports exact lookup by stable `provider_id`
+and filters adapters through `supports()`, preserving registration order.
+Duplicate identifiers are rejected. The registry does not select a provider;
+automatic routing will be added separately through a Provider Resolver.
+
 ## Requirements
 
 - Python 3.12+

@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters import ProviderRegistry, provider_registry
 from app.core.config import settings
 from app.db.session import get_db_session
 from app.repositories.identity import IdentityRepository
@@ -32,3 +33,7 @@ def get_mission_repository(session: DbSessionDep) -> MissionRepository:
 
 def get_current_time() -> datetime:
     return utc_now()
+
+
+def get_provider_registry() -> ProviderRegistry:
+    return provider_registry

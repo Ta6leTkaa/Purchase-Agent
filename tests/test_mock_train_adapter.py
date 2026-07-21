@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.adapters import get_adapter
+from app.adapters import UnknownProviderError, get_adapter
 from app.adapters.mock_train import MockTrainAdapter
 from app.domain.mission import Mission, MissionType, TrainConstraints
 from app.domain.provider_capability import ProviderCapability
@@ -88,6 +88,6 @@ def test_reserve_option_returns_success_with_confirmation_required() -> None:
     assert result.reservation_id == f"mock-reservation-{option.id}"
 
 
-def test_unknown_provider_raises_value_error() -> None:
-    with pytest.raises(ValueError):
+def test_unknown_provider_raises_unknown_provider_error() -> None:
+    with pytest.raises(UnknownProviderError):
         get_adapter("unknown")
