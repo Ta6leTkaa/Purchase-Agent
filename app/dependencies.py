@@ -12,10 +12,12 @@ from app.repositories.mission import MissionRepository
 from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 from app.services.clock import utc_now
+from app.services.provider_resolver import ProviderResolver
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 identity_repository = InMemoryIdentityRepository()
 mission_repository = InMemoryMissionRepository()
+provider_resolver = ProviderResolver(provider_registry)
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 
 
@@ -37,3 +39,7 @@ def get_current_time() -> datetime:
 
 def get_provider_registry() -> ProviderRegistry:
     return provider_registry
+
+
+def get_provider_resolver() -> ProviderResolver:
+    return provider_resolver

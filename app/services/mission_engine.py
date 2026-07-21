@@ -5,11 +5,12 @@ from uuid import UUID
 from app.adapters import get_adapter
 from app.domain.execution import ExecutionEvent
 from app.domain.identity import Identity
-from app.domain.mission import Mission, MissionStatus, MissionType
+from app.domain.mission import Mission, MissionStatus
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.services.clock import utc_now
 from app.services.mission_state_machine import MissionStateMachine
+from app.services.provider_errors import UnsupportedMissionTypeError
 from app.services.rule_engine import evaluate_train_options
 
 
@@ -27,21 +28,6 @@ class InvalidMissionRunError(Exception):
 
 class MissionNotReadyError(Exception):
     pass
-
-
-class UnsupportedMissionTypeError(Exception):
-    def __init__(
-        self,
-        provider_id: str,
-        mission_type: MissionType,
-    ) -> None:
-        self.provider_id = provider_id
-        self.mission_type = mission_type
-        super().__init__(
-            "Provider "
-            f"'{provider_id}' does not support mission type "
-            f"'{mission_type.value}'"
-        )
 
 
 async def run_mission(
