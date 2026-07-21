@@ -1,6 +1,9 @@
 from datetime import date, datetime
 from uuid import uuid4
 
+import pytest
+from pydantic import ValidationError
+
 from app.domain.execution import ExecutionEvent
 from app.domain.identity import Document, DocumentType, Identity
 from app.domain.mission import Mission, MissionStatus, MissionType, TrainConstraints
@@ -45,6 +48,50 @@ def test_create_train_trip_mission_with_default_created_status() -> None:
     assert mission.type is MissionType.train_trip
     assert mission.mission_type is MissionType.TRAIN_TICKET
     assert mission.status is MissionStatus.created
+    assert mission.provider_id is None
+
+
+def test_mission_provider_id_is_normalized_and_preserved() -> None:
+    mission = Mission(
+        id=uuid4(),
+        type=MissionType.train_trip,
+        title="Moscow to Saint Petersburg",
+        participant_ids=[uuid4()],
+        provider="rzd",
+        provider_id="  mock_train  ",
+        constraints=TrainConstraints(
+            from_city="Moscow",
+            to_city="Saint Petersburg",
+            travel_date=date(2026, 8, 1),
+            passengers_count=1,
+        ),
+    )
+
+    updated_mission = mission.model_copy(
+        update={"status": MissionStatus.waiting}
+    )
+
+    assert mission.provider_id == "mock_train"
+    assert updated_mission.provider_id == "mock_train"
+
+
+@pytest.mark.parametrize("provider_id", ["", "   "])
+def test_mission_rejects_empty_provider_id(provider_id: str) -> None:
+    with pytest.raises(ValidationError):
+        Mission(
+            id=uuid4(),
+            type=MissionType.train_trip,
+            title="Moscow to Saint Petersburg",
+            participant_ids=[uuid4()],
+            provider="rzd",
+            provider_id=provider_id,
+            constraints=TrainConstraints(
+                from_city="Moscow",
+                to_city="Saint Petersburg",
+                travel_date=date(2026, 8, 1),
+                passengers_count=1,
+            ),
+        )
 
 
 def test_add_execution_event_to_mission() -> None:

@@ -12,6 +12,7 @@ from app.domain.mission import (
     TrainTicketMissionPayload,
     TrainConstraints,
 )
+from app.domain.provider_id import normalize_provider_id
 from app.services.clock import utc_now
 
 
@@ -35,6 +36,7 @@ class MissionCreate(BaseModel):
     title: str
     participant_ids: list[UUID] = Field(min_length=1)
     provider: str = Field(min_length=1)
+    provider_id: str | None = None
     constraints: TrainConstraints
     fallback_rules: FallbackRules = Field(default_factory=FallbackRules)
     scheduled_at: datetime | None = None
@@ -55,6 +57,11 @@ class MissionCreate(BaseModel):
             msg = "scheduled_at must not be in the past"
             raise ValueError(msg)
         return scheduled_at
+
+    @field_validator("provider_id")
+    @classmethod
+    def validate_provider_id(cls, value: str | None) -> str | None:
+        return normalize_provider_id(value)
 
     @model_validator(mode="after")
     def validate_participants(self) -> Self:
@@ -83,6 +90,7 @@ class MissionCreate(BaseModel):
             status=status,
             participant_ids=self.participant_ids,
             provider=self.provider,
+            provider_id=self.provider_id,
             constraints=self.constraints,
             fallback_rules=self.fallback_rules,
             scheduled_at=self.scheduled_at,

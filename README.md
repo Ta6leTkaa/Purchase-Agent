@@ -448,6 +448,15 @@ and filters adapters through `supports()`, preserving registration order.
 Duplicate identifiers are rejected. The registry does not select a provider;
 automatic routing will be added separately through a Provider Resolver.
 
+## Explicit provider selection
+
+A Mission may optionally carry `provider_id` as an explicit provider selection.
+`None` means no provider has been selected. The value is persisted as mission
+intent and matches the stable `ProviderAdapter.provider_id` contract, but it is
+not resolved or capability-checked during creation. Provider Registry and
+Mission Engine behavior remain unchanged until a separate Provider Resolver is
+introduced.
+
 ## Requirements
 
 - Python 3.12+

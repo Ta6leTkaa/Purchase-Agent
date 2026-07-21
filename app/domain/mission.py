@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.execution import ExecutionEvent
+from app.domain.provider_id import normalize_provider_id
 from app.domain.provider import ProviderOption
 
 
@@ -77,6 +78,7 @@ class Mission(BaseModel):
     status: MissionStatus = MissionStatus.created
     participant_ids: list[UUID] = Field(min_length=1)
     provider: str = Field(min_length=1)
+    provider_id: str | None = None
     constraints: TrainConstraints
     fallback_rules: FallbackRules = FallbackRules()
     scheduled_at: datetime | None = None
@@ -108,6 +110,11 @@ class Mission(BaseModel):
             msg = "datetime value must be timezone-aware"
             raise ValueError(msg)
         return value
+
+    @field_validator("provider_id")
+    @classmethod
+    def validate_provider_id(cls, value: str | None) -> str | None:
+        return normalize_provider_id(value)
 
     @model_validator(mode="after")
     def validate_claimed_at_for_status(self) -> "Mission":

@@ -100,6 +100,57 @@ def test_post_missions_initializes_internal_fields() -> None:
     assert response.json()["max_execution_attempts"] == 3
     assert response.json()["mission_type"] == "train_ticket"
     assert response.json()["payload"] == payload["payload"]
+    assert response.json()["provider_id"] is None
+
+
+def test_post_missions_accepts_and_normalizes_provider_id() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "provider_id": "  mock_train  ",
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["provider_id"] == "mock_train"
+    stored_mission = asyncio.run(
+        mission_repository.get(UUID(response.json()["id"]))
+    )
+    assert stored_mission is not None
+    assert stored_mission.provider_id == "mock_train"
+
+
+def test_post_missions_accepts_unregistered_provider_id() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "provider_id": "not_registered_yet",
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["provider_id"] == "not_registered_yet"
+
+
+@pytest.mark.parametrize("provider_id", ["", "   "])
+def test_post_missions_rejects_empty_provider_id(provider_id: str) -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "provider_id": provider_id,
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
 
 
 def test_post_missions_accepts_train_ticket_mission_type() -> None:

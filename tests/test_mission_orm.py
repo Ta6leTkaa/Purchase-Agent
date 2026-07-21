@@ -33,6 +33,7 @@ def test_mission_to_model_saves_core_fields() -> None:
     assert model.id == mission.id
     assert model.type == "train_trip"
     assert model.mission_type == "train_ticket"
+    assert model.provider_id is None
     assert model.status == "requires_confirmation"
     assert model.participant_ids == [
         str(participant_id)
@@ -51,6 +52,17 @@ def test_mission_from_model_restores_domain_mission() -> None:
 
     assert restored_mission == mission
     assert restored_mission.mission_type is MissionType.TRAIN_TICKET
+
+
+def test_provider_id_survives_mapper_round_trip() -> None:
+    mission = make_mission()
+    mission.provider_id = "mock_train"
+
+    model = mission_to_model(mission)
+    restored_mission = mission_from_model(model)
+
+    assert model.provider_id == "mock_train"
+    assert restored_mission.provider_id == "mock_train"
 
 
 def test_execution_log_survives_round_trip() -> None:

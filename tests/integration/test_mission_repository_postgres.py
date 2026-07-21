@@ -177,6 +177,44 @@ async def test_data_is_available_in_new_session_after_external_commit(
         loaded_mission = await repository.get(mission.id)
 
     assert loaded_mission == mission
+    assert loaded_mission.provider_id is None
+
+
+async def test_provider_id_survives_postgres_round_trip_and_claim(
+    test_engine: AsyncEngine,
+    clean_database: None,
+) -> None:
+    session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time,
+    )
+    mission.provider_id = "mock_train"
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        await repository.create(mission)
+        await session.commit()
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        claimed_missions = await repository.claim_due(current_time)
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        loaded_mission = await repository.get(mission.id)
+
+    assert [claimed_mission.id for claimed_mission in claimed_missions] == [
+        mission.id
+    ]
+    assert claimed_missions[0].provider_id == "mock_train"
+    assert loaded_mission is not None
+    assert loaded_mission.provider_id == "mock_train"
 
 
 async def test_repository_does_not_commit_without_external_commit(

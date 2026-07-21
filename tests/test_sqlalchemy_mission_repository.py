@@ -128,6 +128,36 @@ def test_repository_does_not_commit() -> None:
     asyncio.run(scenario())
 
 
+def test_provider_id_survives_round_trip_after_external_commit() -> None:
+    async def scenario() -> None:
+        engine = create_test_engine()
+        try:
+            await create_tables(engine)
+            session_maker = async_sessionmaker(
+                engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+            )
+            mission = make_mission()
+            mission.provider_id = "mock_train"
+
+            async with session_maker() as session:
+                repository = SqlAlchemyMissionRepository(session)
+                await repository.create(mission)
+                await session.commit()
+
+            async with session_maker() as session:
+                repository = SqlAlchemyMissionRepository(session)
+                loaded_mission = await repository.get(mission.id)
+
+            assert loaded_mission is not None
+            assert loaded_mission.provider_id == "mock_train"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 def test_list_due_filters_orders_and_limits_missions() -> None:
     async def scenario() -> None:
         await with_repository(
@@ -335,6 +365,7 @@ async def _update_saves_new_status(
     mission = make_mission()
     await repository.create(mission)
     mission.status = MissionStatus.completed
+    mission.provider_id = "mock_train"
 
     updated_mission = await repository.update(mission)
     loaded_mission = await repository.get(mission.id)
@@ -342,6 +373,7 @@ async def _update_saves_new_status(
     assert updated_mission.status is MissionStatus.completed
     assert loaded_mission is not None
     assert loaded_mission.status is MissionStatus.completed
+    assert loaded_mission.provider_id == "mock_train"
 
 
 async def _update_saves_execution_log(
@@ -445,6 +477,7 @@ async def _claim_due_filters_orders_limits(
         status=MissionStatus.waiting,
         scheduled_at=current_time - timedelta(minutes=2),
     )
+    earlier_mission.provider_id = "mock_train"
     later_mission = make_mission(
         status=MissionStatus.waiting,
         scheduled_at=current_time - timedelta(minutes=1),
@@ -471,6 +504,7 @@ async def _claim_due_filters_orders_limits(
     assert claimed_missions[0].status is MissionStatus.processing
     assert claimed_missions[0].claimed_at == current_time
     assert claimed_missions[0].execution_attempts == 1
+    assert claimed_missions[0].provider_id == "mock_train"
     loaded_future_mission = await repository.get(future_mission.id)
     loaded_created_mission = await repository.get(created_mission.id)
     assert loaded_future_mission is not None
