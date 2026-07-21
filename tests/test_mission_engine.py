@@ -18,6 +18,7 @@ from app.services.mission_engine import (
     InvalidMissionRunError,
     MissionNotReadyError,
     MissionNotFoundError,
+    UnsupportedMissionTypeError,
     confirm_mission,
     run_mission,
 )
@@ -241,6 +242,59 @@ def test_run_unknown_mission_raises_mission_not_found_error(
         asyncio.run(
             run_mission(uuid4(), mission_repository, identity_repository)
         )
+
+
+def test_run_mission_fails_fast_for_unsupported_provider_capability(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnsupportedAdapter:
+        provider_id = "unsupported-provider"
+
+        def __init__(self) -> None:
+            self.search_calls = 0
+            self.reserve_calls = 0
+
+        def supports(self, mission_type: MissionType) -> bool:
+            return False
+
+        async def search_options(
+            self,
+            mission: Mission,
+            identities: list[Identity],
+        ) -> list[object]:
+            self.search_calls += 1
+            return []
+
+        async def reserve_option(
+            self,
+            option: object,
+            mission: Mission,
+        ) -> object:
+            self.reserve_calls += 1
+            raise AssertionError("reserve_option must not be called")
+
+    identity_repository, mission_repository = repositories
+    mission = create_mission(mission_repository, [uuid4()])
+    adapter = UnsupportedAdapter()
+    monkeypatch.setattr(
+        "app.services.mission_engine.get_adapter",
+        lambda provider_id: adapter,
+    )
+
+    with pytest.raises(UnsupportedMissionTypeError) as exc_info:
+        asyncio.run(
+            run_mission(mission.id, mission_repository, identity_repository)
+        )
+
+    stored_mission = asyncio.run(mission_repository.get(mission.id))
+    assert "unsupported-provider" in str(exc_info.value)
+    assert mission.mission_type.value in str(exc_info.value)
+    assert adapter.search_calls == 0
+    assert adapter.reserve_calls == 0
+    assert stored_mission is not None
+    assert stored_mission.status is MissionStatus.created
+    assert stored_mission.execution_log == []
 
 
 @pytest.mark.parametrize(

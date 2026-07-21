@@ -434,6 +434,12 @@ Apply migrations:
 uv run alembic upgrade head
 ```
 
+## Provider capabilities
+
+`ProviderCapability` declaratively identifies the `MissionType` an adapter can
+handle. Capabilities are immutable, and `MissionEngine` verifies compatibility
+before it searches or reserves through a provider.
+
 ## Requirements
 
 - Python 3.12+

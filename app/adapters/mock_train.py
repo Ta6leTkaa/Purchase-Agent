@@ -1,9 +1,11 @@
 from datetime import datetime, time, timedelta
+from typing import Final
 from uuid import uuid4
 
 from app.adapters.base import ProviderAdapter
 from app.domain.identity import Identity
-from app.domain.mission import Mission
+from app.domain.mission import Mission, MissionType
+from app.domain.provider_capability import ProviderCapability
 from app.domain.provider import (
     ProviderOption,
     ProviderOptionType,
@@ -14,7 +16,22 @@ from app.domain.provider import (
 
 
 class MockTrainAdapter(ProviderAdapter):
-    provider_id = "mock_train"
+    PROVIDER_ID: Final = "mock_train"
+    _CAPABILITIES = frozenset(
+        {
+            ProviderCapability(
+                mission_type=MissionType.TRAIN_TICKET,
+            )
+        }
+    )
+
+    @property
+    def provider_id(self) -> str:
+        return self.PROVIDER_ID
+
+    @property
+    def capabilities(self) -> frozenset[ProviderCapability]:
+        return self._CAPABILITIES
 
     async def search_options(
         self,

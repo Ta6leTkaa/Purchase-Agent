@@ -7,6 +7,7 @@ import pytest
 from app.adapters import get_adapter
 from app.adapters.mock_train import MockTrainAdapter
 from app.domain.mission import Mission, MissionType, TrainConstraints
+from app.domain.provider_capability import ProviderCapability
 
 
 def make_mission() -> Mission:
@@ -29,6 +30,19 @@ def test_get_adapter_returns_mock_train_adapter() -> None:
     adapter = get_adapter("mock_train")
 
     assert isinstance(adapter, MockTrainAdapter)
+
+
+def test_mock_train_adapter_declares_train_ticket_capability() -> None:
+    adapter = MockTrainAdapter()
+
+    assert adapter.provider_id == "mock_train"
+    assert adapter.capabilities == frozenset(
+        {
+            ProviderCapability(
+                mission_type=MissionType.TRAIN_TICKET,
+            )
+        }
+    )
 
 
 def test_search_options_returns_four_options() -> None:
