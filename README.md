@@ -462,6 +462,11 @@ actually chosen by `ProviderResolver` for the latest attempt. Automatic
 selection leaves `provider_id` as `None` and sets `resolved_provider_id` before
 the first provider side effect. Clients cannot supply this field on creation.
 
+Each successful resolution also records a persistent `provider_resolved` entry
+in the existing Mission execution log before provider operations start. Its
+metadata contains the resolved provider ID, mission type, and whether selection
+was explicit or automatic.
+
 ## Provider resolver
 
 `ProviderResolver` applies deterministic provider selection without invoking

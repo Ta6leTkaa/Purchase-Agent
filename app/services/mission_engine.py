@@ -6,6 +6,10 @@ from app.adapters import provider_registry
 from app.domain.execution import ExecutionEvent
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionStatus
+from app.domain.provider_resolution import (
+    ProviderResolvedEventPayload,
+    ProviderSelectionMode,
+)
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.services.clock import utc_now
@@ -66,6 +70,22 @@ async def run_mission(
     resolver = provider_resolver or ProviderResolver(provider_registry)
     adapter = resolver.resolve(mission)
     mission.resolved_provider_id = adapter.provider_id
+    selection_mode = (
+        ProviderSelectionMode.explicit
+        if mission.provider_id is not None
+        else ProviderSelectionMode.automatic
+    )
+    resolution_payload = ProviderResolvedEventPayload(
+        provider_id=adapter.provider_id,
+        mission_type=mission.mission_type,
+        selection_mode=selection_mode,
+    )
+    _add_event(
+        mission,
+        "provider_resolved",
+        "Provider resolved for mission execution.",
+        resolution_payload.model_dump(mode="json"),
+    )
     await mission_repository.update(mission)
 
     state_machine = MissionStateMachine()

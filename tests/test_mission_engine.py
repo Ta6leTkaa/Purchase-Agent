@@ -95,6 +95,13 @@ def test_run_mission_sets_requires_confirmation_and_selects_best_option(
     assert updated_mission.best_option is not None
     assert updated_mission.best_option.train_number == "001A"
     assert updated_mission.resolved_provider_id == "mock_train"
+    resolution_event = updated_mission.execution_log[0]
+    assert resolution_event.type == "provider_resolved"
+    assert resolution_event.metadata == {
+        "provider_id": "mock_train",
+        "mission_type": "train_ticket",
+        "selection_mode": "automatic",
+    }
 
 
 def test_run_mission_resolves_adapter_once_without_setting_provider_id(
@@ -130,6 +137,27 @@ def test_run_mission_resolves_adapter_once_without_setting_provider_id(
     assert updated_mission.status is MissionStatus.requires_confirmation
     assert updated_mission.provider_id is None
     assert updated_mission.resolved_provider_id == "mock_train"
+
+
+def test_run_mission_records_explicit_provider_resolution(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    mission.provider_id = "mock_train"
+    asyncio.run(mission_repository.update(mission))
+
+    updated_mission = asyncio.run(
+        run_mission(mission.id, mission_repository, identity_repository)
+    )
+
+    resolution_event = updated_mission.execution_log[0]
+    assert resolution_event.type == "provider_resolved"
+    assert resolution_event.metadata["selection_mode"] == "explicit"
 
 
 def test_run_waiting_mission_is_allowed(
