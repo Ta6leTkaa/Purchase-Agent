@@ -467,6 +467,11 @@ in the existing Mission execution log before provider operations start. Its
 metadata contains the resolved provider ID, mission type, and whether selection
 was explicit or automatic.
 
+Expected resolution failures record `provider_resolution_failed` before the
+typed error is re-raised. The event stores a stable reason code, mission type,
+the requested provider when present, and ambiguity candidates when applicable;
+it never sets `resolved_provider_id`.
+
 ## Provider resolver
 
 `ProviderResolver` applies deterministic provider selection without invoking

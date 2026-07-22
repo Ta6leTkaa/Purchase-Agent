@@ -325,6 +325,8 @@ def test_run_mission_fails_fast_for_unsupported_provider_capability(
 
     identity_repository, mission_repository = repositories
     mission = create_mission(mission_repository, [uuid4()])
+    mission.provider_id = "unsupported-provider"
+    asyncio.run(mission_repository.update(mission))
     resolver = UnsupportedResolver()
 
     with pytest.raises(UnsupportedMissionTypeError) as exc_info:
@@ -343,7 +345,14 @@ def test_run_mission_fails_fast_for_unsupported_provider_capability(
     assert resolver.calls == 1
     assert stored_mission is not None
     assert stored_mission.status is MissionStatus.created
-    assert stored_mission.execution_log == []
+    assert stored_mission.resolved_provider_id is None
+    assert stored_mission.execution_log[-1].type == "provider_resolution_failed"
+    assert stored_mission.execution_log[-1].metadata == {
+        "reason": "unsupported_mission_type",
+        "mission_type": "train_ticket",
+        "requested_provider_id": "unsupported-provider",
+        "candidate_provider_ids": [],
+    }
 
 
 @pytest.mark.parametrize(

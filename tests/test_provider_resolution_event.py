@@ -2,6 +2,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.domain.provider_resolution import (
+    ProviderResolutionFailedEventPayload,
+    ProviderResolutionFailureReason,
     ProviderResolvedEventPayload,
     ProviderSelectionMode,
 )
@@ -34,4 +36,23 @@ def test_provider_resolved_payload_rejects_empty_provider_id(
             provider_id=provider_id,
             mission_type=MissionType.TRAIN_TICKET,
             selection_mode=ProviderSelectionMode.explicit,
+        )
+
+
+def test_ambiguous_resolution_failure_payload_preserves_candidates() -> None:
+    payload = ProviderResolutionFailedEventPayload(
+        reason=ProviderResolutionFailureReason.ambiguous_provider,
+        mission_type=MissionType.TRAIN_TICKET,
+        candidate_provider_ids=("provider_b", "provider_a"),
+    )
+
+    assert payload.candidate_provider_ids == ("provider_b", "provider_a")
+    assert payload.model_dump(mode="json")["reason"] == "ambiguous_provider"
+
+
+def test_resolution_failure_payload_rejects_invalid_reason_combination() -> None:
+    with pytest.raises(ValidationError):
+        ProviderResolutionFailedEventPayload(
+            reason=ProviderResolutionFailureReason.unknown_provider,
+            mission_type=MissionType.TRAIN_TICKET,
         )

@@ -3,10 +3,13 @@ from typing import Any
 from uuid import UUID
 
 from app.adapters import provider_registry
+from app.adapters.registry import UnknownProviderError
 from app.domain.execution import ExecutionEvent
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionStatus
 from app.domain.provider_resolution import (
+    ProviderResolutionFailedEventPayload,
+    ProviderResolutionFailureReason,
     ProviderResolvedEventPayload,
     ProviderSelectionMode,
 )
@@ -15,7 +18,11 @@ from app.repositories.mission import MissionRepository
 from app.services.clock import utc_now
 from app.services.mission_state_machine import MissionStateMachine
 from app.services.provider_errors import UnsupportedMissionTypeError
-from app.services.provider_resolver import ProviderResolver
+from app.services.provider_resolver import (
+    AmbiguousProviderError,
+    NoSupportingProviderError,
+    ProviderResolver,
+)
 from app.services.rule_engine import evaluate_train_options
 
 __all__ = ["UnsupportedMissionTypeError"]
@@ -68,7 +75,22 @@ async def run_mission(
         raise MissionNotReadyError("Mission is scheduled for a future time")
 
     resolver = provider_resolver or ProviderResolver(provider_registry)
-    adapter = resolver.resolve(mission)
+    try:
+        adapter = resolver.resolve(mission)
+    except (
+        UnknownProviderError,
+        UnsupportedMissionTypeError,
+        NoSupportingProviderError,
+        AmbiguousProviderError,
+    ) as error:
+        _add_event(
+            mission,
+            "provider_resolution_failed",
+            "Provider resolution failed.",
+            _provider_resolution_failure_payload(mission, error),
+        )
+        await mission_repository.update(mission)
+        raise
     mission.resolved_provider_id = adapter.provider_id
     selection_mode = (
         ProviderSelectionMode.explicit
@@ -232,3 +254,37 @@ def _is_scheduled_for_future(
         mission.scheduled_at is not None
         and mission.scheduled_at > current_time
     )
+
+
+def _provider_resolution_failure_payload(
+    mission: Mission,
+    error: (
+        UnknownProviderError
+        | UnsupportedMissionTypeError
+        | NoSupportingProviderError
+        | AmbiguousProviderError
+    ),
+) -> dict[str, object]:
+    if isinstance(error, UnknownProviderError):
+        reason = ProviderResolutionFailureReason.unknown_provider
+        requested_provider_id = mission.provider_id
+        candidate_provider_ids: tuple[str, ...] = ()
+    elif isinstance(error, UnsupportedMissionTypeError):
+        reason = ProviderResolutionFailureReason.unsupported_mission_type
+        requested_provider_id = mission.provider_id
+        candidate_provider_ids = ()
+    elif isinstance(error, NoSupportingProviderError):
+        reason = ProviderResolutionFailureReason.no_supporting_provider
+        requested_provider_id = None
+        candidate_provider_ids = ()
+    else:
+        reason = ProviderResolutionFailureReason.ambiguous_provider
+        requested_provider_id = None
+        candidate_provider_ids = error.provider_ids
+
+    return ProviderResolutionFailedEventPayload(
+        reason=reason,
+        mission_type=mission.mission_type,
+        requested_provider_id=requested_provider_id,
+        candidate_provider_ids=candidate_provider_ids,
+    ).model_dump(mode="json")
