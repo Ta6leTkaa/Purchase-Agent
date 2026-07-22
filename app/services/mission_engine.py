@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from app.adapters import get_adapter
+from app.adapters import provider_registry
 from app.domain.execution import ExecutionEvent
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionStatus
@@ -11,7 +11,10 @@ from app.repositories.mission import MissionRepository
 from app.services.clock import utc_now
 from app.services.mission_state_machine import MissionStateMachine
 from app.services.provider_errors import UnsupportedMissionTypeError
+from app.services.provider_resolver import ProviderResolver
 from app.services.rule_engine import evaluate_train_options
+
+__all__ = ["UnsupportedMissionTypeError"]
 
 
 class MissionNotFoundError(Exception):
@@ -34,6 +37,7 @@ async def run_mission(
     mission_id: UUID,
     mission_repository: MissionRepository,
     identity_repository: IdentityRepository,
+    provider_resolver: ProviderResolver | None = None,
     current_time: datetime | None = None,
     allow_processing: bool = False,
 ) -> Mission:
@@ -59,12 +63,8 @@ async def run_mission(
     ):
         raise MissionNotReadyError("Mission is scheduled for a future time")
 
-    adapter = get_adapter(mission.provider)
-    if not adapter.supports(mission.mission_type):
-        raise UnsupportedMissionTypeError(
-            provider_id=adapter.provider_id,
-            mission_type=mission.mission_type,
-        )
+    resolver = provider_resolver or ProviderResolver(provider_registry)
+    adapter = resolver.resolve(mission)
 
     state_machine = MissionStateMachine()
     is_processing_run = mission.status is MissionStatus.processing

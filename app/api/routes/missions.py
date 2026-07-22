@@ -3,7 +3,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.dependencies import get_identity_repository, get_mission_repository
+from app.dependencies import (
+    get_identity_repository,
+    get_mission_repository,
+    get_provider_resolver,
+)
 from app.domain.mission import Mission
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
@@ -16,6 +20,7 @@ from app.services.mission_engine import (
     confirm_mission,
     run_mission,
 )
+from app.services.provider_resolver import ProviderResolver
 
 router = APIRouter(prefix="/missions", tags=["missions"])
 MissionRepositoryDep: TypeAlias = Annotated[
@@ -25,6 +30,10 @@ MissionRepositoryDep: TypeAlias = Annotated[
 IdentityRepositoryDep: TypeAlias = Annotated[
     IdentityRepository,
     Depends(get_identity_repository),
+]
+ProviderResolverDep: TypeAlias = Annotated[
+    ProviderResolver,
+    Depends(get_provider_resolver),
 ]
 
 
@@ -76,12 +85,14 @@ async def run_mission_endpoint(
     mission_id: UUID,
     mission_repository: MissionRepositoryDep,
     identity_repository: IdentityRepositoryDep,
+    provider_resolver: ProviderResolverDep,
 ) -> Mission:
     try:
         return await run_mission(
             mission_id,
             mission_repository,
             identity_repository,
+            provider_resolver,
         )
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc

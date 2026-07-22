@@ -10,6 +10,7 @@ from app.dependencies import (
     get_current_time,
     get_identity_repository,
     get_mission_repository,
+    get_provider_resolver,
 )
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
@@ -17,6 +18,7 @@ from app.services.due_mission_processor import (
     DueMissionProcessingResult,
     process_due_missions,
 )
+from app.services.provider_resolver import ProviderResolver
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 MissionRepositoryDep: TypeAlias = Annotated[
@@ -26,6 +28,10 @@ MissionRepositoryDep: TypeAlias = Annotated[
 IdentityRepositoryDep: TypeAlias = Annotated[
     IdentityRepository,
     Depends(get_identity_repository),
+]
+ProviderResolverDep: TypeAlias = Annotated[
+    ProviderResolver,
+    Depends(get_provider_resolver),
 ]
 CurrentTimeDep: TypeAlias = Annotated[datetime, Depends(get_current_time)]
 AdminApiKeyDep: TypeAlias = Annotated[None, Depends(require_admin_api_key)]
@@ -60,6 +66,7 @@ async def process_due_missions_endpoint(
     _admin_api_key: AdminApiKeyDep,
     mission_repository: MissionRepositoryDep,
     identity_repository: IdentityRepositoryDep,
+    provider_resolver: ProviderResolverDep,
     current_time: CurrentTimeDep,
 ) -> DueMissionProcessingResult:
     """Run one local-development admin cycle for due mission processing."""
@@ -68,6 +75,7 @@ async def process_due_missions_endpoint(
         identity_repository,
         current_time,
         limit=request.limit,
+        provider_resolver=provider_resolver,
     )
 
 

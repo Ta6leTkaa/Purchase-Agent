@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.adapters.mock_train import MockTrainAdapter
+from app.adapters.registry import ProviderRegistry
 from app.domain.identity import Identity
 from app.domain.mission import (
     FallbackRules,
@@ -14,8 +15,8 @@ from app.domain.mission import (
     TrainConstraints,
 )
 from app.domain.provider import ProviderOption
-from app.services import mission_engine
 from app.services.due_mission_processor import process_due_missions
+from app.services.provider_resolver import ProviderResolver
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 
@@ -146,16 +147,10 @@ def test_failed_mission_does_not_stop_next_due_mission() -> None:
     asyncio.run(scenario())
 
 
-def test_adapter_receives_processing_mission_with_claimed_at(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_adapter_receives_processing_mission_with_claimed_at() -> None:
     async def scenario() -> None:
         adapter = CapturingMockTrainAdapter()
-        monkeypatch.setattr(
-            mission_engine,
-            "get_adapter",
-            lambda provider_id: adapter,
-        )
+        resolver = ProviderResolver(ProviderRegistry([adapter]))
         identity_repository = InMemoryIdentityRepository()
         mission_repository = InMemoryMissionRepository()
         current_time = aware_datetime()
@@ -173,6 +168,7 @@ def test_adapter_receives_processing_mission_with_claimed_at(
             mission_repository,
             identity_repository,
             current_time,
+            provider_resolver=resolver,
         )
 
         assert adapter.seen_status is MissionStatus.processing

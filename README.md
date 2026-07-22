@@ -463,8 +463,7 @@ introduced.
 provider operations or changing a Mission. An explicit `provider_id` is looked
 up exactly and must support the mission type. Without one, exactly one
 supporting adapter is selected; zero or multiple matches raise typed errors.
-The resolver has no priorities or fallback, and Mission Engine still receives
-its adapter through the existing execution flow.
+The resolver has no priorities or fallback.
 
 ## Requirements
 

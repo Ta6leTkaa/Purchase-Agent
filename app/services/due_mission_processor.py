@@ -11,6 +11,7 @@ from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.services.clock import utc_now
 from app.services.mission_engine import run_mission
+from app.services.provider_resolver import ProviderResolver
 
 
 class DueMissionProcessingResult(BaseModel):
@@ -25,6 +26,7 @@ async def process_due_missions(
     identity_repository: IdentityRepository,
     current_time: datetime,
     limit: int = 100,
+    provider_resolver: ProviderResolver | None = None,
 ) -> DueMissionProcessingResult:
     claimed_missions = await mission_repository.claim_due(current_time, limit)
     result = DueMissionProcessingResult(processed_count=len(claimed_missions))
@@ -35,6 +37,7 @@ async def process_due_missions(
                 mission.id,
                 mission_repository,
                 identity_repository,
+                provider_resolver,
                 current_time=current_time,
                 allow_processing=True,
             )

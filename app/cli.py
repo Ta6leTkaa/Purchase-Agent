@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.adapters import provider_registry
 from app.db.session import async_session_maker
 from app.domain.mission import Mission
 from app.repositories.identity import IdentityRepository
@@ -21,6 +22,7 @@ from app.services.due_mission_processor import (
     DueMissionProcessingResult,
     process_due_missions,
 )
+from app.services.provider_resolver import ProviderResolver
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,7 @@ class CliDependencies:
     identity_repository_factory: Callable[
         [AsyncSession], IdentityRepository
     ] = SqlAlchemyIdentityRepository
+    provider_resolver: ProviderResolver = ProviderResolver(provider_registry)
     clock: Callable[[], datetime] = utc_now
 
 
@@ -70,6 +73,7 @@ async def process_due_command(
                 identity_repository,
                 now,
                 limit=limit,
+                provider_resolver=resolved_dependencies.provider_resolver,
             )
         else:
             result = await _process_due_with_database_session(
@@ -147,6 +151,7 @@ async def _process_due_with_database_session(
                 dependencies.identity_repository_factory(session),
                 current_time,
                 limit=limit,
+                provider_resolver=dependencies.provider_resolver,
             )
             await session.commit()
             return result
