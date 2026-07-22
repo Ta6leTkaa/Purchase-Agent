@@ -457,6 +457,11 @@ not resolved or capability-checked during creation. Provider Registry and
 Mission Engine behavior remain unchanged until a separate Provider Resolver is
 introduced.
 
+`resolved_provider_id` is separate execution metadata: it records the adapter
+actually chosen by `ProviderResolver` for the latest attempt. Automatic
+selection leaves `provider_id` as `None` and sets `resolved_provider_id` before
+the first provider side effect. Clients cannot supply this field on creation.
+
 ## Provider resolver
 
 `ProviderResolver` applies deterministic provider selection without invoking

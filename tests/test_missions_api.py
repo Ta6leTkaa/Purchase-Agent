@@ -101,6 +101,7 @@ def test_post_missions_initializes_internal_fields() -> None:
     assert response.json()["mission_type"] == "train_ticket"
     assert response.json()["payload"] == payload["payload"]
     assert response.json()["provider_id"] is None
+    assert response.json()["resolved_provider_id"] is None
 
 
 def test_post_missions_accepts_and_normalizes_provider_id() -> None:
@@ -381,6 +382,7 @@ def test_post_missions_with_passenger_count_mismatch_returns_422() -> None:
         ("best_option", None),
         ("claimed_at", datetime.now(timezone.utc).isoformat()),
         ("execution_attempts", 1),
+        ("resolved_provider_id", "mock_train"),
     ],
 )
 def test_post_missions_with_internal_fields_returns_422(

@@ -79,6 +79,7 @@ class Mission(BaseModel):
     participant_ids: list[UUID] = Field(min_length=1)
     provider: str = Field(min_length=1)
     provider_id: str | None = None
+    resolved_provider_id: str | None = None
     constraints: TrainConstraints
     fallback_rules: FallbackRules = FallbackRules()
     scheduled_at: datetime | None = None
@@ -111,7 +112,7 @@ class Mission(BaseModel):
             raise ValueError(msg)
         return value
 
-    @field_validator("provider_id")
+    @field_validator("provider_id", "resolved_provider_id")
     @classmethod
     def validate_provider_id(cls, value: str | None) -> str | None:
         return normalize_provider_id(value)

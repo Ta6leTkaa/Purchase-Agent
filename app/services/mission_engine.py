@@ -65,6 +65,8 @@ async def run_mission(
 
     resolver = provider_resolver or ProviderResolver(provider_registry)
     adapter = resolver.resolve(mission)
+    mission.resolved_provider_id = adapter.provider_id
+    await mission_repository.update(mission)
 
     state_machine = MissionStateMachine()
     is_processing_run = mission.status is MissionStatus.processing

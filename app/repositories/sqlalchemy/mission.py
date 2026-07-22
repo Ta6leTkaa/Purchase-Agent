@@ -174,6 +174,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         model.status = updated_model.status
         model.provider = updated_model.provider
         model.provider_id = updated_model.provider_id
+        model.resolved_provider_id = updated_model.resolved_provider_id
         model.scheduled_at = updated_model.scheduled_at
         model.claimed_at = updated_model.claimed_at
         model.execution_attempts = updated_model.execution_attempts

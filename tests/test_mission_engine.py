@@ -94,6 +94,7 @@ def test_run_mission_sets_requires_confirmation_and_selects_best_option(
     assert updated_mission.status is MissionStatus.requires_confirmation
     assert updated_mission.best_option is not None
     assert updated_mission.best_option.train_number == "001A"
+    assert updated_mission.resolved_provider_id == "mock_train"
 
 
 def test_run_mission_resolves_adapter_once_without_setting_provider_id(
@@ -128,6 +129,7 @@ def test_run_mission_resolves_adapter_once_without_setting_provider_id(
     assert resolver.calls == 1
     assert updated_mission.status is MissionStatus.requires_confirmation
     assert updated_mission.provider_id is None
+    assert updated_mission.resolved_provider_id == "mock_train"
 
 
 def test_run_waiting_mission_is_allowed(

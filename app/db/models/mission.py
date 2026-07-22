@@ -59,6 +59,10 @@ class MissionModel(Base):
         String(255),
         nullable=True,
     )
+    resolved_provider_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
     scheduled_at: Mapped[datetime | None] = mapped_column(
         AwareDateTime(),
         nullable=True,
@@ -124,6 +128,7 @@ def mission_to_model(mission: Mission) -> MissionModel:
         status=mission.status.value,
         provider=mission.provider,
         provider_id=mission.provider_id,
+        resolved_provider_id=mission.resolved_provider_id,
         scheduled_at=mission.scheduled_at,
         claimed_at=mission.claimed_at,
         execution_attempts=mission.execution_attempts,
@@ -165,6 +170,7 @@ def mission_from_model(model: MissionModel) -> Mission:
         ],
         "provider": model.provider,
         "provider_id": getattr(model, "provider_id", None),
+        "resolved_provider_id": getattr(model, "resolved_provider_id", None),
         "scheduled_at": model.scheduled_at,
         "claimed_at": model.claimed_at,
         "execution_attempts": execution_attempts,
