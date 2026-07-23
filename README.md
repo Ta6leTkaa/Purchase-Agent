@@ -448,6 +448,20 @@ and filters adapters through `supports()`, preserving registration order.
 Duplicate identifiers are rejected. The registry does not select a provider;
 automatic routing will be added separately through a Provider Resolver.
 
+## Provider discovery
+
+The read-only provider discovery API exposes the provider adapters configured
+in the current runtime registry:
+
+- `GET /providers`
+- `GET /providers/supporting/{mission_type}`
+
+For example, a client can query `GET /providers/supporting/train_ticket`, use a
+returned machine-readable `provider_id` in `Mission.provider_id`, and then let
+`MissionEngine` resolve that explicit selection during execution. Empty lists
+are valid `200 OK` responses. Discovery does not run live availability checks,
+provider operations, or health checks; it only reports declared capabilities.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.
