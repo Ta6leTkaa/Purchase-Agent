@@ -491,6 +491,15 @@ existing Mission. The endpoint is diagnostic only: it neither executes nor
 changes the Mission, writes events, or changes execution attempts. A preview
 does not mean the Mission may execute in its current lifecycle status.
 
+## Provider Resolution Snapshot
+
+Every successful provider resolution stores an immutable snapshot in its
+`provider_resolved` execution event. The snapshot records the selection mode,
+requested and resolved provider IDs, resolver candidates, and mission type at
+that moment. It is audit metadata for that execution attempt: it never changes
+with later registry updates and is not used by later resolutions. Failed
+resolutions continue to use `provider_resolution_failed` without a snapshot.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.

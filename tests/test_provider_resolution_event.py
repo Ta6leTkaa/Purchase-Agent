@@ -1,24 +1,35 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
 from app.domain.provider_resolution import (
+    ProviderResolutionSnapshot,
     ProviderSelectionChangedEventPayload,
     ProviderResolutionFailedEventPayload,
     ProviderResolutionFailureReason,
     ProviderResolvedEventPayload,
     ProviderSelectionMode,
+    create_provider_resolution_snapshot,
     create_provider_selection_changed_event,
 )
-from app.domain.mission import MissionType
+from app.domain.mission import Mission, MissionType, TrainConstraints
 
 
 def test_provider_resolved_payload_is_immutable_and_serializable() -> None:
+    snapshot = ProviderResolutionSnapshot(
+        selection_mode=ProviderSelectionMode.automatic,
+        requested_provider_id=None,
+        resolved_provider_id="mock_train",
+        candidate_provider_ids=("mock_train",),
+        mission_type=MissionType.TRAIN_TICKET,
+    )
     payload = ProviderResolvedEventPayload(
         provider_id="  mock_train  ",
         mission_type=MissionType.TRAIN_TICKET,
         selection_mode=ProviderSelectionMode.automatic,
+        snapshot=snapshot,
     )
 
     assert payload.provider_id == "mock_train"
@@ -26,6 +37,13 @@ def test_provider_resolved_payload_is_immutable_and_serializable() -> None:
         "provider_id": "mock_train",
         "mission_type": "train_ticket",
         "selection_mode": "automatic",
+        "snapshot": {
+            "selection_mode": "automatic",
+            "requested_provider_id": None,
+            "resolved_provider_id": "mock_train",
+            "candidate_provider_ids": ["mock_train"],
+            "mission_type": "train_ticket",
+        },
     }
     with pytest.raises(ValidationError):
         payload.provider_id = "other"
@@ -40,7 +58,98 @@ def test_provider_resolved_payload_rejects_empty_provider_id(
             provider_id=provider_id,
             mission_type=MissionType.TRAIN_TICKET,
             selection_mode=ProviderSelectionMode.explicit,
+            snapshot=ProviderResolutionSnapshot(
+                selection_mode=ProviderSelectionMode.explicit,
+                requested_provider_id="mock_train",
+                resolved_provider_id="mock_train",
+                candidate_provider_ids=("mock_train",),
+                mission_type=MissionType.TRAIN_TICKET,
+            ),
         )
+
+
+@pytest.mark.parametrize(
+    ("selection_mode", "requested_provider_id", "resolved_provider_id"),
+    [
+        (ProviderSelectionMode.automatic, None, "provider_a"),
+        (ProviderSelectionMode.explicit, "provider_a", "provider_a"),
+    ],
+)
+def test_provider_resolution_snapshot_is_immutable_and_serializable(
+    selection_mode: ProviderSelectionMode,
+    requested_provider_id: str | None,
+    resolved_provider_id: str,
+) -> None:
+    snapshot = ProviderResolutionSnapshot(
+        selection_mode=selection_mode,
+        requested_provider_id=requested_provider_id,
+        resolved_provider_id=resolved_provider_id,
+        candidate_provider_ids=(resolved_provider_id,),
+        mission_type=MissionType.TRAIN_TICKET,
+    )
+
+    assert snapshot.model_dump(mode="json")["candidate_provider_ids"] == [
+        resolved_provider_id
+    ]
+    with pytest.raises(ValidationError):
+        snapshot.resolved_provider_id = "other_provider"
+
+
+@pytest.mark.parametrize(
+    (
+        "selection_mode",
+        "requested_provider_id",
+        "resolved_provider_id",
+        "candidates",
+    ),
+    [
+        (ProviderSelectionMode.automatic, None, "provider_a", ()),
+        (ProviderSelectionMode.automatic, "provider_a", "provider_a", ("provider_a",)),
+        (ProviderSelectionMode.explicit, None, "provider_a", ("provider_a",)),
+        (ProviderSelectionMode.explicit, "provider_a", "provider_b", ("provider_b",)),
+        (ProviderSelectionMode.automatic, None, "provider_a", ("provider_b",)),
+    ],
+)
+def test_provider_resolution_snapshot_rejects_invalid_values(
+    selection_mode: ProviderSelectionMode,
+    requested_provider_id: str | None,
+    resolved_provider_id: str,
+    candidates: tuple[str, ...],
+) -> None:
+    with pytest.raises(ValidationError):
+        ProviderResolutionSnapshot(
+            selection_mode=selection_mode,
+            requested_provider_id=requested_provider_id,
+            resolved_provider_id=resolved_provider_id,
+            candidate_provider_ids=candidates,
+            mission_type=MissionType.TRAIN_TICKET,
+        )
+
+
+def test_provider_resolution_snapshot_factory_uses_mission_selection() -> None:
+    mission = Mission(
+        id=uuid4(),
+        type=MissionType.TRAIN_TICKET,
+        title="Moscow to Saint Petersburg",
+        participant_ids=[uuid4()],
+        provider="mock_train",
+        provider_id="provider_a",
+        constraints=TrainConstraints(
+            from_city="Moscow",
+            to_city="Saint Petersburg",
+            travel_date=date(2026, 8, 1),
+            passengers_count=1,
+        ),
+    )
+
+    snapshot = create_provider_resolution_snapshot(
+        mission=mission,
+        resolved_provider_id="provider_a",
+        candidate_provider_ids=("provider_a",),
+    )
+
+    assert snapshot.selection_mode is ProviderSelectionMode.explicit
+    assert snapshot.requested_provider_id == "provider_a"
 
 
 def test_ambiguous_resolution_failure_payload_preserves_candidates() -> None:

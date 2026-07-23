@@ -95,6 +95,18 @@ async def test_mission_execution_flow_persists_result_to_postgres(
     assert response_body["status"] == "requires_confirmation"
     assert response_body["best_option"] is not None
     assert response_body["best_option"]["train_number"] == "001A"
+    response_resolution_event = next(
+        event
+        for event in response_body["execution_log"]
+        if event["type"] == "provider_resolved"
+    )
+    assert response_resolution_event["metadata"]["snapshot"] == {
+        "selection_mode": "automatic",
+        "requested_provider_id": None,
+        "resolved_provider_id": "mock_train",
+        "candidate_provider_ids": ["mock_train"],
+        "mission_type": "train_ticket",
+    }
     assert_event_types_contain(
         response_body["execution_log"],
         [
@@ -115,6 +127,18 @@ async def test_mission_execution_flow_persists_result_to_postgres(
     assert persisted_mission.status is MissionStatus.requires_confirmation
     assert persisted_mission.best_option is not None
     assert persisted_mission.best_option.train_number == "001A"
+    persisted_resolution_event = next(
+        event
+        for event in persisted_mission.execution_log
+        if event.type == "provider_resolved"
+    )
+    assert persisted_resolution_event.metadata["snapshot"] == {
+        "selection_mode": "automatic",
+        "requested_provider_id": None,
+        "resolved_provider_id": "mock_train",
+        "candidate_provider_ids": ["mock_train"],
+        "mission_type": "train_ticket",
+    }
     assert_event_types_contain(
         [
             event.model_dump(mode="json")

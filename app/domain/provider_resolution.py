@@ -4,7 +4,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.domain.execution import ExecutionEvent
-from app.domain.mission import MissionType
+from app.domain.mission import Mission, MissionType
 from app.domain.provider_id import normalize_provider_id
 
 
@@ -34,6 +34,7 @@ class ProviderResolvedEventPayload(BaseModel):
     provider_id: str
     mission_type: MissionType
     selection_mode: ProviderSelectionMode
+    snapshot: "ProviderResolutionSnapshot"
 
     @field_validator("provider_id")
     @classmethod
@@ -41,6 +42,71 @@ class ProviderResolvedEventPayload(BaseModel):
         normalized_value = normalize_provider_id(value)
         assert normalized_value is not None
         return normalized_value
+
+    @model_validator(mode="after")
+    def validate_snapshot(self) -> "ProviderResolvedEventPayload":
+        if self.provider_id != self.snapshot.resolved_provider_id:
+            raise ValueError("resolved provider does not match snapshot")
+        if self.mission_type is not self.snapshot.mission_type:
+            raise ValueError("mission type does not match snapshot")
+        if self.selection_mode is not self.snapshot.selection_mode:
+            raise ValueError("selection mode does not match snapshot")
+        return self
+
+
+class ProviderResolutionSnapshot(BaseModel):
+    """Immutable resolver context persisted with one successful resolution."""
+
+    model_config = ConfigDict(frozen=True)
+
+    selection_mode: ProviderSelectionMode
+    requested_provider_id: str | None
+    resolved_provider_id: str
+    candidate_provider_ids: tuple[str, ...]
+    mission_type: MissionType
+
+    @field_validator("requested_provider_id")
+    @classmethod
+    def validate_requested_provider_id(cls, value: str | None) -> str | None:
+        return normalize_provider_id(value)
+
+    @field_validator("resolved_provider_id")
+    @classmethod
+    def validate_resolved_provider_id(cls, value: str) -> str:
+        normalized_value = normalize_provider_id(value)
+        assert normalized_value is not None
+        return normalized_value
+
+    @field_validator("candidate_provider_ids")
+    @classmethod
+    def validate_candidate_provider_ids(
+        cls,
+        value: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        normalized_ids: list[str] = []
+        for provider_id in value:
+            normalized_provider_id = normalize_provider_id(provider_id)
+            assert normalized_provider_id is not None
+            normalized_ids.append(normalized_provider_id)
+        if not normalized_ids:
+            raise ValueError("candidate provider IDs must not be empty")
+        if len(set(normalized_ids)) != len(normalized_ids):
+            raise ValueError("candidate provider IDs must be unique")
+        return tuple(normalized_ids)
+
+    @model_validator(mode="after")
+    def validate_snapshot(self) -> "ProviderResolutionSnapshot":
+        if self.resolved_provider_id not in self.candidate_provider_ids:
+            raise ValueError("resolved provider must be a candidate")
+        if self.selection_mode is ProviderSelectionMode.automatic:
+            if self.requested_provider_id is not None:
+                raise ValueError("automatic snapshot cannot request a provider")
+        elif self.requested_provider_id != self.resolved_provider_id:
+            raise ValueError("explicit snapshot must resolve requested provider")
+        return self
+
+
+ProviderResolvedEventPayload.model_rebuild()
 
 
 class ProviderResolutionFailedEventPayload(BaseModel):
@@ -133,6 +199,21 @@ def create_provider_selection_changed_event(
         new_provider_id=new_provider_id,
         previous_selection_mode=selection_mode_for(previous_provider_id),
         new_selection_mode=selection_mode_for(new_provider_id),
+    )
+
+
+def create_provider_resolution_snapshot(
+    *,
+    mission: Mission,
+    resolved_provider_id: str,
+    candidate_provider_ids: tuple[str, ...],
+) -> ProviderResolutionSnapshot:
+    return ProviderResolutionSnapshot(
+        selection_mode=selection_mode_for(mission.provider_id),
+        requested_provider_id=mission.provider_id,
+        resolved_provider_id=resolved_provider_id,
+        candidate_provider_ids=candidate_provider_ids,
+        mission_type=mission.mission_type,
     )
     return ExecutionEvent(
         timestamp=occurred_at,

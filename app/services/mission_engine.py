@@ -12,6 +12,7 @@ from app.domain.provider_resolution import (
     ProviderResolutionFailureReason,
     ProviderResolvedEventPayload,
     ProviderSelectionMode,
+    create_provider_resolution_snapshot,
 )
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
@@ -98,6 +99,11 @@ async def run_mission(
         provider_id=adapter.provider_id,
         mission_type=mission.mission_type,
         selection_mode=selection_mode,
+        snapshot=create_provider_resolution_snapshot(
+            mission=mission,
+            resolved_provider_id=adapter.provider_id,
+            candidate_provider_ids=(adapter.provider_id,),
+        ),
     )
     _add_event(
         mission,

@@ -101,6 +101,13 @@ def test_run_mission_sets_requires_confirmation_and_selects_best_option(
         "provider_id": "mock_train",
         "mission_type": "train_ticket",
         "selection_mode": "automatic",
+        "snapshot": {
+            "selection_mode": "automatic",
+            "requested_provider_id": None,
+            "resolved_provider_id": "mock_train",
+            "candidate_provider_ids": ["mock_train"],
+            "mission_type": "train_ticket",
+        },
     }
 
 
@@ -158,6 +165,13 @@ def test_run_mission_records_explicit_provider_resolution(
     resolution_event = updated_mission.execution_log[0]
     assert resolution_event.type == "provider_resolved"
     assert resolution_event.metadata["selection_mode"] == "explicit"
+    assert resolution_event.metadata["snapshot"] == {
+        "selection_mode": "explicit",
+        "requested_provider_id": "mock_train",
+        "resolved_provider_id": "mock_train",
+        "candidate_provider_ids": ["mock_train"],
+        "mission_type": "train_ticket",
+    }
 
 
 def test_run_waiting_mission_is_allowed(
@@ -353,6 +367,7 @@ def test_run_mission_fails_fast_for_unsupported_provider_capability(
         "requested_provider_id": "unsupported-provider",
         "candidate_provider_ids": [],
     }
+    assert "snapshot" not in stored_mission.execution_log[-1].metadata
 
 
 @pytest.mark.parametrize(
