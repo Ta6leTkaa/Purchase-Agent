@@ -455,12 +455,31 @@ in the current runtime registry:
 
 - `GET /providers`
 - `GET /providers/supporting/{mission_type}`
+- `GET /providers/{provider_id}`
 
 For example, a client can query `GET /providers/supporting/train_ticket`, use a
 returned machine-readable `provider_id` in `Mission.provider_id`, and then let
 `MissionEngine` resolve that explicit selection during execution. Empty lists
 are valid `200 OK` responses. Discovery does not run live availability checks,
 provider operations, or health checks; it only reports declared capabilities.
+
+For a preflight check before changing a mission selection, request a specific
+provider:
+
+```bash
+curl http://127.0.0.1:8000/providers/mock_train
+```
+
+```json
+{
+  "provider_id": "mock_train",
+  "mission_types": ["train_ticket"]
+}
+```
+
+The detail endpoint returns `404` when the provider ID is not registered. Its
+response reflects the current runtime registry and does not perform health or
+availability checks.
 
 ## Explicit provider selection
 

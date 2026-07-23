@@ -59,6 +59,16 @@ class DiscoveryAdapter(ProviderAdapter):
         raise NotImplementedError
 
 
+class SpyProviderRegistry(ProviderRegistry):
+    def __init__(self, adapters: list[ProviderAdapter]) -> None:
+        super().__init__(adapters)
+        self.get_calls: list[str] = []
+
+    def get(self, provider_id: str) -> ProviderAdapter:
+        self.get_calls.append(provider_id)
+        return super().get(provider_id)
+
+
 @pytest.fixture(autouse=True)
 def clear_dependency_overrides() -> None:
     app.dependency_overrides.clear()
@@ -111,9 +121,10 @@ def test_list_supporting_providers_uses_registry_filtering() -> None:
     supporting_first = DiscoveryAdapter("provider_a")
     unsupported = DiscoveryAdapter("provider_b", supports_mission_type=False)
     supporting_last = DiscoveryAdapter("provider_c")
-    client = configure_registry(
-        ProviderRegistry([supporting_first, unsupported, supporting_last])
+    registry = SpyProviderRegistry(
+        [supporting_first, unsupported, supporting_last]
     )
+    client = configure_registry(registry)
 
     response = client.get("/providers/supporting/train_ticket")
 
@@ -134,6 +145,7 @@ def test_list_supporting_providers_uses_registry_filtering() -> None:
     assert supporting_first.supports_calls == [MissionType.TRAIN_TICKET]
     assert unsupported.supports_calls == [MissionType.TRAIN_TICKET]
     assert supporting_last.supports_calls == [MissionType.TRAIN_TICKET]
+    assert registry.get_calls == []
     assert supporting_first.provider_operations == []
     assert unsupported.provider_operations == []
     assert supporting_last.provider_operations == []
@@ -184,3 +196,71 @@ def test_invalid_mission_type_is_rejected_without_registry_access() -> None:
     assert response.status_code == 422
     assert adapter.supports_calls == []
     assert adapter.provider_operations == []
+
+
+def test_get_provider_returns_public_representation_without_operations() -> None:
+    adapter = DiscoveryAdapter("provider_a")
+    registry = SpyProviderRegistry([adapter])
+    client = configure_registry(registry)
+
+    response = client.get("/providers/provider_a")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider_id": "provider_a",
+        "mission_types": ["train_ticket"],
+    }
+    assert registry.get_calls == ["provider_a"]
+    assert adapter.provider_operations == []
+
+
+def test_get_unknown_provider_returns_structured_not_found() -> None:
+    adapter = DiscoveryAdapter("provider_a")
+    registry = SpyProviderRegistry([adapter])
+    client = configure_registry(registry)
+
+    response = client.get("/providers/missing_provider")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": {
+            "code": "provider_not_found",
+            "message": "The requested provider was not found.",
+            "details": {"provider_id": "missing_provider"},
+        }
+    }
+    assert registry.get_calls == ["missing_provider"]
+    assert adapter.provider_operations == []
+
+
+def test_get_provider_normalizes_surrounding_whitespace() -> None:
+    adapter = DiscoveryAdapter("provider_a")
+    registry = SpyProviderRegistry([adapter])
+    client = configure_registry(registry)
+
+    response = client.get("/providers/%20provider_a%20")
+
+    assert response.status_code == 200
+    assert response.json()["provider_id"] == "provider_a"
+    assert registry.get_calls == ["provider_a"]
+
+
+def test_get_provider_returns_not_found_for_empty_registry() -> None:
+    client = configure_registry(SpyProviderRegistry([]))
+
+    response = client.get("/providers/mock_train")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "provider_not_found"
+
+
+def test_provider_detail_matches_list_item() -> None:
+    adapter = DiscoveryAdapter("provider_a")
+    client = configure_registry(SpyProviderRegistry([adapter]))
+
+    list_response = client.get("/providers")
+    detail_response = client.get("/providers/provider_a")
+
+    assert list_response.status_code == 200
+    assert detail_response.status_code == 200
+    assert detail_response.json() == list_response.json()["providers"][0]

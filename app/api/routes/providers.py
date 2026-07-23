@@ -1,11 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Path
 
 from app.adapters.base import ProviderAdapter
-from app.adapters.registry import ProviderRegistry
+from app.adapters.registry import ProviderRegistry, UnknownProviderError
 from app.dependencies import get_provider_registry
 from app.domain.mission import MissionType
+from app.domain.provider_id import normalize_provider_id
 from app.schemas.provider import (
     ProviderListResponse,
     ProviderResponse,
@@ -75,3 +76,45 @@ def list_supporting_providers(
             for adapter in registry.list_supporting(mission_type)
         ),
     )
+
+
+@router.get(
+    "/{provider_id}",
+    response_model=ProviderResponse,
+    summary="Get a registered provider",
+    description=(
+        "Returns the public identifier and supported mission types of a "
+        "provider registered in the current runtime configuration. This "
+        "endpoint does not check external provider availability or credentials."
+    ),
+    responses={
+        404: {"description": "Provider not registered"},
+    },
+)
+def get_provider(
+    provider_id: Annotated[
+        str,
+        Path(
+            description=(
+                "Stable machine-readable provider identifier returned by "
+                "GET /providers."
+            )
+        ),
+    ],
+    registry: ProviderRegistryDep,
+) -> ProviderResponse:
+    try:
+        normalized_provider_id = normalize_provider_id(provider_id)
+        assert normalized_provider_id is not None
+        adapter = registry.get(normalized_provider_id)
+    except (UnknownProviderError, ValueError):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "provider_not_found",
+                "message": "The requested provider was not found.",
+                "details": {"provider_id": provider_id},
+            },
+        ) from None
+
+    return provider_to_response(adapter)
