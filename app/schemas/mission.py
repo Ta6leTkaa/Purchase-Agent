@@ -27,6 +27,17 @@ class TrainTicketMissionPayloadCreate(BaseModel):
         return TrainTicketMissionPayload.model_validate(self.model_dump())
 
 
+class SetMissionProviderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str | None
+
+    @field_validator("provider_id")
+    @classmethod
+    def validate_provider_id(cls, value: str | None) -> str | None:
+        return normalize_provider_id(value)
+
+
 class MissionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

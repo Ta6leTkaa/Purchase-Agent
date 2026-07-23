@@ -12,6 +12,7 @@ from app.repositories.mission import MissionRepository
 from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 from app.services.clock import utc_now
+from app.services.mission_provider_selection import SetMissionProvider
 from app.services.provider_resolver import ProviderResolver
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
@@ -43,3 +44,16 @@ def get_provider_registry() -> ProviderRegistry:
 
 def get_provider_resolver() -> ProviderResolver:
     return provider_resolver
+
+
+def get_set_mission_provider(
+    mission_repository: Annotated[
+        MissionRepository,
+        Depends(get_mission_repository),
+    ],
+    registry: Annotated[
+        ProviderRegistry,
+        Depends(get_provider_registry),
+    ],
+) -> SetMissionProvider:
+    return SetMissionProvider(mission_repository, registry)

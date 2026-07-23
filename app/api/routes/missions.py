@@ -7,20 +7,25 @@ from app.dependencies import (
     get_identity_repository,
     get_mission_repository,
     get_provider_resolver,
+    get_set_mission_provider,
 )
 from app.domain.mission import Mission
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
-from app.schemas.mission import MissionCreate
+from app.schemas.mission import MissionCreate, SetMissionProviderRequest
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
     MissionNotReadyError,
-    MissionNotFoundError,
     confirm_mission,
     run_mission,
 )
+from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_resolver import ProviderResolver
+from app.services.mission_provider_selection import (
+    MissionProviderSelectionNotAllowedError,
+    SetMissionProvider,
+)
 
 router = APIRouter(prefix="/missions", tags=["missions"])
 MissionRepositoryDep: TypeAlias = Annotated[
@@ -34,6 +39,10 @@ IdentityRepositoryDep: TypeAlias = Annotated[
 ProviderResolverDep: TypeAlias = Annotated[
     ProviderResolver,
     Depends(get_provider_resolver),
+]
+SetMissionProviderDep: TypeAlias = Annotated[
+    SetMissionProvider,
+    Depends(get_set_mission_provider),
 ]
 
 
@@ -78,6 +87,46 @@ async def get_mission(
     if mission is None:
         raise HTTPException(status_code=404, detail="Mission not found")
     return mission
+
+
+@router.put(
+    "/{mission_id}/provider",
+    summary="Set mission provider selection",
+    description=(
+        "Sets an explicit provider ID or clears it with null for automatic "
+        "selection. The provider must support the mission type. This endpoint "
+        "does not execute the mission."
+    ),
+    responses={
+        404: {"description": "Mission not found"},
+        409: {"description": "Mission state does not allow the update"},
+        422: {"description": "Invalid, unknown, or incompatible provider"},
+    },
+)
+async def set_mission_provider_endpoint(
+    mission_id: UUID,
+    request: SetMissionProviderRequest,
+    set_mission_provider: SetMissionProviderDep,
+) -> Mission:
+    try:
+        return await set_mission_provider.execute(
+            mission_id,
+            request.provider_id,
+        )
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    except MissionProviderSelectionNotAllowedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "mission_provider_selection_not_allowed",
+                "message": (
+                    "Provider selection cannot be changed in the current "
+                    "mission state."
+                ),
+                "details": {"status": exc.status.value},
+            },
+        ) from exc
 
 
 @router.post("/{mission_id}/run")

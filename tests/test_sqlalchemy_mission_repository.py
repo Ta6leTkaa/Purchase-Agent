@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
+from app.adapters.mock_train import MockTrainAdapter
+from app.adapters.registry import ProviderRegistry
 from app.db.base import Base
 from app.domain.execution import ExecutionEvent
 from app.domain.mission import (
@@ -29,6 +31,7 @@ from app.domain.provider import (
 )
 from app.repositories.mission import InvalidRepositoryTimeError
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
+from app.services.mission_provider_selection import SetMissionProvider
 
 
 def test_create_saves_mission() -> None:
@@ -152,6 +155,46 @@ def test_provider_id_survives_round_trip_after_external_commit() -> None:
 
             assert loaded_mission is not None
             assert loaded_mission.provider_id == "mock_train"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_provider_selection_update_survives_round_trip_after_commit() -> None:
+    async def scenario() -> None:
+        engine = create_test_engine()
+        try:
+            await create_tables(engine)
+            session_maker = async_sessionmaker(
+                engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+            )
+            mission = make_mission()
+            mission.resolved_provider_id = "previous_provider"
+
+            async with session_maker() as session:
+                repository = SqlAlchemyMissionRepository(session)
+                await repository.create(mission)
+                updated = await SetMissionProvider(
+                    repository,
+                    ProviderRegistry([MockTrainAdapter()]),
+                ).execute(mission.id, "mock_train")
+                await session.commit()
+
+            async with session_maker() as session:
+                repository = SqlAlchemyMissionRepository(session)
+                loaded_mission = await repository.get(mission.id)
+
+            assert updated.provider_id == "mock_train"
+            assert updated.resolved_provider_id is None
+            assert loaded_mission is not None
+            assert loaded_mission.provider_id == "mock_train"
+            assert loaded_mission.resolved_provider_id is None
+            assert loaded_mission.status is MissionStatus.created
+            assert loaded_mission.execution_attempts == 0
+            assert loaded_mission.payload == mission.payload
         finally:
             await engine.dispose()
 

@@ -16,6 +16,7 @@ from app.domain.provider_resolution import (
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.services.clock import utc_now
+from app.services.mission_errors import MissionNotFoundError
 from app.services.mission_state_machine import MissionStateMachine
 from app.services.provider_errors import UnsupportedMissionTypeError
 from app.services.provider_resolver import (
@@ -26,10 +27,6 @@ from app.services.provider_resolver import (
 from app.services.rule_engine import evaluate_train_options
 
 __all__ = ["UnsupportedMissionTypeError"]
-
-
-class MissionNotFoundError(Exception):
-    pass
 
 
 class InvalidMissionConfirmationError(Exception):

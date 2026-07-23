@@ -164,3 +164,24 @@ class Mission(BaseModel):
     @property
     def has_exhausted_attempts(self) -> bool:
         return self.execution_attempts >= self.max_execution_attempts
+
+    @property
+    def can_change_provider_selection(self) -> bool:
+        return self.status in {
+            MissionStatus.created,
+            MissionStatus.waiting,
+        }
+
+    def with_provider_selection(
+        self,
+        provider_id: str | None,
+    ) -> "Mission":
+        normalized_provider_id = normalize_provider_id(provider_id)
+        if normalized_provider_id == self.provider_id:
+            return self
+        return self.model_copy(
+            update={
+                "provider_id": normalized_provider_id,
+                "resolved_provider_id": None,
+            }
+        )

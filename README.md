@@ -476,6 +476,20 @@ actually chosen by `ProviderResolver` for the latest attempt. Automatic
 selection leaves `provider_id` as `None` and sets `resolved_provider_id` before
 the first provider side effect. Clients cannot supply this field on creation.
 
+Provider selection can be changed before execution with
+`PUT /missions/{mission_id}/provider`. A non-null `provider_id` must be a
+registered adapter that supports the mission type; `null` returns the mission
+to automatic selection. When automatic resolution is ambiguous, the client can:
+
+1. Query `GET /providers/supporting/{mission_type}`.
+2. Choose a returned `provider_id`.
+3. Set it with `PUT /missions/{mission_id}/provider`.
+4. Run the mission again.
+
+The update validates selection but does not resolve or execute the mission.
+Changing the requested value clears `resolved_provider_id`; an idempotent update
+keeps existing resolved metadata, and historical execution events remain intact.
+
 Each successful resolution also records a persistent `provider_resolved` entry
 in the existing Mission execution log before provider operations start. Its
 metadata contains the resolved provider ID, mission type, and whether selection
