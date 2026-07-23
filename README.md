@@ -472,6 +472,19 @@ typed error is re-raised. The event stores a stable reason code, mission type,
 the requested provider when present, and ambiguity candidates when applicable;
 it never sets `resolved_provider_id`.
 
+## Provider Resolution HTTP Errors
+
+Provider resolution failures are persisted by Mission Engine and then mapped by
+global API handlers. The handlers do not retry, choose fallbacks, or create
+additional events.
+
+| Application error | HTTP status | API code |
+| --- | ---: | --- |
+| `UnknownProviderError` | 422 | `unknown_provider` |
+| `UnsupportedMissionTypeError` | 422 | `unsupported_mission_type` |
+| `NoSupportingProviderError` | 409 | `no_supporting_provider` |
+| `AmbiguousProviderError` | 409 | `ambiguous_provider` |
+
 ## Provider resolver
 
 `ProviderResolver` applies deterministic provider selection without invoking
