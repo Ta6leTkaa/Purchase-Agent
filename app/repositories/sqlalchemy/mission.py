@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.mission import (
@@ -16,6 +16,10 @@ from app.repositories.mission import (
     RepositoryEntityNotFoundError,
 )
 from app.services.mission_state_machine import MissionStateMachine
+
+
+class MissionEventSequenceConflictError(Exception):
+    pass
 
 
 class SqlAlchemyMissionRepository(MissionRepository):
@@ -145,6 +149,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
             state_machine.recover_stale(mission, current_time)
             model.status = mission.status.value
             model.claimed_at = mission.claimed_at
+            model.last_event_sequence = mission.last_event_sequence
             model.execution_log = [
                 event.model_dump(mode="json")
                 for event in mission.execution_log
@@ -162,31 +167,44 @@ class SqlAlchemyMissionRepository(MissionRepository):
         return mission_from_model(model)
 
     async def update(self, mission: Mission) -> Mission:
-        model = await self._session.get(MissionModel, mission.id)
-        if model is None:
-            raise RepositoryEntityNotFoundError
-
         updated_model = mission_to_model(mission)
-        model.type = updated_model.type
-        model.mission_type = updated_model.mission_type
-        model.payload = updated_model.payload
-        model.title = updated_model.title
-        model.status = updated_model.status
-        model.provider = updated_model.provider
-        model.provider_id = updated_model.provider_id
-        model.resolved_provider_id = updated_model.resolved_provider_id
-        model.scheduled_at = updated_model.scheduled_at
-        model.claimed_at = updated_model.claimed_at
-        model.execution_attempts = updated_model.execution_attempts
-        model.max_execution_attempts = updated_model.max_execution_attempts
-        model.participant_ids = updated_model.participant_ids
-        model.constraints = updated_model.constraints
-        model.fallback_rules = updated_model.fallback_rules
-        model.execution_log = updated_model.execution_log
-        model.best_option = updated_model.best_option
+        result = await self._session.execute(
+            update(MissionModel)
+            .where(MissionModel.id == mission.id)
+            .where(
+                MissionModel.last_event_sequence
+                == mission.persisted_last_event_sequence
+            )
+            .values(
+                type=updated_model.type,
+                mission_type=updated_model.mission_type,
+                payload=updated_model.payload,
+                title=updated_model.title,
+                status=updated_model.status,
+                provider=updated_model.provider,
+                provider_id=updated_model.provider_id,
+                resolved_provider_id=updated_model.resolved_provider_id,
+                scheduled_at=updated_model.scheduled_at,
+                claimed_at=updated_model.claimed_at,
+                execution_attempts=updated_model.execution_attempts,
+                max_execution_attempts=updated_model.max_execution_attempts,
+                last_event_sequence=updated_model.last_event_sequence,
+                participant_ids=updated_model.participant_ids,
+                constraints=updated_model.constraints,
+                fallback_rules=updated_model.fallback_rules,
+                execution_log=updated_model.execution_log,
+                best_option=updated_model.best_option,
+            )
+        )
+        if result.rowcount == 0:
+            existing_model = await self._session.get(MissionModel, mission.id)
+            if existing_model is None:
+                raise RepositoryEntityNotFoundError
+            raise MissionEventSequenceConflictError
 
         await self._session.flush()
-        return mission_from_model(model)
+        mission.mark_event_sequence_persisted()
+        return mission
 
     async def clear(self) -> None:
         await self._session.execute(delete(MissionModel))

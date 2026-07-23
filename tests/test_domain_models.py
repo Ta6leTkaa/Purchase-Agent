@@ -108,15 +108,95 @@ def test_add_execution_event_to_mission() -> None:
             passengers_count=1,
         ),
     )
-    event = ExecutionEvent(
+    event = mission.record_event(
         timestamp=datetime(2026, 7, 9, 10, 0),
-        type="mission.created",
+        event_type="mission.created",
         message="Mission created.",
     )
 
-    mission.execution_log.append(event)
-
     assert mission.execution_log == [event]
+    assert event.sequence == 1
+    assert mission.last_event_sequence == 1
+
+
+def test_mission_assigns_strictly_increasing_event_sequences() -> None:
+    mission = Mission(
+        id=uuid4(),
+        type=MissionType.train_trip,
+        title="Moscow to Kazan",
+        participant_ids=[uuid4()],
+        provider="rzd",
+        constraints=TrainConstraints(
+            from_city="Moscow",
+            to_city="Kazan",
+            travel_date=date(2026, 8, 2),
+            passengers_count=1,
+        ),
+    )
+
+    events = [
+        mission.record_event(
+            timestamp=datetime(2026, 7, 9, 10, minute),
+            event_type=event_type,
+            message=event_type,
+        )
+        for minute, event_type in enumerate(
+            (
+                "mission_created",
+                "provider_resolution_failed",
+                "provider_selection_changed",
+                "provider_resolved",
+            )
+        )
+    ]
+
+    assert [event.sequence for event in events] == [1, 2, 3, 4]
+    assert mission.last_event_sequence == 4
+
+
+@pytest.mark.parametrize("sequence", [0, -1])
+def test_execution_event_rejects_non_positive_sequence(sequence: int) -> None:
+    with pytest.raises(ValidationError):
+        ExecutionEvent(
+            sequence=sequence,
+            timestamp=datetime(2026, 7, 9, 10, 0),
+            type="mission_created",
+            message="Mission created.",
+        )
+
+
+def test_mission_rejects_duplicate_or_decreasing_event_sequences() -> None:
+    events = [
+        ExecutionEvent(
+            sequence=1,
+            timestamp=datetime(2026, 7, 9, 10, 0),
+            type="mission_created",
+            message="Mission created.",
+        ),
+        ExecutionEvent(
+            sequence=1,
+            timestamp=datetime(2026, 7, 9, 10, 1),
+            type="mission_started",
+            message="Mission started.",
+        ),
+    ]
+
+    with pytest.raises(ValidationError, match="strictly increasing"):
+        Mission(
+            id=uuid4(),
+            type=MissionType.train_trip,
+            title="Moscow to Kazan",
+            participant_ids=[uuid4()],
+            provider="rzd",
+            constraints=TrainConstraints(
+                from_city="Moscow",
+                to_city="Kazan",
+                travel_date=date(2026, 8, 2),
+                passengers_count=1,
+            ),
+            last_event_sequence=1,
+            execution_log=events,
+        )
 
 
 def test_create_provider_option_with_four_seats() -> None:

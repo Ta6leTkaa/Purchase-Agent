@@ -275,8 +275,10 @@ def test_provider_selection_changed_payload_rejects_invalid_values(
 
 def test_provider_selection_changed_event_factory_uses_typed_payload() -> None:
     occurred_at = datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc)
+    mission = make_mission()
 
     event = create_provider_selection_changed_event(
+        mission=mission,
         previous_provider_id=None,
         new_provider_id="  provider_a  ",
         occurred_at=occurred_at,
@@ -284,6 +286,8 @@ def test_provider_selection_changed_event_factory_uses_typed_payload() -> None:
 
     assert event.type == "provider_selection_changed"
     assert event.timestamp == occurred_at
+    assert event.sequence == 1
+    assert mission.last_event_sequence == 1
     assert event.metadata == {
         "previous_provider_id": None,
         "new_provider_id": "provider_a",
@@ -295,7 +299,24 @@ def test_provider_selection_changed_event_factory_uses_typed_payload() -> None:
 def test_provider_selection_changed_event_factory_rejects_naive_timestamp() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         create_provider_selection_changed_event(
+            mission=make_mission(),
             previous_provider_id=None,
             new_provider_id="provider_a",
             occurred_at=datetime(2026, 7, 23, 10, 0),
         )
+
+
+def make_mission() -> Mission:
+    return Mission(
+        id=uuid4(),
+        type=MissionType.TRAIN_TICKET,
+        title="Moscow to Saint Petersburg",
+        participant_ids=[uuid4()],
+        provider="mock_train",
+        constraints=TrainConstraints(
+            from_city="Moscow",
+            to_city="Saint Petersburg",
+            travel_date=date(2026, 8, 1),
+            passengers_count=1,
+        ),
+    )

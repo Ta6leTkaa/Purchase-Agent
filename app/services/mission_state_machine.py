@@ -1,6 +1,5 @@
 from datetime import datetime
 
-from app.domain.execution import ExecutionEvent
 from app.domain.mission import Mission, MissionStatus
 
 
@@ -96,23 +95,21 @@ class MissionStateMachine:
             current_time=current_time,
             recovery=True,
         )
-        mission.execution_log.append(
-            ExecutionEvent(
-                timestamp=current_time,
-                type="claim_recovered",
-                message=(
-                    "Mission failed after a stale claim because execution "
-                    "attempts are exhausted."
-                    if target is MissionStatus.failed
-                    else "Mission recovered after a stale claim."
-                ),
-                metadata={
-                    "previous_claimed_at": previous_claimed_at.isoformat()
-                    if previous_claimed_at is not None
-                    else None,
-                    "attempts_exhausted": target is MissionStatus.failed,
-                },
-            )
+        mission.record_event(
+            timestamp=current_time,
+            event_type="claim_recovered",
+            message=(
+                "Mission failed after a stale claim because execution "
+                "attempts are exhausted."
+                if target is MissionStatus.failed
+                else "Mission recovered after a stale claim."
+            ),
+            metadata={
+                "previous_claimed_at": previous_claimed_at.isoformat()
+                if previous_claimed_at is not None
+                else None,
+                "attempts_exhausted": target is MissionStatus.failed,
+            },
         )
         return mission
 

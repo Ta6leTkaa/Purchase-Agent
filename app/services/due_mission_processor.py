@@ -5,7 +5,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.domain.execution import ExecutionEvent
 from app.domain.mission import Mission, MissionStatus
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
@@ -88,11 +87,9 @@ def _add_event(
     message: str,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    mission.execution_log.append(
-        ExecutionEvent(
-            timestamp=utc_now(),
-            type=event_type,
-            message=message,
-            metadata=metadata or {},
-        )
+    mission.record_event(
+        timestamp=utc_now(),
+        event_type=event_type,
+        message=message,
+        metadata=metadata,
     )

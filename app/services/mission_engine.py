@@ -4,7 +4,6 @@ from uuid import UUID
 
 from app.adapters import provider_registry
 from app.adapters.registry import UnknownProviderError
-from app.domain.execution import ExecutionEvent
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionStatus
 from app.domain.provider_resolution import (
@@ -239,13 +238,11 @@ def _add_event(
     message: str,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    mission.execution_log.append(
-        ExecutionEvent(
-            timestamp=utc_now(),
-            type=event_type,
-            message=message,
-            metadata=metadata or {},
-        )
+    mission.record_event(
+        timestamp=utc_now(),
+        event_type=event_type,
+        message=message,
+        metadata=metadata,
     )
 
 

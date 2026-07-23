@@ -37,6 +37,7 @@ CURRENT_TIME = datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc)
 def make_mission(
     execution_log: list[ExecutionEvent] | None = None,
 ) -> Mission:
+    events = execution_log or []
     return Mission(
         id=uuid4(),
         type=MissionType.TRAIN_TICKET,
@@ -49,7 +50,8 @@ def make_mission(
             travel_date=date(2026, 8, 1),
             passengers_count=1,
         ),
-        execution_log=execution_log or [],
+        last_event_sequence=events[-1].sequence if events else 0,
+        execution_log=events,
     )
 
 
@@ -80,29 +82,34 @@ def make_provider_events() -> list[ExecutionEvent]:
     )
     return [
         ExecutionEvent(
+            sequence=1,
             timestamp=CURRENT_TIME + timedelta(minutes=4),
             type="mission_completed",
             message="Mission completed.",
         ),
         ExecutionEvent(
+            sequence=2,
             timestamp=CURRENT_TIME,
             type="provider_resolution_failed",
             message="Provider resolution failed.",
             metadata=failure_payload.model_dump(mode="json"),
         ),
         ExecutionEvent(
+            sequence=3,
             timestamp=CURRENT_TIME + timedelta(minutes=2),
             type="provider_resolved",
             message="Provider resolved for mission execution.",
             metadata=resolved_payload.model_dump(mode="json"),
         ),
         ExecutionEvent(
+            sequence=4,
             timestamp=CURRENT_TIME + timedelta(minutes=1),
             type="provider_selection_changed",
             message="Mission provider selection changed.",
             metadata=selection_payload.model_dump(mode="json"),
         ),
         ExecutionEvent(
+            sequence=5,
             timestamp=CURRENT_TIME + timedelta(minutes=3),
             type="mission_started",
             message="Mission started.",
@@ -219,6 +226,7 @@ def test_history_reads_legacy_resolved_event_without_snapshot() -> None:
         mission = make_mission(
             [
                 ExecutionEvent(
+                    sequence=1,
                     timestamp=CURRENT_TIME,
                     type="provider_resolved",
                     message="Provider resolved for mission execution.",
@@ -245,6 +253,7 @@ def test_history_mapper_rejects_unrelated_event_type() -> None:
     with pytest.raises(ValueError, match="Unsupported provider history event"):
         provider_event_to_history_item(
             ExecutionEvent(
+                sequence=1,
                 timestamp=CURRENT_TIME,
                 type="mission_started",
                 message="Mission started.",

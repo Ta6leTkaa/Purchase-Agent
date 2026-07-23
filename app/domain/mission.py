@@ -2,9 +2,16 @@ from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
-from app.domain.execution import ExecutionEvent
+from app.domain.execution import ExecutionEvent, validate_event_sequence
 from app.domain.provider_id import normalize_provider_id
 from app.domain.provider import ProviderOption
 
@@ -67,6 +74,8 @@ class TrainTicketMissionPayload(BaseModel):
 
 
 class Mission(BaseModel):
+    _persisted_last_event_sequence: int = PrivateAttr(default=0)
+
     id: UUID
     type: MissionType = MissionType.TRAIN_TICKET
     mission_type: MissionType = Field(
@@ -86,6 +95,7 @@ class Mission(BaseModel):
     claimed_at: datetime | None = None
     execution_attempts: int = Field(default=0, ge=0)
     max_execution_attempts: int = Field(default=3, ge=1, le=100)
+    last_event_sequence: int = Field(default=0, ge=0)
     execution_log: list[ExecutionEvent] = []
     best_option: ProviderOption | None = None
 
@@ -132,6 +142,11 @@ class Mission(BaseModel):
         if self.max_execution_attempts < self.execution_attempts:
             msg = "max_execution_attempts cannot be less than execution_attempts"
             raise ValueError(msg)
+        validate_event_sequence(
+            self.execution_log,
+            last_event_sequence=self.last_event_sequence,
+        )
+        self._persisted_last_event_sequence = self.last_event_sequence
         if self.status is MissionStatus.processing and self.claimed_at is None:
             msg = "claimed_at is required for processing missions"
             raise ValueError(msg)
@@ -142,6 +157,32 @@ class Mission(BaseModel):
             msg = "claimed_at is allowed only for processing missions"
             raise ValueError(msg)
         return self
+
+    def record_event(
+        self,
+        *,
+        timestamp: datetime,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object] | None = None,
+    ) -> ExecutionEvent:
+        event = ExecutionEvent(
+            sequence=self.last_event_sequence + 1,
+            timestamp=timestamp,
+            type=event_type,
+            message=message,
+            metadata=metadata or {},
+        )
+        self.execution_log.append(event)
+        self.last_event_sequence = event.sequence
+        return event
+
+    @property
+    def persisted_last_event_sequence(self) -> int:
+        return self._persisted_last_event_sequence
+
+    def mark_event_sequence_persisted(self) -> None:
+        self._persisted_last_event_sequence = self.last_event_sequence
 
     @property
     def origin(self) -> str:

@@ -190,6 +190,7 @@ class ProviderSelectionChangedEventPayload(BaseModel):
 
 def create_provider_selection_changed_event(
     *,
+    mission: Mission,
     previous_provider_id: str | None,
     new_provider_id: str | None,
     occurred_at: datetime,
@@ -201,6 +202,12 @@ def create_provider_selection_changed_event(
         new_provider_id=new_provider_id,
         previous_selection_mode=selection_mode_for(previous_provider_id),
         new_selection_mode=selection_mode_for(new_provider_id),
+    )
+    return mission.record_event(
+        timestamp=occurred_at,
+        event_type="provider_selection_changed",
+        message="Mission provider selection changed.",
+        metadata=payload.model_dump(mode="json"),
     )
 
 
@@ -217,14 +224,6 @@ def create_provider_resolution_snapshot(
         candidate_provider_ids=candidate_provider_ids,
         mission_type=mission.mission_type,
     )
-    return ExecutionEvent(
-        timestamp=occurred_at,
-        type="provider_selection_changed",
-        message="Mission provider selection changed.",
-        metadata=payload.model_dump(mode="json"),
-    )
-
-
 def selection_mode_for(provider_id: str | None) -> ProviderSelectionMode:
     return (
         ProviderSelectionMode.explicit

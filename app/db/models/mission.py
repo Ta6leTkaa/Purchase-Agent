@@ -9,7 +9,7 @@ from sqlalchemy.types import TypeDecorator
 
 from app.db.base import Base
 from app.db.models.identity import GUID, preferences_type
-from app.domain.execution import ExecutionEvent
+from app.domain.execution import ExecutionEvent, validate_event_sequence
 from app.domain.mission import (
     FallbackRules,
     Mission,
@@ -83,6 +83,12 @@ class MissionModel(Base):
         default=3,
         server_default=text("3"),
     )
+    last_event_sequence: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     participant_ids: Mapped[list[str]] = mapped_column(
         preferences_type,
         nullable=False,
@@ -119,6 +125,10 @@ class MissionModel(Base):
 
 
 def mission_to_model(mission: Mission) -> MissionModel:
+    validate_event_sequence(
+        mission.execution_log,
+        last_event_sequence=mission.last_event_sequence,
+    )
     return MissionModel(
         id=mission.id,
         type="train_trip",
@@ -133,6 +143,7 @@ def mission_to_model(mission: Mission) -> MissionModel:
         claimed_at=mission.claimed_at,
         execution_attempts=mission.execution_attempts,
         max_execution_attempts=mission.max_execution_attempts,
+        last_event_sequence=mission.last_event_sequence,
         participant_ids=[
             str(participant_id)
             for participant_id in mission.participant_ids
@@ -154,6 +165,15 @@ def mission_to_model(mission: Mission) -> MissionModel:
 def mission_from_model(model: MissionModel) -> Mission:
     execution_attempts = getattr(model, "execution_attempts", 0) or 0
     max_execution_attempts = getattr(model, "max_execution_attempts", 3) or 3
+    execution_log = [
+        ExecutionEvent.model_validate(event)
+        for event in model.execution_log
+    ]
+    last_event_sequence = getattr(model, "last_event_sequence", 0) or 0
+    validate_event_sequence(
+        execution_log,
+        last_event_sequence=last_event_sequence,
+    )
     mission_data = {
         "id": model.id,
         "type": MissionType.TRAIN_TICKET,
@@ -178,12 +198,10 @@ def mission_from_model(model: MissionModel) -> Mission:
             max_execution_attempts,
             execution_attempts,
         ),
+        "last_event_sequence": last_event_sequence,
         "constraints": TrainConstraints.model_validate(model.constraints),
         "fallback_rules": FallbackRules.model_validate(model.fallback_rules),
-        "execution_log": [
-            ExecutionEvent.model_validate(event)
-            for event in model.execution_log
-        ],
+        "execution_log": execution_log,
         "best_option": (
             ProviderOption.model_validate(model.best_option)
             if model.best_option is not None
@@ -195,6 +213,8 @@ def mission_from_model(model: MissionModel) -> Mission:
         mission_data["status"] is MissionStatus.processing
         and mission_data["claimed_at"] is None
     ):
-        return Mission.model_construct(**mission_data)
+        mission = Mission.model_construct(**mission_data)
+        mission.mark_event_sequence_persisted()
+        return mission
 
     return Mission(**mission_data)

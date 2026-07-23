@@ -433,12 +433,10 @@ async def _update_saves_execution_log(
 ) -> None:
     mission = make_mission()
     await repository.create(mission)
-    mission.execution_log.append(
-        ExecutionEvent(
-            timestamp=datetime(2026, 7, 13, 11, 0),
-            type="mission_completed",
-            message="Mission completed.",
-        )
+    mission.record_event(
+        timestamp=datetime(2026, 7, 13, 11, 0),
+        event_type="mission_completed",
+        message="Mission completed.",
     )
 
     updated_mission = await repository.update(mission)
@@ -644,8 +642,10 @@ def make_mission(
             allow_adjacent_compartments=True,
         ),
         scheduled_at=scheduled_at,
+        last_event_sequence=1,
         execution_log=[
             ExecutionEvent(
+                sequence=1,
                 timestamp=datetime(2026, 7, 13, 10, 0),
                 type="mission_started",
                 message="Mission started.",

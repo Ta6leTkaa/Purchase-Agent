@@ -72,11 +72,10 @@ class SetMissionProvider:
         )
         if updated_mission is mission:
             return mission
-        updated_mission.execution_log.append(
-            create_provider_selection_changed_event(
-                previous_provider_id=previous_provider_id,
-                new_provider_id=normalized_provider_id,
-                occurred_at=self._clock(),
-            )
+        create_provider_selection_changed_event(
+            mission=updated_mission,
+            previous_provider_id=previous_provider_id,
+            new_provider_id=normalized_provider_id,
+            occurred_at=self._clock(),
         )
         return await self._mission_repository.update(updated_mission)

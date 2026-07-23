@@ -81,7 +81,11 @@ async def test_update_saves_execution_log(test_session: AsyncSession) -> None:
     repository = SqlAlchemyMissionRepository(test_session)
     mission = make_mission()
     await repository.create(mission)
-    mission.execution_log.append(make_execution_event())
+    mission.record_event(
+        timestamp=datetime(2026, 7, 13, 11, 0),
+        event_type="mission_completed",
+        message="Mission completed.",
+    )
 
     updated_mission = await repository.update(mission)
     loaded_mission = await repository.get(mission.id)
@@ -639,6 +643,7 @@ def make_mission(
 
 def make_execution_event() -> ExecutionEvent:
     return ExecutionEvent(
+        sequence=1,
         timestamp=datetime(2026, 7, 13, 11, 0),
         type="mission_completed",
         message="Mission completed.",

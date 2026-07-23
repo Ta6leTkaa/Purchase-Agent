@@ -540,6 +540,29 @@ does not consult the current provider registry, and does not execute the
 Mission or create events. Legacy resolved events may have `snapshot: null`;
 newly recorded successful resolutions include their snapshot.
 
+## Mission Event Sequence
+
+Every persisted Mission event has a positive `sequence` that is unique and
+strictly increasing within that Mission. `Mission.record_event(...)` assigns
+the sequence at append time and persists it together with
+`last_event_sequence`; it never derives a sequence from a timestamp or a
+current Python list position.
+
+```json
+[
+  {"sequence": 1, "type": "mission_created"},
+  {"sequence": 2, "type": "provider_resolution_failed"},
+  {"sequence": 3, "type": "provider_selection_changed"}
+]
+```
+
+Legacy event arrays are backfilled once by the database migration in their
+existing JSON order. The current opaque history cursor remains unchanged:
+`event_index` is only its implementation tie-breaker, while `timestamp`
+describes event time and `sequence` defines the durable Mission-local order.
+The sequence is a prerequisite for a future incremental history API; that API
+is not part of this change.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.

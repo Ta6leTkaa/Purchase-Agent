@@ -85,6 +85,8 @@ def test_execution_log_survives_round_trip() -> None:
 
     assert len(restored_mission.execution_log) == 1
     assert restored_mission.execution_log[0].type == "mission_started"
+    assert restored_mission.execution_log[0].sequence == 1
+    assert restored_mission.last_event_sequence == 1
 
 
 def test_best_option_survives_round_trip() -> None:
@@ -197,8 +199,10 @@ def make_mission(
         ),
         scheduled_at=scheduled_at,
         claimed_at=claimed_at,
+        last_event_sequence=1,
         execution_log=[
             ExecutionEvent(
+                sequence=1,
                 timestamp=datetime(2026, 7, 13, 10, 0),
                 type="mission_started",
                 message="Mission started.",

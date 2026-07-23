@@ -113,8 +113,10 @@ def test_list_due_does_not_change_status_or_execution_log() -> None:
         mission = make_mission(
             status=MissionStatus.waiting,
             scheduled_at=current_time,
+            last_event_sequence=1,
             execution_log=[
                 ExecutionEvent(
+                    sequence=1,
                     timestamp=current_time,
                     type="mission_scheduled",
                     message="Mission scheduled.",

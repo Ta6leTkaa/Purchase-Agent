@@ -296,6 +296,7 @@ def make_mission(
             passengers_count=1,
         ),
         claimed_at=claimed_at,
+        last_event_sequence=1,
         execution_log=[make_event()],
     )
 
@@ -309,6 +310,7 @@ def make_legacy_processing_mission() -> Mission:
 
 def make_event() -> ExecutionEvent:
     return ExecutionEvent(
+        sequence=1,
         timestamp=aware_datetime(),
         type="mission_started",
         message="Mission started.",
