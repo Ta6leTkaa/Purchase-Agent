@@ -6,13 +6,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies import (
     get_identity_repository,
     get_mission_repository,
+    get_mission_provider_resolution_preview,
     get_provider_resolver,
     get_set_mission_provider,
 )
 from app.domain.mission import Mission
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
-from app.schemas.mission import MissionCreate, SetMissionProviderRequest
+from app.schemas.mission import (
+    MissionCreate,
+    MissionProviderResolutionPreviewResponse,
+    SetMissionProviderRequest,
+)
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
@@ -25,6 +30,9 @@ from app.services.provider_resolver import ProviderResolver
 from app.services.mission_provider_selection import (
     MissionProviderSelectionNotAllowedError,
     SetMissionProvider,
+)
+from app.services.provider_resolution_preview import (
+    PreviewMissionProviderResolution,
 )
 
 router = APIRouter(prefix="/missions", tags=["missions"])
@@ -43,6 +51,10 @@ ProviderResolverDep: TypeAlias = Annotated[
 SetMissionProviderDep: TypeAlias = Annotated[
     SetMissionProvider,
     Depends(get_set_mission_provider),
+]
+ProviderResolutionPreviewDep: TypeAlias = Annotated[
+    PreviewMissionProviderResolution,
+    Depends(get_mission_provider_resolution_preview),
 ]
 
 
@@ -87,6 +99,32 @@ async def get_mission(
     if mission is None:
         raise HTTPException(status_code=404, detail="Mission not found")
     return mission
+
+
+@router.get(
+    "/{mission_id}/provider-resolution",
+    response_model=MissionProviderResolutionPreviewResponse,
+    summary="Preview mission provider resolution",
+    description=(
+        "Returns the current provider-resolution outcome without executing or "
+        "modifying the mission. The preview does not indicate that the mission "
+        "is executable in its current lifecycle state."
+    ),
+    responses={
+        404: {"description": "Mission not found"},
+    },
+)
+async def preview_mission_provider_resolution_endpoint(
+    mission_id: UUID,
+    preview_mission_provider_resolution: ProviderResolutionPreviewDep,
+) -> MissionProviderResolutionPreviewResponse:
+    try:
+        preview = await preview_mission_provider_resolution.execute(mission_id)
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    return MissionProviderResolutionPreviewResponse.model_validate(
+        preview.model_dump()
+    )
 
 
 @router.put(

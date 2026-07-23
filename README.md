@@ -481,6 +481,16 @@ The detail endpoint returns `404` when the provider ID is not registered. Its
 response reflects the current runtime registry and does not perform health or
 availability checks.
 
+## Mission Provider Resolution Preview
+
+`GET /missions/{mission_id}/provider-resolution` reports the provider resolver
+outcome for the Mission's current selection and runtime registry. It can return
+`resolved`, `unknown_provider`, `unsupported_mission_type`,
+`no_supporting_provider`, or `ambiguous_provider`, all with `200 OK` for an
+existing Mission. The endpoint is diagnostic only: it neither executes nor
+changes the Mission, writes events, or changes execution attempts. A preview
+does not mean the Mission may execute in its current lifecycle status.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.

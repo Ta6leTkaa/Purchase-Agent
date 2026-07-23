@@ -20,6 +20,14 @@ class ProviderResolutionFailureReason(str, Enum):
     ambiguous_provider = "ambiguous_provider"
 
 
+class ProviderResolutionPreviewOutcome(str, Enum):
+    resolved = "resolved"
+    unknown_provider = "unknown_provider"
+    unsupported_mission_type = "unsupported_mission_type"
+    no_supporting_provider = "no_supporting_provider"
+    ambiguous_provider = "ambiguous_provider"
+
+
 class ProviderResolvedEventPayload(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -101,11 +109,11 @@ class ProviderSelectionChangedEventPayload(BaseModel):
     ) -> "ProviderSelectionChangedEventPayload":
         if self.previous_provider_id == self.new_provider_id:
             raise ValueError("provider selection must change")
-        if self.previous_selection_mode is not _selection_mode_for(
+        if self.previous_selection_mode is not selection_mode_for(
             self.previous_provider_id
         ):
             raise ValueError("previous selection mode is invalid")
-        if self.new_selection_mode is not _selection_mode_for(
+        if self.new_selection_mode is not selection_mode_for(
             self.new_provider_id
         ):
             raise ValueError("new selection mode is invalid")
@@ -123,8 +131,8 @@ def create_provider_selection_changed_event(
     payload = ProviderSelectionChangedEventPayload(
         previous_provider_id=previous_provider_id,
         new_provider_id=new_provider_id,
-        previous_selection_mode=_selection_mode_for(previous_provider_id),
-        new_selection_mode=_selection_mode_for(new_provider_id),
+        previous_selection_mode=selection_mode_for(previous_provider_id),
+        new_selection_mode=selection_mode_for(new_provider_id),
     )
     return ExecutionEvent(
         timestamp=occurred_at,
@@ -134,7 +142,7 @@ def create_provider_selection_changed_event(
     )
 
 
-def _selection_mode_for(provider_id: str | None) -> ProviderSelectionMode:
+def selection_mode_for(provider_id: str | None) -> ProviderSelectionMode:
     return (
         ProviderSelectionMode.explicit
         if provider_id is not None

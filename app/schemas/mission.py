@@ -13,6 +13,11 @@ from app.domain.mission import (
     TrainConstraints,
 )
 from app.domain.provider_id import normalize_provider_id
+from app.domain.provider_resolution import (
+    ProviderResolutionFailureReason,
+    ProviderResolutionPreviewOutcome,
+    ProviderSelectionMode,
+)
 from app.services.clock import utc_now
 
 
@@ -36,6 +41,17 @@ class SetMissionProviderRequest(BaseModel):
     @classmethod
     def validate_provider_id(cls, value: str | None) -> str | None:
         return normalize_provider_id(value)
+
+
+class MissionProviderResolutionPreviewResponse(BaseModel):
+    mission_id: UUID
+    mission_type: MissionType
+    selection_mode: ProviderSelectionMode
+    requested_provider_id: str | None
+    outcome: ProviderResolutionPreviewOutcome
+    resolved_provider_id: str | None
+    candidate_provider_ids: tuple[str, ...]
+    failure_reason: ProviderResolutionFailureReason | None
 
 
 class MissionCreate(BaseModel):
