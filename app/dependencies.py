@@ -15,6 +15,7 @@ from app.services.clock import utc_now
 from app.services.mission_provider_selection import SetMissionProvider
 from app.services.provider_resolution_history import (
     GetMissionProviderResolutionHistory,
+    GetMissionProviderResolutionIncrement,
 )
 from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
@@ -85,3 +86,12 @@ def get_mission_provider_resolution_history(
     ],
 ) -> GetMissionProviderResolutionHistory:
     return GetMissionProviderResolutionHistory(mission_repository)
+
+
+def get_mission_provider_resolution_increment(
+    mission_repository: Annotated[
+        MissionRepository,
+        Depends(get_mission_repository),
+    ],
+) -> GetMissionProviderResolutionIncrement:
+    return GetMissionProviderResolutionIncrement(mission_repository)

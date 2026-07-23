@@ -24,6 +24,7 @@ from app.domain.provider_resolution import (
 from app.services.clock import utc_now
 from app.services.provider_resolution_history import (
     MissionProviderResolutionHistoryPage,
+    MissionProviderResolutionIncrement,
     ProviderHistoryCursorCodec,
     ProviderHistoryEventType,
 )
@@ -63,6 +64,7 @@ class MissionProviderResolutionPreviewResponse(BaseModel):
 
 
 class ProviderResolutionHistoryItemResponse(BaseModel):
+    sequence: int
     event_type: ProviderHistoryEventType
     occurred_at: datetime
     payload: (
@@ -93,6 +95,7 @@ class MissionProviderResolutionHistoryResponse(BaseModel):
             mission_id=history.mission_id,
             items=tuple(
                 ProviderResolutionHistoryItemResponse(
+                    sequence=item.sequence,
                     event_type=item.event_type,
                     occurred_at=item.occurred_at,
                     payload=item.payload,
@@ -107,6 +110,33 @@ class MissionProviderResolutionHistoryResponse(BaseModel):
                     if history.next_cursor is not None
                     else None
                 ),
+            ),
+        )
+
+
+class MissionProviderResolutionIncrementResponse(BaseModel):
+    mission_id: UUID
+    since_sequence: int
+    latest_sequence: int
+    items: tuple[ProviderResolutionHistoryItemResponse, ...]
+
+    @classmethod
+    def from_application(
+        cls,
+        increment: MissionProviderResolutionIncrement,
+    ) -> "MissionProviderResolutionIncrementResponse":
+        return cls(
+            mission_id=increment.mission_id,
+            since_sequence=increment.since_sequence,
+            latest_sequence=increment.latest_sequence,
+            items=tuple(
+                ProviderResolutionHistoryItemResponse(
+                    sequence=item.sequence,
+                    event_type=item.event_type,
+                    occurred_at=item.occurred_at,
+                    payload=item.payload,
+                )
+                for item in increment.items
             ),
         )
 

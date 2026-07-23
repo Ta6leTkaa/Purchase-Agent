@@ -560,8 +560,40 @@ Legacy event arrays are backfilled once by the database migration in their
 existing JSON order. The current opaque history cursor remains unchanged:
 `event_index` is only its implementation tie-breaker, while `timestamp`
 describes event time and `sequence` defines the durable Mission-local order.
-The sequence is a prerequisite for a future incremental history API; that API
-is not part of this change.
+The sequence is the ordering primitive used by the separate read-only
+incremental history endpoint below.
+
+## Incremental Provider History
+
+`GET /missions/{mission_id}/provider-resolution-history/since/{sequence}`
+returns provider-related events whose persisted sequence is strictly greater
+than the supplied boundary. It is intended for UI polling, incremental sync,
+and audit refresh; it does not execute the Mission or inspect the current
+provider registry.
+
+```bash
+curl \
+  "/missions/{mission_id}/provider-resolution-history/since/12"
+```
+
+```json
+{
+  "mission_id": "...",
+  "since_sequence": 12,
+  "latest_sequence": 18,
+  "items": [
+    {"sequence": 14, "event_type": "provider_selection_changed"},
+    {"sequence": 18, "event_type": "provider_resolved"}
+  ]
+}
+```
+
+`latest_sequence` is the last returned provider-event sequence, or the
+requested value when no provider events match. The endpoint currently loads
+the Mission's persisted JSON event list and filters it in the application
+layer; it is correct for the current storage model but is not an indexed event
+table scan. Opaque cursor pagination remains available separately for browsing
+historical pages.
 
 ## Explicit provider selection
 

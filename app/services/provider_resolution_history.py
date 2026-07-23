@@ -109,6 +109,7 @@ class ProviderResolutionHistoryPageRequest(BaseModel):
 class ProviderResolutionHistoryItem(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    sequence: int = Field(ge=1)
     event_type: ProviderHistoryEventType
     occurred_at: datetime
     payload: ProviderHistoryPayload
@@ -151,6 +152,37 @@ class MissionProviderResolutionHistoryPage(BaseModel):
                 raise ValueError("next cursor must follow the last visible item")
         elif self.next_cursor is not None:
             raise ValueError("final history page must not have a next cursor")
+        return self
+
+
+class ProviderResolutionIncrementRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    since_sequence: int = Field(ge=0)
+
+
+class MissionProviderResolutionIncrement(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    mission_id: UUID
+    since_sequence: int = Field(ge=0)
+    latest_sequence: int = Field(ge=0)
+    items: tuple[ProviderResolutionHistoryItem, ...]
+
+    @model_validator(mode="after")
+    def validate_increment(self) -> "MissionProviderResolutionIncrement":
+        if self.latest_sequence < self.since_sequence:
+            raise ValueError("latest sequence cannot precede since sequence")
+        previous_sequence = self.since_sequence
+        for item in self.items:
+            if item.sequence <= previous_sequence:
+                raise ValueError("increment items must be strictly increasing")
+            previous_sequence = item.sequence
+        if self.items:
+            if self.latest_sequence != self.items[-1].sequence:
+                raise ValueError("latest sequence must match the final item")
+        elif self.latest_sequence != self.since_sequence:
+            raise ValueError("empty increment must retain since sequence")
         return self
 
 
@@ -216,6 +248,36 @@ class GetMissionProviderResolutionHistory:
         )
 
 
+class GetMissionProviderResolutionIncrement:
+    def __init__(self, mission_repository: MissionRepository) -> None:
+        self._mission_repository = mission_repository
+
+    async def execute(
+        self,
+        mission_id: UUID,
+        request: ProviderResolutionIncrementRequest,
+    ) -> MissionProviderResolutionIncrement:
+        mission = await self._mission_repository.get(mission_id)
+        if mission is None:
+            raise MissionNotFoundError
+
+        items = tuple(
+            provider_event_to_history_item(event)
+            for event in mission.execution_log
+            if event.type in PROVIDER_HISTORY_EVENT_TYPES
+            and event.sequence > request.since_sequence
+        )
+        latest_sequence = (
+            items[-1].sequence if items else request.since_sequence
+        )
+        return MissionProviderResolutionIncrement(
+            mission_id=mission.id,
+            since_sequence=request.since_sequence,
+            latest_sequence=latest_sequence,
+            items=items,
+        )
+
+
 def _history_event_key(
     indexed_event: tuple[int, ExecutionEvent],
 ) -> tuple[datetime, int]:
@@ -243,6 +305,7 @@ def provider_event_to_history_item(
         ),
     }[event_type]
     return ProviderResolutionHistoryItem(
+        sequence=event.sequence,
         event_type=event_type,
         occurred_at=event.timestamp,
         payload=payload_type.model_validate(event.metadata),

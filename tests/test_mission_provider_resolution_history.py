@@ -22,11 +22,13 @@ from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_resolution_history import (
     DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
     GetMissionProviderResolutionHistory,
+    GetMissionProviderResolutionIncrement,
     InvalidProviderHistoryCursorError,
     MAX_PROVIDER_HISTORY_PAGE_SIZE,
     ProviderHistoryCursorCodec,
     ProviderHistoryEventType,
     ProviderResolutionHistoryPageRequest,
+    ProviderResolutionIncrementRequest,
     provider_event_to_history_item,
 )
 from app.storage.memory import InMemoryMissionRepository
@@ -195,10 +197,57 @@ def test_history_uses_exclusive_cursor_pagination() -> None:
     asyncio.run(scenario())
 
 
+def test_increment_returns_provider_events_after_sequence_in_order() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        mission = make_mission(make_provider_events())
+        await repository.create(mission)
+
+        increment = await GetMissionProviderResolutionIncrement(
+            repository
+        ).execute(
+            mission.id,
+            ProviderResolutionIncrementRequest(since_sequence=2),
+        )
+
+        assert [item.sequence for item in increment.items] == [3, 4]
+        assert [item.event_type for item in increment.items] == [
+            ProviderHistoryEventType.provider_resolved,
+            ProviderHistoryEventType.provider_selection_changed,
+        ]
+        assert increment.latest_sequence == 4
+
+    asyncio.run(scenario())
+
+
+def test_increment_returns_empty_result_after_high_sequence() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        mission = make_mission(make_provider_events())
+        await repository.create(mission)
+
+        increment = await GetMissionProviderResolutionIncrement(
+            repository
+        ).execute(
+            mission.id,
+            ProviderResolutionIncrementRequest(since_sequence=999),
+        )
+
+        assert increment.items == ()
+        assert increment.latest_sequence == 999
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("limit", [0, -1, MAX_PROVIDER_HISTORY_PAGE_SIZE + 1])
 def test_history_page_request_rejects_invalid_limits(limit: int) -> None:
     with pytest.raises(ValidationError):
         ProviderResolutionHistoryPageRequest(limit=limit)
+
+
+def test_increment_request_rejects_negative_sequence() -> None:
+    with pytest.raises(ValidationError):
+        ProviderResolutionIncrementRequest(since_sequence=-1)
 
 
 def test_history_cursor_codec_rejects_malformed_cursor() -> None:
@@ -282,6 +331,7 @@ def test_history_api_serializes_persisted_snapshot_without_mutation() -> None:
         "provider_resolved",
     ]
     assert set(response.json()["items"][-1]) == {
+        "sequence",
         "event_type",
         "occurred_at",
         "payload",
@@ -394,3 +444,64 @@ def test_history_api_rejects_malformed_cursor() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "invalid_cursor"
+
+
+def test_increment_api_returns_snapshot_and_latest_sequence() -> None:
+    mission = make_mission(make_provider_events())
+    asyncio.run(mission_repository.create(mission))
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{mission.id}/provider-resolution-history/since/2"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["since_sequence"] == 2
+    assert response.json()["latest_sequence"] == 4
+    assert [item["sequence"] for item in response.json()["items"]] == [3, 4]
+    assert response.json()["items"][0]["payload"]["snapshot"] == {
+        "selection_mode": "explicit",
+        "requested_provider_id": "provider_b",
+        "resolved_provider_id": "provider_b",
+        "candidate_provider_ids": ["provider_b"],
+        "mission_type": "train_ticket",
+    }
+
+
+def test_increment_api_returns_empty_result_for_existing_mission() -> None:
+    mission = make_mission()
+    asyncio.run(mission_repository.create(mission))
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{mission.id}/provider-resolution-history/since/0"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "mission_id": str(mission.id),
+        "since_sequence": 0,
+        "latest_sequence": 0,
+        "items": [],
+    }
+
+
+def test_increment_api_returns_404_for_missing_mission() -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{uuid4()}/provider-resolution-history/since/0"
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize("sequence", ["-1", "not-a-number"])
+def test_increment_api_rejects_invalid_sequence(sequence: str) -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{uuid4()}/provider-resolution-history/since/{sequence}"
+    )
+
+    assert response.status_code == 422

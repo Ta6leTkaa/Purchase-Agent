@@ -1,12 +1,13 @@
 from typing import Annotated, TypeAlias
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.dependencies import (
     get_identity_repository,
     get_mission_repository,
     get_mission_provider_resolution_history,
+    get_mission_provider_resolution_increment,
     get_mission_provider_resolution_preview,
     get_provider_resolver,
     get_set_mission_provider,
@@ -17,6 +18,7 @@ from app.repositories.mission import MissionRepository
 from app.schemas.mission import (
     MissionCreate,
     MissionProviderResolutionHistoryResponse,
+    MissionProviderResolutionIncrementResponse,
     MissionProviderResolutionPreviewResponse,
     SetMissionProviderRequest,
 )
@@ -36,10 +38,12 @@ from app.services.mission_provider_selection import (
 from app.services.provider_resolution_history import (
     DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
     GetMissionProviderResolutionHistory,
+    GetMissionProviderResolutionIncrement,
     InvalidProviderHistoryCursorError,
     MAX_PROVIDER_HISTORY_PAGE_SIZE,
     ProviderHistoryCursorCodec,
     ProviderResolutionHistoryPageRequest,
+    ProviderResolutionIncrementRequest,
 )
 from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
@@ -69,6 +73,10 @@ ProviderResolutionPreviewDep: TypeAlias = Annotated[
 ProviderResolutionHistoryDep: TypeAlias = Annotated[
     GetMissionProviderResolutionHistory,
     Depends(get_mission_provider_resolution_history),
+]
+ProviderResolutionIncrementDep: TypeAlias = Annotated[
+    GetMissionProviderResolutionIncrement,
+    Depends(get_mission_provider_resolution_increment),
 ]
 
 
@@ -138,6 +146,46 @@ async def preview_mission_provider_resolution_endpoint(
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     return MissionProviderResolutionPreviewResponse.model_validate(
         preview.model_dump()
+    )
+
+
+@router.get(
+    "/{mission_id}/provider-resolution-history/since/{sequence}",
+    response_model=MissionProviderResolutionIncrementResponse,
+    summary="Get incremental mission provider resolution history",
+    description=(
+        "Returns provider selection and resolution events with a persisted "
+        "sequence greater than the requested boundary. This read-only "
+        "endpoint does not resolve providers or execute the mission."
+    ),
+    responses={
+        404: {"description": "Mission not found"},
+        422: {"description": "Invalid sequence"},
+    },
+)
+async def get_mission_provider_resolution_increment_endpoint(
+    mission_id: UUID,
+    sequence: Annotated[
+        int,
+        Path(
+            ge=0,
+            description=(
+                "Return provider-related events with a persisted sequence "
+                "strictly greater than this value."
+            ),
+        ),
+    ],
+    provider_resolution_increment: ProviderResolutionIncrementDep,
+) -> MissionProviderResolutionIncrementResponse:
+    try:
+        increment = await provider_resolution_increment.execute(
+            mission_id,
+            ProviderResolutionIncrementRequest(since_sequence=sequence),
+        )
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    return MissionProviderResolutionIncrementResponse.from_application(
+        increment
     )
 
 
