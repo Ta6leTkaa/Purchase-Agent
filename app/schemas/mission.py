@@ -14,11 +14,18 @@ from app.domain.mission import (
 )
 from app.domain.provider_id import normalize_provider_id
 from app.domain.provider_resolution import (
+    ProviderResolutionFailedEventPayload,
     ProviderResolutionFailureReason,
     ProviderResolutionPreviewOutcome,
+    ProviderResolvedEventPayload,
+    ProviderSelectionChangedEventPayload,
     ProviderSelectionMode,
 )
 from app.services.clock import utc_now
+from app.services.provider_resolution_history import (
+    MissionProviderResolutionHistory,
+    ProviderHistoryEventType,
+)
 
 
 class TrainTicketMissionPayloadCreate(BaseModel):
@@ -52,6 +59,38 @@ class MissionProviderResolutionPreviewResponse(BaseModel):
     resolved_provider_id: str | None
     candidate_provider_ids: tuple[str, ...]
     failure_reason: ProviderResolutionFailureReason | None
+
+
+class ProviderResolutionHistoryItemResponse(BaseModel):
+    event_type: ProviderHistoryEventType
+    occurred_at: datetime
+    payload: (
+        ProviderSelectionChangedEventPayload
+        | ProviderResolvedEventPayload
+        | ProviderResolutionFailedEventPayload
+    )
+
+
+class MissionProviderResolutionHistoryResponse(BaseModel):
+    mission_id: UUID
+    items: tuple[ProviderResolutionHistoryItemResponse, ...]
+
+    @classmethod
+    def from_application(
+        cls,
+        history: MissionProviderResolutionHistory,
+    ) -> "MissionProviderResolutionHistoryResponse":
+        return cls(
+            mission_id=history.mission_id,
+            items=tuple(
+                ProviderResolutionHistoryItemResponse(
+                    event_type=item.event_type,
+                    occurred_at=item.occurred_at,
+                    payload=item.payload,
+                )
+                for item in history.items
+            ),
+        )
 
 
 class MissionCreate(BaseModel):

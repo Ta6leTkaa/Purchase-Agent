@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies import (
     get_identity_repository,
     get_mission_repository,
+    get_mission_provider_resolution_history,
     get_mission_provider_resolution_preview,
     get_provider_resolver,
     get_set_mission_provider,
@@ -15,6 +16,7 @@ from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.schemas.mission import (
     MissionCreate,
+    MissionProviderResolutionHistoryResponse,
     MissionProviderResolutionPreviewResponse,
     SetMissionProviderRequest,
 )
@@ -30,6 +32,9 @@ from app.services.provider_resolver import ProviderResolver
 from app.services.mission_provider_selection import (
     MissionProviderSelectionNotAllowedError,
     SetMissionProvider,
+)
+from app.services.provider_resolution_history import (
+    GetMissionProviderResolutionHistory,
 )
 from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
@@ -55,6 +60,10 @@ SetMissionProviderDep: TypeAlias = Annotated[
 ProviderResolutionPreviewDep: TypeAlias = Annotated[
     PreviewMissionProviderResolution,
     Depends(get_mission_provider_resolution_preview),
+]
+ProviderResolutionHistoryDep: TypeAlias = Annotated[
+    GetMissionProviderResolutionHistory,
+    Depends(get_mission_provider_resolution_history),
 ]
 
 
@@ -125,6 +134,30 @@ async def preview_mission_provider_resolution_endpoint(
     return MissionProviderResolutionPreviewResponse.model_validate(
         preview.model_dump()
     )
+
+
+@router.get(
+    "/{mission_id}/provider-resolution-history",
+    response_model=MissionProviderResolutionHistoryResponse,
+    summary="Get mission provider resolution history",
+    description=(
+        "Returns chronological provider selection and resolution events "
+        "persisted for the mission. This read-only endpoint does not resolve "
+        "providers, inspect the current registry, or execute the mission."
+    ),
+    responses={
+        404: {"description": "Mission not found"},
+    },
+)
+async def get_mission_provider_resolution_history_endpoint(
+    mission_id: UUID,
+    provider_resolution_history: ProviderResolutionHistoryDep,
+) -> MissionProviderResolutionHistoryResponse:
+    try:
+        history = await provider_resolution_history.execute(mission_id)
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    return MissionProviderResolutionHistoryResponse.from_application(history)
 
 
 @router.put(

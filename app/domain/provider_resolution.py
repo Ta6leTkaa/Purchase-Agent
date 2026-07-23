@@ -34,7 +34,7 @@ class ProviderResolvedEventPayload(BaseModel):
     provider_id: str
     mission_type: MissionType
     selection_mode: ProviderSelectionMode
-    snapshot: "ProviderResolutionSnapshot"
+    snapshot: "ProviderResolutionSnapshot | None" = None
 
     @field_validator("provider_id")
     @classmethod
@@ -45,6 +45,8 @@ class ProviderResolvedEventPayload(BaseModel):
 
     @model_validator(mode="after")
     def validate_snapshot(self) -> "ProviderResolvedEventPayload":
+        if self.snapshot is None:
+            return self
         if self.provider_id != self.snapshot.resolved_provider_id:
             raise ValueError("resolved provider does not match snapshot")
         if self.mission_type is not self.snapshot.mission_type:

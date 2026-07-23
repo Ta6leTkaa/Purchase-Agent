@@ -13,6 +13,9 @@ from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 from app.services.clock import utc_now
 from app.services.mission_provider_selection import SetMissionProvider
+from app.services.provider_resolution_history import (
+    GetMissionProviderResolutionHistory,
+)
 from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
 )
@@ -73,3 +76,12 @@ def get_mission_provider_resolution_preview(
     ],
 ) -> PreviewMissionProviderResolution:
     return PreviewMissionProviderResolution(mission_repository, resolver)
+
+
+def get_mission_provider_resolution_history(
+    mission_repository: Annotated[
+        MissionRepository,
+        Depends(get_mission_repository),
+    ],
+) -> GetMissionProviderResolutionHistory:
+    return GetMissionProviderResolutionHistory(mission_repository)
