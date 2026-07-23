@@ -23,7 +23,8 @@ from app.domain.provider_resolution import (
 )
 from app.services.clock import utc_now
 from app.services.provider_resolution_history import (
-    MissionProviderResolutionHistory,
+    MissionProviderResolutionHistoryPage,
+    ProviderHistoryCursorCodec,
     ProviderHistoryEventType,
 )
 
@@ -71,15 +72,23 @@ class ProviderResolutionHistoryItemResponse(BaseModel):
     )
 
 
+class ProviderResolutionHistoryPageResponse(BaseModel):
+    limit: int
+    has_more: bool
+    next_cursor: str | None
+
+
 class MissionProviderResolutionHistoryResponse(BaseModel):
     mission_id: UUID
     items: tuple[ProviderResolutionHistoryItemResponse, ...]
+    page: ProviderResolutionHistoryPageResponse
 
     @classmethod
     def from_application(
         cls,
-        history: MissionProviderResolutionHistory,
+        history: MissionProviderResolutionHistoryPage,
     ) -> "MissionProviderResolutionHistoryResponse":
+        cursor_codec = ProviderHistoryCursorCodec()
         return cls(
             mission_id=history.mission_id,
             items=tuple(
@@ -89,6 +98,15 @@ class MissionProviderResolutionHistoryResponse(BaseModel):
                     payload=item.payload,
                 )
                 for item in history.items
+            ),
+            page=ProviderResolutionHistoryPageResponse(
+                limit=history.limit,
+                has_more=history.has_more,
+                next_cursor=(
+                    cursor_codec.encode(history.next_cursor)
+                    if history.next_cursor is not None
+                    else None
+                ),
             ),
         )
 

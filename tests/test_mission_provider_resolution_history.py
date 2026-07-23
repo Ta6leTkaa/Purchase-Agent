@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.dependencies import mission_repository
 from app.domain.execution import ExecutionEvent
@@ -19,8 +20,13 @@ from app.domain.provider_resolution import (
 from app.main import app
 from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_resolution_history import (
+    DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
     GetMissionProviderResolutionHistory,
+    InvalidProviderHistoryCursorError,
+    MAX_PROVIDER_HISTORY_PAGE_SIZE,
+    ProviderHistoryCursorCodec,
     ProviderHistoryEventType,
+    ProviderResolutionHistoryPageRequest,
     provider_event_to_history_item,
 )
 from app.storage.memory import InMemoryMissionRepository
@@ -148,6 +154,51 @@ def test_history_returns_empty_items_for_mission_without_provider_events() -> No
     asyncio.run(scenario())
 
 
+def test_history_uses_exclusive_cursor_pagination() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        mission = make_mission(make_provider_events())
+        await repository.create(mission)
+        history_query = GetMissionProviderResolutionHistory(repository)
+
+        first_page = await history_query.execute(
+            mission.id,
+            ProviderResolutionHistoryPageRequest(limit=2),
+        )
+        assert first_page.has_more is True
+        assert first_page.next_cursor is not None
+        assert [item.event_type for item in first_page.items] == [
+            ProviderHistoryEventType.provider_resolution_failed,
+            ProviderHistoryEventType.provider_selection_changed,
+        ]
+
+        second_page = await history_query.execute(
+            mission.id,
+            ProviderResolutionHistoryPageRequest(
+                limit=2,
+                cursor=first_page.next_cursor,
+            ),
+        )
+        assert second_page.has_more is False
+        assert second_page.next_cursor is None
+        assert [item.event_type for item in second_page.items] == [
+            ProviderHistoryEventType.provider_resolved,
+        ]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("limit", [0, -1, MAX_PROVIDER_HISTORY_PAGE_SIZE + 1])
+def test_history_page_request_rejects_invalid_limits(limit: int) -> None:
+    with pytest.raises(ValidationError):
+        ProviderResolutionHistoryPageRequest(limit=limit)
+
+
+def test_history_cursor_codec_rejects_malformed_cursor() -> None:
+    with pytest.raises(InvalidProviderHistoryCursorError):
+        ProviderHistoryCursorCodec().decode("not-a-cursor")
+
+
 def test_history_reports_missing_mission() -> None:
     async def scenario() -> None:
         with pytest.raises(MissionNotFoundError):
@@ -233,6 +284,11 @@ def test_history_api_serializes_persisted_snapshot_without_mutation() -> None:
         "candidate_provider_ids": ["provider_b"],
         "mission_type": "train_ticket",
     }
+    assert response.json()["page"] == {
+        "limit": DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
+        "has_more": False,
+        "next_cursor": None,
+    }
     stored = asyncio.run(mission_repository.get(mission.id))
     assert stored is not None
     assert stored.execution_log == mission.execution_log
@@ -257,4 +313,75 @@ def test_history_api_returns_empty_items_for_existing_mission() -> None:
     assert response.json() == {
         "mission_id": str(mission.id),
         "items": [],
+        "page": {
+            "limit": DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
+            "has_more": False,
+            "next_cursor": None,
+        },
     }
+
+
+def test_history_api_traverses_pages_without_duplicate_events() -> None:
+    mission = make_mission(make_provider_events())
+    asyncio.run(mission_repository.create(mission))
+    client = TestClient(app)
+
+    first_response = client.get(
+        f"/missions/{mission.id}/provider-resolution-history?limit=2"
+    )
+
+    assert first_response.status_code == 200
+    first_page = first_response.json()
+    assert first_page["page"]["has_more"] is True
+    assert first_page["page"]["limit"] == 2
+    cursor = first_page["page"]["next_cursor"]
+    assert cursor is not None
+
+    second_response = client.get(
+        f"/missions/{mission.id}/provider-resolution-history",
+        params={"limit": 2, "cursor": cursor},
+    )
+
+    assert second_response.status_code == 200
+    second_page = second_response.json()
+    assert second_page["page"] == {
+        "limit": 2,
+        "has_more": False,
+        "next_cursor": None,
+    }
+    event_types = [
+        item["event_type"]
+        for page in (first_page, second_page)
+        for item in page["items"]
+    ]
+    assert event_types == [
+        "provider_resolution_failed",
+        "provider_selection_changed",
+        "provider_resolved",
+    ]
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "101", "not-a-number"])
+def test_history_api_rejects_invalid_limits(limit: str) -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{uuid4()}/provider-resolution-history",
+        params={"limit": limit},
+    )
+
+    assert response.status_code == 422
+
+
+def test_history_api_rejects_malformed_cursor() -> None:
+    mission = make_mission(make_provider_events())
+    asyncio.run(mission_repository.create(mission))
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{mission.id}/provider-resolution-history",
+        params={"cursor": "invalid"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_cursor"

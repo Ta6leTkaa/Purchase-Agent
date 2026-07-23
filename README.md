@@ -505,11 +505,40 @@ resolutions continue to use `provider_resolution_failed` without a snapshot.
 `GET /missions/{mission_id}/provider-resolution-history` returns the
 chronological provider audit trail recorded for one Mission. It includes only
 `provider_resolution_failed`, `provider_selection_changed`, and
-`provider_resolved`; an existing Mission with no such events returns `200` and
-an empty list, while an unknown Mission returns `404`. The endpoint reads
-persisted history only, does not consult the current provider registry, and
-does not execute the Mission or create events. Legacy resolved events may have
-`snapshot: null`; newly recorded successful resolutions include their snapshot.
+`provider_resolved`. It uses ascending cursor pagination, with a default page
+size of 50 and a maximum of 100 items:
+
+```bash
+curl \
+  "/missions/{mission_id}/provider-resolution-history?limit=2"
+```
+
+```json
+{
+  "mission_id": "...",
+  "items": [],
+  "page": {
+    "limit": 2,
+    "has_more": true,
+    "next_cursor": "..."
+  }
+}
+```
+
+Use the opaque, exclusive cursor for the next page:
+
+```bash
+curl \
+  "/missions/{mission_id}/provider-resolution-history?limit=2&cursor=..."
+```
+
+An existing Mission with no such events returns `200` and an empty list, while
+an unknown Mission returns `404`. The canonical ordering permits gaps caused
+by unrelated Mission events; no total count is returned, and newly appended
+events can appear on later pages. The endpoint reads persisted history only,
+does not consult the current provider registry, and does not execute the
+Mission or create events. Legacy resolved events may have `snapshot: null`;
+newly recorded successful resolutions include their snapshot.
 
 ## Explicit provider selection
 

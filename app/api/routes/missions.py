@@ -1,7 +1,7 @@
 from typing import Annotated, TypeAlias
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.dependencies import (
     get_identity_repository,
@@ -34,7 +34,12 @@ from app.services.mission_provider_selection import (
     SetMissionProvider,
 )
 from app.services.provider_resolution_history import (
+    DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
     GetMissionProviderResolutionHistory,
+    InvalidProviderHistoryCursorError,
+    MAX_PROVIDER_HISTORY_PAGE_SIZE,
+    ProviderHistoryCursorCodec,
+    ProviderResolutionHistoryPageRequest,
 )
 from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
@@ -141,22 +146,72 @@ async def preview_mission_provider_resolution_endpoint(
     response_model=MissionProviderResolutionHistoryResponse,
     summary="Get mission provider resolution history",
     description=(
-        "Returns chronological provider selection and resolution events "
-        "persisted for the mission. This read-only endpoint does not resolve "
+        "Returns chronological provider selection and resolution events using "
+        "cursor pagination. This read-only endpoint does not resolve "
         "providers, inspect the current registry, or execute the mission."
     ),
     responses={
         404: {"description": "Mission not found"},
+        422: {"description": "Invalid page limit or cursor"},
     },
 )
 async def get_mission_provider_resolution_history_endpoint(
     mission_id: UUID,
     provider_resolution_history: ProviderResolutionHistoryDep,
+    limit: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=MAX_PROVIDER_HISTORY_PAGE_SIZE,
+            description=(
+                "Maximum number of provider-related history items returned "
+                "in this page."
+            ),
+        ),
+    ] = DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
+    cursor: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Opaque cursor from the previous history page. Events at or "
+                "before this cursor are excluded."
+            ),
+        ),
+    ] = None,
 ) -> MissionProviderResolutionHistoryResponse:
     try:
-        history = await provider_resolution_history.execute(mission_id)
+        decoded_cursor = (
+            ProviderHistoryCursorCodec().decode(cursor)
+            if cursor is not None
+            else None
+        )
+        page_request = ProviderResolutionHistoryPageRequest(
+            limit=limit,
+            cursor=decoded_cursor,
+        )
+    except InvalidProviderHistoryCursorError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_cursor",
+                "message": "Provider history cursor is invalid.",
+            },
+        ) from exc
+    try:
+        history = await provider_resolution_history.execute(
+            mission_id,
+            page_request,
+        )
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
+    except InvalidProviderHistoryCursorError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_cursor",
+                "message": "Provider history cursor is invalid.",
+            },
+        ) from exc
     return MissionProviderResolutionHistoryResponse.from_application(history)
 
 
