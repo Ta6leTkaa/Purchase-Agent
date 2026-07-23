@@ -489,6 +489,12 @@ to automatic selection. When automatic resolution is ambiguous, the client can:
 The update validates selection but does not resolve or execute the mission.
 Changing the requested value clears `resolved_provider_id`; an idempotent update
 keeps existing resolved metadata, and historical execution events remain intact.
+Each actual change records `provider_selection_changed` with the previous and
+new requested provider IDs and their automatic/explicit selection modes. A
+repeated request with the same normalized ID is a no-op and records no event.
+This keeps the audit trail intact across the sequence
+`provider_resolution_failed`, `provider_selection_changed`, and
+`provider_resolved`.
 
 Each successful resolution also records a persistent `provider_resolved` entry
 in the existing Mission execution log before provider operations start. Its

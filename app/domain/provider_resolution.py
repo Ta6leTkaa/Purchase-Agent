@@ -1,7 +1,9 @@
+from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from app.domain.execution import ExecutionEvent
 from app.domain.mission import MissionType
 from app.domain.provider_id import normalize_provider_id
 
@@ -78,3 +80,63 @@ class ProviderResolutionFailedEventPayload(BaseModel):
         ):
             raise ValueError("ambiguous-provider payload is invalid")
         return self
+
+
+class ProviderSelectionChangedEventPayload(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    previous_provider_id: str | None
+    new_provider_id: str | None
+    previous_selection_mode: ProviderSelectionMode
+    new_selection_mode: ProviderSelectionMode
+
+    @field_validator("previous_provider_id", "new_provider_id")
+    @classmethod
+    def validate_provider_id(cls, value: str | None) -> str | None:
+        return normalize_provider_id(value)
+
+    @model_validator(mode="after")
+    def validate_selection_change(
+        self,
+    ) -> "ProviderSelectionChangedEventPayload":
+        if self.previous_provider_id == self.new_provider_id:
+            raise ValueError("provider selection must change")
+        if self.previous_selection_mode is not _selection_mode_for(
+            self.previous_provider_id
+        ):
+            raise ValueError("previous selection mode is invalid")
+        if self.new_selection_mode is not _selection_mode_for(
+            self.new_provider_id
+        ):
+            raise ValueError("new selection mode is invalid")
+        return self
+
+
+def create_provider_selection_changed_event(
+    *,
+    previous_provider_id: str | None,
+    new_provider_id: str | None,
+    occurred_at: datetime,
+) -> ExecutionEvent:
+    if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
+        raise ValueError("occurred_at must be timezone-aware")
+    payload = ProviderSelectionChangedEventPayload(
+        previous_provider_id=previous_provider_id,
+        new_provider_id=new_provider_id,
+        previous_selection_mode=_selection_mode_for(previous_provider_id),
+        new_selection_mode=_selection_mode_for(new_provider_id),
+    )
+    return ExecutionEvent(
+        timestamp=occurred_at,
+        type="provider_selection_changed",
+        message="Mission provider selection changed.",
+        metadata=payload.model_dump(mode="json"),
+    )
+
+
+def _selection_mode_for(provider_id: str | None) -> ProviderSelectionMode:
+    return (
+        ProviderSelectionMode.explicit
+        if provider_id is not None
+        else ProviderSelectionMode.automatic
+    )

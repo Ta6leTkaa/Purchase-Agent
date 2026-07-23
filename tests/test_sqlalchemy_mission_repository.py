@@ -195,6 +195,15 @@ def test_provider_selection_update_survives_round_trip_after_commit() -> None:
             assert loaded_mission.status is MissionStatus.created
             assert loaded_mission.execution_attempts == 0
             assert loaded_mission.payload == mission.payload
+            assert loaded_mission.execution_log[-1].type == (
+                "provider_selection_changed"
+            )
+            assert loaded_mission.execution_log[-1].metadata == {
+                "previous_provider_id": None,
+                "new_provider_id": "mock_train",
+                "previous_selection_mode": "automatic",
+                "new_selection_mode": "explicit",
+            }
         finally:
             await engine.dispose()
 

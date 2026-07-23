@@ -56,4 +56,4 @@ def get_set_mission_provider(
         Depends(get_provider_registry),
     ],
 ) -> SetMissionProvider:
-    return SetMissionProvider(mission_repository, registry)
+    return SetMissionProvider(mission_repository, registry, clock=utc_now)

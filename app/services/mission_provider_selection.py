@@ -1,9 +1,15 @@
+from collections.abc import Callable
+from datetime import datetime
 from uuid import UUID
 
 from app.adapters.registry import ProviderRegistry
 from app.domain.mission import Mission, MissionStatus
 from app.domain.provider_id import normalize_provider_id
+from app.domain.provider_resolution import (
+    create_provider_selection_changed_event,
+)
 from app.repositories.mission import MissionRepository
+from app.services.clock import utc_now
 from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_errors import UnsupportedMissionTypeError
 
@@ -30,9 +36,11 @@ class SetMissionProvider:
         self,
         mission_repository: MissionRepository,
         provider_registry: ProviderRegistry,
+        clock: Callable[[], datetime] = utc_now,
     ) -> None:
         self._mission_repository = mission_repository
         self._provider_registry = provider_registry
+        self._clock = clock
 
     async def execute(
         self,
@@ -58,9 +66,17 @@ class SetMissionProvider:
                     mission_type=mission.mission_type,
                 )
 
+        previous_provider_id = mission.provider_id
         updated_mission = mission.with_provider_selection(
             normalized_provider_id
         )
         if updated_mission is mission:
             return mission
+        updated_mission.execution_log.append(
+            create_provider_selection_changed_event(
+                previous_provider_id=previous_provider_id,
+                new_provider_id=normalized_provider_id,
+                occurred_at=self._clock(),
+            )
+        )
         return await self._mission_repository.update(updated_mission)

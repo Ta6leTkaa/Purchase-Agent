@@ -26,6 +26,8 @@ from app.services.mission_provider_selection import (
 from app.services.provider_errors import UnsupportedMissionTypeError
 from app.storage.memory import InMemoryMissionRepository
 
+CURRENT_TIME = datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc)
+
 
 class SelectionAdapter(ProviderAdapter):
     def __init__(self, provider_id: str, *, supported: bool = True) -> None:
@@ -191,7 +193,11 @@ def test_set_mission_provider_updates_only_selection() -> None:
         mission = make_mission(resolved_provider_id="provider_a")
         await repository.create(mission)
 
-        updated = await SetMissionProvider(repository, registry).execute(
+        updated = await SetMissionProvider(
+            repository,
+            registry,
+            clock=lambda: CURRENT_TIME,
+        ).execute(
             mission.id,
             "provider_b",
         )
@@ -200,7 +206,15 @@ def test_set_mission_provider_updates_only_selection() -> None:
         assert updated.resolved_provider_id is None
         assert updated.status is MissionStatus.created
         assert updated.execution_attempts == 0
-        assert updated.execution_log == []
+        assert len(updated.execution_log) == 1
+        assert updated.execution_log[0].type == "provider_selection_changed"
+        assert updated.execution_log[0].timestamp == CURRENT_TIME
+        assert updated.execution_log[0].metadata == {
+            "previous_provider_id": None,
+            "new_provider_id": "provider_b",
+            "previous_selection_mode": "automatic",
+            "new_selection_mode": "explicit",
+        }
         assert repository.update_calls == 1
         assert registry.get_calls == ["provider_b"]
         assert adapter.supports_calls == [MissionType.TRAIN_TICKET]
@@ -218,16 +232,28 @@ def test_set_mission_provider_clear_and_idempotent_updates() -> None:
             resolved_provider_id="provider_a",
         )
         await repository.create(mission)
-        use_case = SetMissionProvider(repository, registry)
+        use_case = SetMissionProvider(
+            repository,
+            registry,
+            clock=lambda: CURRENT_TIME,
+        )
 
-        unchanged = await use_case.execute(mission.id, "provider_a")
+        unchanged = await use_case.execute(mission.id, "  provider_a  ")
         cleared = await use_case.execute(mission.id, None)
 
         assert unchanged.resolved_provider_id == "provider_a"
+        assert unchanged.execution_log == []
         assert cleared.provider_id is None
         assert cleared.resolved_provider_id is None
         assert registry.get_calls == ["provider_a"]
         assert repository.update_calls == 1
+        assert len(cleared.execution_log) == 1
+        assert cleared.execution_log[0].metadata == {
+            "previous_provider_id": "provider_a",
+            "new_provider_id": None,
+            "previous_selection_mode": "explicit",
+            "new_selection_mode": "automatic",
+        }
 
     asyncio.run(scenario())
 
@@ -322,7 +348,9 @@ def test_api_sets_and_clears_provider_selection() -> None:
     assert response.json()["resolved_provider_id"] is None
     assert response.json()["status"] == "created"
     assert response.json()["execution_attempts"] == 0
-    assert response.json()["execution_log"] == []
+    assert response.json()["execution_log"][-1]["type"] == (
+        "provider_selection_changed"
+    )
 
     clear_response = client.put(
         f"/missions/{mission.id}/provider",
@@ -332,6 +360,12 @@ def test_api_sets_and_clears_provider_selection() -> None:
     assert clear_response.status_code == 200
     assert clear_response.json()["provider_id"] is None
     assert clear_response.json()["resolved_provider_id"] is None
+    assert clear_response.json()["execution_log"][-1]["metadata"] == {
+        "previous_provider_id": "mock_train",
+        "new_provider_id": None,
+        "previous_selection_mode": "explicit",
+        "new_selection_mode": "automatic",
+    }
 
 
 def test_api_rejects_invalid_selection_requests() -> None:

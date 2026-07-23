@@ -180,6 +180,7 @@ class Mission(BaseModel):
         if normalized_provider_id == self.provider_id:
             return self
         return self.model_copy(
+            deep=True,
             update={
                 "provider_id": normalized_provider_id,
                 "resolved_provider_id": None,
