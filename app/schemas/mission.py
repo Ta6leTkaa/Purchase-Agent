@@ -118,6 +118,7 @@ class MissionProviderResolutionIncrementResponse(BaseModel):
     mission_id: UUID
     since_sequence: int
     latest_sequence: int
+    has_more: bool
     items: tuple[ProviderResolutionHistoryItemResponse, ...]
 
     @classmethod
@@ -129,6 +130,7 @@ class MissionProviderResolutionIncrementResponse(BaseModel):
             mission_id=increment.mission_id,
             since_sequence=increment.since_sequence,
             latest_sequence=increment.latest_sequence,
+            has_more=increment.has_more,
             items=tuple(
                 ProviderResolutionHistoryItemResponse(
                     sequence=item.sequence,

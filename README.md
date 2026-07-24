@@ -573,14 +573,16 @@ provider registry.
 
 ```bash
 curl \
-  "/missions/{mission_id}/provider-resolution-history/since/12"
+  "/missions/{mission_id}/provider-resolution-history/since/12?limit=100"
 ```
 
 The optional bounded long-poll form waits for newly committed provider events:
 
 ```bash
-curl \
-  "/missions/{mission_id}/provider-resolution-history/since/12?wait_seconds=20"
+curl -G \
+  "/missions/{mission_id}/provider-resolution-history/since/12" \
+  --data-urlencode "limit=100" \
+  --data-urlencode "wait_seconds=20"
 ```
 
 ```json
@@ -588,6 +590,7 @@ curl \
   "mission_id": "...",
   "since_sequence": 12,
   "latest_sequence": 18,
+  "has_more": false,
   "items": [
     {"sequence": 14, "event_type": "provider_selection_changed"},
     {"sequence": 18, "event_type": "provider_resolved"}
@@ -595,13 +598,18 @@ curl \
 }
 ```
 
+Incremental history is returned in bounded batches: `limit` defaults to `100`
+and is capped at `500`. `has_more` means a further provider event exists after
+the final delivered item; clients continue with `since/{latest_sequence}`.
+The opaque-cursor history endpoint has its own independent page limit.
+
 `latest_sequence` is the last returned provider-event sequence, or the
 requested value when no provider events match. `wait_seconds` defaults to `0`
 and is bounded to 30 seconds. The endpoint always reads immediately; it returns
-already available events without waiting, otherwise it rereads fresh persisted
+already available batches without waiting, otherwise it rereads fresh persisted
 Mission state at a fixed internal interval. Timeout returns `200` with an empty
-`items` array. Unrelated Mission events do not end the wait, and request
-cancellation stops the poll.
+`items` array and `has_more=false`. Unrelated Mission events do not end the
+wait, and request cancellation stops the poll.
 
 Each polling read uses a fresh database session, so its transaction and pooled
 connection are released before sleeping. The endpoint currently loads the

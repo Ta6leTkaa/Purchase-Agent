@@ -37,10 +37,12 @@ from app.services.mission_provider_selection import (
     SetMissionProvider,
 )
 from app.services.provider_resolution_history import (
+    DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT,
     DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
     GetMissionProviderResolutionHistory,
     GetMissionProviderResolutionIncrement,
     InvalidProviderHistoryCursorError,
+    MAX_PROVIDER_HISTORY_INCREMENT_LIMIT,
     MAX_PROVIDER_HISTORY_PAGE_SIZE,
     MAX_PROVIDER_HISTORY_WAIT_SECONDS,
     ProviderHistoryCursorCodec,
@@ -159,6 +161,7 @@ async def preview_mission_provider_resolution_endpoint(
         "Returns provider selection and resolution events with a persisted "
         "sequence greater than the requested boundary. With a positive "
         "wait_seconds value, it waits for newly committed matching events. "
+        "Results are returned as bounded sequence-based batches. "
         "This read-only endpoint does not resolve providers or execute the "
         "mission."
     ),
@@ -181,6 +184,17 @@ async def get_mission_provider_resolution_increment_endpoint(
     ],
     provider_resolution_increment: ProviderResolutionIncrementDep,
     response: Response,
+    limit: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=MAX_PROVIDER_HISTORY_INCREMENT_LIMIT,
+            description=(
+                "Maximum number of provider-related events returned in this "
+                "incremental batch."
+            ),
+        ),
+    ] = DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT,
     wait_seconds: Annotated[
         int,
         Query(
@@ -199,6 +213,7 @@ async def get_mission_provider_resolution_increment_endpoint(
             mission_id,
             ProviderResolutionIncrementRequest(
                 since_sequence=sequence,
+                limit=limit,
                 wait_timeout=timedelta(seconds=wait_seconds),
             ),
         )

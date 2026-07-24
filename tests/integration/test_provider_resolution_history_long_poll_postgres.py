@@ -124,6 +124,7 @@ async def test_long_poll_reads_provider_event_committed_by_fresh_session(
 
     assert read_factory.reads == 2
     assert [item.sequence for item in increment.items] == [1]
+    assert increment.has_more is False
     assert [item.event_type.value for item in increment.items] == [
         "provider_resolution_failed"
     ]

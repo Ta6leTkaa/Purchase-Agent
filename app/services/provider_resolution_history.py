@@ -24,6 +24,8 @@ DEFAULT_PROVIDER_HISTORY_PAGE_SIZE = 50
 MAX_PROVIDER_HISTORY_PAGE_SIZE = 100
 DEFAULT_PROVIDER_HISTORY_WAIT_SECONDS = 0
 MAX_PROVIDER_HISTORY_WAIT_SECONDS = 30
+DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT = 100
+MAX_PROVIDER_HISTORY_INCREMENT_LIMIT = 500
 MAX_PROVIDER_HISTORY_WAIT = timedelta(
     seconds=MAX_PROVIDER_HISTORY_WAIT_SECONDS
 )
@@ -169,6 +171,11 @@ class ProviderResolutionIncrementRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     since_sequence: int = Field(ge=0)
+    limit: int = Field(
+        default=DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT,
+        ge=1,
+        le=MAX_PROVIDER_HISTORY_INCREMENT_LIMIT,
+    )
     wait_timeout: timedelta = timedelta(
         seconds=DEFAULT_PROVIDER_HISTORY_WAIT_SECONDS
     )
@@ -222,6 +229,7 @@ class MissionProviderResolutionIncrement(BaseModel):
     mission_id: UUID
     since_sequence: int = Field(ge=0)
     latest_sequence: int = Field(ge=0)
+    has_more: bool
     items: tuple[ProviderResolutionHistoryItem, ...]
 
     @model_validator(mode="after")
@@ -236,8 +244,13 @@ class MissionProviderResolutionIncrement(BaseModel):
         if self.items:
             if self.latest_sequence != self.items[-1].sequence:
                 raise ValueError("latest sequence must match the final item")
-        elif self.latest_sequence != self.since_sequence:
-            raise ValueError("empty increment must retain since sequence")
+        else:
+            if self.latest_sequence != self.since_sequence:
+                raise ValueError("empty increment must retain since sequence")
+            if self.has_more:
+                raise ValueError("empty increment cannot have more items")
+        if self.has_more and not self.items:
+            raise ValueError("increment with more items cannot be empty")
         return self
 
 
@@ -328,6 +341,7 @@ class GetMissionProviderResolutionIncrement:
         result = await self._read_increment_once(
             mission_id=mission_id,
             since_sequence=request.since_sequence,
+            limit=request.limit,
         )
         if result.items or request.wait_timeout <= timedelta(0):
             return result
@@ -339,6 +353,7 @@ class GetMissionProviderResolutionIncrement:
                 return await self._read_increment_once(
                     mission_id=mission_id,
                     since_sequence=request.since_sequence,
+                    limit=request.limit,
                 )
 
             await self._waiter.sleep(
@@ -350,6 +365,7 @@ class GetMissionProviderResolutionIncrement:
             result = await self._read_increment_once(
                 mission_id=mission_id,
                 since_sequence=request.since_sequence,
+                limit=request.limit,
             )
             if result.items or self._waiter.monotonic() >= deadline:
                 return result
@@ -359,17 +375,27 @@ class GetMissionProviderResolutionIncrement:
         *,
         mission_id: UUID,
         since_sequence: int,
+        limit: int,
     ) -> MissionProviderResolutionIncrement:
         async with self._mission_read_repository_factory.open() as repository:
             mission = await repository.get(mission_id)
         if mission is None:
             raise MissionNotFoundError
 
+        candidates: list[ExecutionEvent] = []
+        for event in mission.execution_log:
+            if event.sequence <= since_sequence:
+                continue
+            if event.type not in PROVIDER_HISTORY_EVENT_TYPES:
+                continue
+            candidates.append(event)
+            if len(candidates) == limit + 1:
+                break
+
+        has_more = len(candidates) > limit
         items = tuple(
             provider_event_to_history_item(event)
-            for event in mission.execution_log
-            if event.type in PROVIDER_HISTORY_EVENT_TYPES
-            and event.sequence > since_sequence
+            for event in candidates[:limit]
         )
         latest_sequence = (
             items[-1].sequence if items else since_sequence
@@ -378,6 +404,7 @@ class GetMissionProviderResolutionIncrement:
             mission_id=mission.id,
             since_sequence=since_sequence,
             latest_sequence=latest_sequence,
+            has_more=has_more,
             items=items,
         )
 

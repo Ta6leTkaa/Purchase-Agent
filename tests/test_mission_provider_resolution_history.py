@@ -22,10 +22,12 @@ from app.main import app
 from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_resolution_history import (
     AsyncWaiter,
+    DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT,
     DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
     GetMissionProviderResolutionHistory,
     GetMissionProviderResolutionIncrement,
     InvalidProviderHistoryCursorError,
+    MAX_PROVIDER_HISTORY_INCREMENT_LIMIT,
     MAX_PROVIDER_HISTORY_PAGE_SIZE,
     ProviderHistoryCursorCodec,
     ProviderHistoryEventType,
@@ -259,6 +261,7 @@ def test_increment_returns_provider_events_after_sequence_in_order() -> None:
             ProviderHistoryEventType.provider_selection_changed,
         ]
         assert increment.latest_sequence == 4
+        assert increment.has_more is False
 
     asyncio.run(scenario())
 
@@ -279,6 +282,7 @@ def test_increment_returns_empty_result_after_high_sequence() -> None:
 
         assert increment.items == ()
         assert increment.latest_sequence == 999
+        assert increment.has_more is False
 
     asyncio.run(scenario())
 
@@ -292,6 +296,21 @@ def test_history_page_request_rejects_invalid_limits(limit: int) -> None:
 def test_increment_request_rejects_negative_sequence() -> None:
     with pytest.raises(ValidationError):
         ProviderResolutionIncrementRequest(since_sequence=-1)
+
+
+@pytest.mark.parametrize(
+    "limit",
+    [0, -1, MAX_PROVIDER_HISTORY_INCREMENT_LIMIT + 1],
+)
+def test_increment_request_rejects_invalid_limits(limit: int) -> None:
+    with pytest.raises(ValidationError):
+        ProviderResolutionIncrementRequest(since_sequence=0, limit=limit)
+
+
+def test_increment_request_uses_default_bounded_limit() -> None:
+    request = ProviderResolutionIncrementRequest(since_sequence=0)
+
+    assert request.limit == DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT
 
 
 @pytest.mark.parametrize(
@@ -330,6 +349,42 @@ def test_long_poll_returns_existing_events_without_sleep() -> None:
     asyncio.run(scenario())
 
 
+def test_increment_returns_partial_batch_and_continues_exclusively() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        mission = make_mission(make_provider_events())
+        await repository.create(mission)
+        service = build_increment_service(repository, FakeAsyncWaiter())
+
+        first_batch = await service.execute(
+            mission.id,
+            ProviderResolutionIncrementRequest(since_sequence=0, limit=2),
+        )
+        second_batch = await service.execute(
+            mission.id,
+            ProviderResolutionIncrementRequest(
+                since_sequence=first_batch.latest_sequence,
+                limit=2,
+            ),
+        )
+
+        assert [item.sequence for item in first_batch.items] == [2, 3]
+        assert first_batch.latest_sequence == 3
+        assert first_batch.has_more is True
+        assert [item.sequence for item in second_batch.items] == [4]
+        assert second_batch.has_more is False
+
+        complete_batch = await service.execute(
+            mission.id,
+            ProviderResolutionIncrementRequest(since_sequence=0, limit=3),
+        )
+
+        assert [item.sequence for item in complete_batch.items] == [2, 3, 4]
+        assert complete_batch.has_more is False
+
+    asyncio.run(scenario())
+
+
 def test_long_poll_reads_fresh_events_after_one_interval() -> None:
     async def scenario() -> None:
         repository = CountingInMemoryMissionRepository()
@@ -346,11 +401,13 @@ def test_long_poll_reads_fresh_events_after_one_interval() -> None:
             mission.id,
             ProviderResolutionIncrementRequest(
                 since_sequence=0,
+                limit=2,
                 wait_timeout=timedelta(seconds=2),
             ),
         )
 
-        assert [item.sequence for item in increment.items] == [2, 3, 4]
+        assert [item.sequence for item in increment.items] == [2, 3]
+        assert increment.has_more is True
         assert waiter.sleeps == [timedelta(milliseconds=500)]
         assert repository.get_calls == 2
 
@@ -378,6 +435,7 @@ def test_long_poll_timeout_performs_final_read_at_deadline() -> None:
 
         assert increment.items == ()
         assert increment.latest_sequence == 0
+        assert increment.has_more is False
         assert waiter.sleeps == [timedelta(milliseconds=200)]
         assert repository.get_calls == 2
 
@@ -613,6 +671,7 @@ def test_increment_api_returns_snapshot_and_latest_sequence() -> None:
     assert response.headers["cache-control"] == "no-store"
     assert response.json()["since_sequence"] == 2
     assert response.json()["latest_sequence"] == 4
+    assert response.json()["has_more"] is False
     assert [item["sequence"] for item in response.json()["items"]] == [3, 4]
     assert response.json()["items"][0]["payload"]["snapshot"] == {
         "selection_mode": "explicit",
@@ -637,6 +696,7 @@ def test_increment_api_returns_empty_result_for_existing_mission() -> None:
         "mission_id": str(mission.id),
         "since_sequence": 0,
         "latest_sequence": 0,
+        "has_more": False,
         "items": [],
     }
 
@@ -675,6 +735,34 @@ def test_increment_api_rejects_invalid_wait_seconds(
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "501", "not-a-number"])
+def test_increment_api_rejects_invalid_limits(limit: str) -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{uuid4()}/provider-resolution-history/since/0",
+        params={"limit": limit},
+    )
+
+    assert response.status_code == 422
+
+
+def test_increment_api_returns_bounded_batch() -> None:
+    mission = make_mission(make_provider_events())
+    asyncio.run(mission_repository.create(mission))
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{mission.id}/provider-resolution-history/since/0",
+        params={"limit": 2},
+    )
+
+    assert response.status_code == 200
+    assert [item["sequence"] for item in response.json()["items"]] == [2, 3]
+    assert response.json()["latest_sequence"] == 3
+    assert response.json()["has_more"] is True
 
 
 def test_increment_api_returns_existing_events_immediately_with_wait() -> None:
