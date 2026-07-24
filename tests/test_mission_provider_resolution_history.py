@@ -344,7 +344,7 @@ def test_long_poll_returns_existing_events_without_sleep() -> None:
 
         assert [item.sequence for item in increment.items] == [2, 3, 4]
         assert waiter.sleeps == []
-        assert repository.get_calls == 1
+        assert repository.get_calls == 2
 
     asyncio.run(scenario())
 
@@ -409,7 +409,7 @@ def test_long_poll_reads_fresh_events_after_one_interval() -> None:
         assert [item.sequence for item in increment.items] == [2, 3]
         assert increment.has_more is True
         assert waiter.sleeps == [timedelta(milliseconds=500)]
-        assert repository.get_calls == 2
+        assert repository.get_calls == 3
 
     asyncio.run(scenario())
 
@@ -437,7 +437,7 @@ def test_long_poll_timeout_performs_final_read_at_deadline() -> None:
         assert increment.latest_sequence == 0
         assert increment.has_more is False
         assert waiter.sleeps == [timedelta(milliseconds=200)]
-        assert repository.get_calls == 2
+        assert repository.get_calls == 3
 
     asyncio.run(scenario())
 

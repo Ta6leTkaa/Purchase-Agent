@@ -13,6 +13,9 @@ from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
+from app.repositories.sqlalchemy.provider_history import (
+    SqlAlchemyProviderHistoryProjectionRepository,
+)
 from app.services.clock import utc_now
 from app.services.mission_provider_selection import SetMissionProvider
 from app.services.provider_resolution_history import (
@@ -52,6 +55,24 @@ class SqlAlchemyMissionReadRepositoryFactory:
                 await session.rollback()
 
 
+class SqlAlchemyProviderHistoryProjectionReaderFactory:
+    def __init__(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        self._session_maker = session_maker
+
+    @asynccontextmanager
+    async def open(
+        self,
+    ) -> AsyncIterator[SqlAlchemyProviderHistoryProjectionRepository]:
+        async with self._session_maker() as session:
+            try:
+                yield SqlAlchemyProviderHistoryProjectionRepository(session)
+            finally:
+                await session.rollback()
+
+
 def get_identity_repository(session: DbSessionDep) -> IdentityRepository:
     if settings.storage_backend == "database":
         return SqlAlchemyIdentityRepository(session)
@@ -72,6 +93,23 @@ def get_mission_read_repository_factory() -> MissionReadRepositoryFactory:
 
 def get_provider_history_waiter() -> AsyncWaiter:
     return provider_history_waiter
+
+
+def get_provider_history_projection_reader(
+    session: DbSessionDep,
+) -> SqlAlchemyProviderHistoryProjectionRepository | None:
+    if settings.storage_backend == "database":
+        return SqlAlchemyProviderHistoryProjectionRepository(session)
+    return None
+
+
+def get_provider_history_projection_reader_factory(
+) -> SqlAlchemyProviderHistoryProjectionReaderFactory | None:
+    if settings.storage_backend == "database":
+        return SqlAlchemyProviderHistoryProjectionReaderFactory(
+            async_session_maker
+        )
+    return None
 
 
 def get_current_time() -> datetime:
@@ -117,8 +155,15 @@ def get_mission_provider_resolution_history(
         MissionRepository,
         Depends(get_mission_repository),
     ],
+    projection_reader: Annotated[
+        SqlAlchemyProviderHistoryProjectionRepository | None,
+        Depends(get_provider_history_projection_reader),
+    ],
 ) -> GetMissionProviderResolutionHistory:
-    return GetMissionProviderResolutionHistory(mission_repository)
+    return GetMissionProviderResolutionHistory(
+        mission_repository,
+        projection_reader,
+    )
 
 
 def get_mission_provider_resolution_increment(
@@ -130,8 +175,13 @@ def get_mission_provider_resolution_increment(
         AsyncWaiter,
         Depends(get_provider_history_waiter),
     ],
+    projection_reader_factory: Annotated[
+        SqlAlchemyProviderHistoryProjectionReaderFactory | None,
+        Depends(get_provider_history_projection_reader_factory),
+    ],
 ) -> GetMissionProviderResolutionIncrement:
     return GetMissionProviderResolutionIncrement(
         mission_read_repository_factory,
         waiter,
+        projection_reader_factory=projection_reader_factory,
     )

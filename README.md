@@ -620,6 +620,20 @@ order, then start the next request using that value. Opaque cursor pagination
 remains available separately for browsing historical pages and does not support
 long polling.
 
+## Provider History Read Projection
+
+PostgreSQL keeps `mission_provider_history_events` as a relational, read-only
+projection of provider-related Mission events. Mission `execution_log` JSON
+remains the canonical source of truth. Provider event writes update both the
+Mission JSON and the projection in one transaction; existing JSON events are
+backfilled by the migration.
+
+The projection stores the persisted per-Mission sequence, event timestamp,
+typed payload, and the legacy event index required by the existing opaque
+history cursor. It supports sequence batches and chronological history pages
+without deserializing an entire Mission event list. The projection is rebuildable
+from canonical JSON, but this project does not expose a rebuild command or API.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.

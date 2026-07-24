@@ -140,6 +140,9 @@ class InMemoryMissionRepository:
     async def get(self, mission_id: UUID) -> Mission | None:
         return self._missions.get(mission_id)
 
+    async def exists(self, mission_id: UUID) -> bool:
+        return mission_id in self._missions
+
     async def update(self, mission: Mission) -> Mission:
         self._missions[mission.id] = mission
         return mission

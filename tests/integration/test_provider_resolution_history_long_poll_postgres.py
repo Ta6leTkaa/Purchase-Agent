@@ -11,6 +11,9 @@ from app.domain.mission import Mission, MissionType, TrainConstraints
 from app.domain.provider_resolution import ProviderResolutionFailureReason
 from app.repositories.mission import MissionRepository
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
+from app.repositories.sqlalchemy.provider_history import (
+    SqlAlchemyProviderHistoryProjectionRepository,
+)
 from app.services.provider_resolution_history import (
     AsyncWaiter,
     GetMissionProviderResolutionIncrement,
@@ -36,6 +39,26 @@ class FreshPostgresMissionReadFactory:
             try:
                 self.reads += 1
                 yield SqlAlchemyMissionRepository(session)
+            finally:
+                await session.rollback()
+
+
+class FreshProviderHistoryProjectionFactory:
+    def __init__(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        self._session_maker = session_maker
+        self.reads = 0
+
+    @asynccontextmanager
+    async def open(
+        self,
+    ) -> AsyncIterator[SqlAlchemyProviderHistoryProjectionRepository]:
+        async with self._session_maker() as session:
+            try:
+                self.reads += 1
+                yield SqlAlchemyProviderHistoryProjectionRepository(session)
             finally:
                 await session.rollback()
 
@@ -110,10 +133,12 @@ async def test_long_poll_reads_provider_event_committed_by_fresh_session(
             await session.commit()
 
     read_factory = FreshPostgresMissionReadFactory(session_maker)
+    projection_factory = FreshProviderHistoryProjectionFactory(session_maker)
     increment = await GetMissionProviderResolutionIncrement(
         read_factory,
         WriterWaiter(commit_provider_event),
         poll_interval=timedelta(milliseconds=1),
+        projection_reader_factory=projection_factory,
     ).execute(
         mission.id,
         ProviderResolutionIncrementRequest(
@@ -122,7 +147,8 @@ async def test_long_poll_reads_provider_event_committed_by_fresh_session(
         ),
     )
 
-    assert read_factory.reads == 2
+    assert read_factory.reads == 1
+    assert projection_factory.reads == 2
     assert [item.sequence for item in increment.items] == [1]
     assert increment.has_more is False
     assert [item.event_type.value for item in increment.items] == [

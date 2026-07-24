@@ -15,6 +15,12 @@ from app.repositories.mission import (
     MissionRepository,
     RepositoryEntityNotFoundError,
 )
+from app.repositories.sqlalchemy.provider_history import (
+    SqlAlchemyProviderHistoryProjectionRepository,
+)
+from app.services.provider_history_projection import (
+    execution_event_to_provider_projection,
+)
 from app.services.mission_state_machine import MissionStateMachine
 
 
@@ -29,6 +35,10 @@ class SqlAlchemyMissionRepository(MissionRepository):
     async def create(self, mission: Mission) -> Mission:
         model = mission_to_model(mission)
         self._session.add(model)
+        await self._append_provider_history_events(
+            mission,
+            previous_last_event_sequence=0,
+        )
         await self._session.flush()
         return mission_from_model(model)
 
@@ -166,6 +176,12 @@ class SqlAlchemyMissionRepository(MissionRepository):
             return None
         return mission_from_model(model)
 
+    async def exists(self, mission_id: UUID) -> bool:
+        result = await self._session.execute(
+            select(MissionModel.id).where(MissionModel.id == mission_id)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def update(self, mission: Mission) -> Mission:
         updated_model = mission_to_model(mission)
         result = await self._session.execute(
@@ -203,12 +219,40 @@ class SqlAlchemyMissionRepository(MissionRepository):
             raise MissionEventSequenceConflictError
 
         await self._session.flush()
+        await self._append_provider_history_events(
+            mission,
+            previous_last_event_sequence=mission.persisted_last_event_sequence,
+        )
+        await self._session.flush()
         mission.mark_event_sequence_persisted()
         return mission
 
     async def clear(self) -> None:
         await self._session.execute(delete(MissionModel))
         await self._session.flush()
+
+    async def _append_provider_history_events(
+        self,
+        mission: Mission,
+        *,
+        previous_last_event_sequence: int,
+    ) -> None:
+        events = [
+            projection
+            for event_index, event in enumerate(mission.execution_log)
+            if event.sequence > previous_last_event_sequence
+            if (
+                projection := execution_event_to_provider_projection(
+                    mission_id=mission.id,
+                    event=event,
+                    legacy_event_index=event_index,
+                )
+            ) is not None
+        ]
+        if events:
+            await SqlAlchemyProviderHistoryProjectionRepository(
+                self._session
+            ).append_many(events)
 
 
 def get_sqlalchemy_mission_repository(

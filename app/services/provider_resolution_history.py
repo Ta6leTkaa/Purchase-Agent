@@ -255,8 +255,13 @@ class MissionProviderResolutionIncrement(BaseModel):
 
 
 class GetMissionProviderResolutionHistory:
-    def __init__(self, mission_repository: MissionRepository) -> None:
+    def __init__(
+        self,
+        mission_repository: MissionRepository,
+        projection_reader: object | None = None,
+    ) -> None:
         self._mission_repository = mission_repository
+        self._projection_reader = projection_reader
 
     async def execute(
         self,
@@ -264,9 +269,13 @@ class GetMissionProviderResolutionHistory:
         request: ProviderResolutionHistoryPageRequest | None = None,
     ) -> MissionProviderResolutionHistoryPage:
         page_request = request or ProviderResolutionHistoryPageRequest()
-        mission = await self._mission_repository.get(mission_id)
-        if mission is None:
+        if not await self._mission_repository.exists(mission_id):
             raise MissionNotFoundError
+        if self._projection_reader is not None:
+            return await self._read_projection_page(mission_id, page_request)
+
+        mission = await self._mission_repository.get(mission_id)
+        assert mission is not None
         if (
             page_request.cursor is not None
             and page_request.cursor.mission_id != mission.id
@@ -315,6 +324,44 @@ class GetMissionProviderResolutionHistory:
             next_cursor=next_cursor,
         )
 
+    async def _read_projection_page(
+        self,
+        mission_id: UUID,
+        page_request: ProviderResolutionHistoryPageRequest,
+    ) -> MissionProviderResolutionHistoryPage:
+        cursor = page_request.cursor
+        if cursor is not None and cursor.mission_id != mission_id:
+            raise InvalidProviderHistoryCursorError(
+                "Provider history cursor does not belong to this mission"
+            )
+        reader = self._projection_reader
+        assert reader is not None
+        events = await reader.list_page(
+            mission_id=mission_id,
+            cursor=cursor,
+            fetch_limit=page_request.limit + 1,
+        )
+        has_more = len(events) > page_request.limit
+        visible_events = events[: page_request.limit]
+        next_cursor = None
+        if has_more:
+            last_event = visible_events[-1]
+            next_cursor = ProviderHistoryCursor(
+                mission_id=mission_id,
+                occurred_at=last_event.occurred_at,
+                event_index=last_event.legacy_event_index,
+            )
+        return MissionProviderResolutionHistoryPage(
+            mission_id=mission_id,
+            items=tuple(
+                _projection_to_history_item(event)
+                for event in visible_events
+            ),
+            limit=page_request.limit,
+            has_more=has_more,
+            next_cursor=next_cursor,
+        )
+
 
 class GetMissionProviderResolutionIncrement:
     def __init__(
@@ -322,6 +369,7 @@ class GetMissionProviderResolutionIncrement:
         mission_read_repository_factory: MissionReadRepositoryFactory,
         waiter: AsyncWaiter,
         poll_interval: timedelta = PROVIDER_HISTORY_POLL_INTERVAL,
+        projection_reader_factory: object | None = None,
     ) -> None:
         if poll_interval <= timedelta(0):
             raise ValueError("poll interval must be greater than zero")
@@ -332,12 +380,16 @@ class GetMissionProviderResolutionIncrement:
         )
         self._waiter = waiter
         self._poll_interval = poll_interval
+        self._projection_reader_factory = projection_reader_factory
 
     async def execute(
         self,
         mission_id: UUID,
         request: ProviderResolutionIncrementRequest,
     ) -> MissionProviderResolutionIncrement:
+        async with self._mission_read_repository_factory.open() as repository:
+            if not await repository.exists(mission_id):
+                raise MissionNotFoundError
         result = await self._read_increment_once(
             mission_id=mission_id,
             since_sequence=request.since_sequence,
@@ -377,6 +429,29 @@ class GetMissionProviderResolutionIncrement:
         since_sequence: int,
         limit: int,
     ) -> MissionProviderResolutionIncrement:
+        if self._projection_reader_factory is not None:
+            async with self._projection_reader_factory.open() as reader:
+                candidates = await reader.list_since(
+                    mission_id=mission_id,
+                    since_sequence=since_sequence,
+                    fetch_limit=limit + 1,
+                )
+            has_more = len(candidates) > limit
+            items = tuple(
+                _projection_to_history_item(event)
+                for event in candidates[:limit]
+            )
+            latest_sequence = (
+                items[-1].sequence if items else since_sequence
+            )
+            return MissionProviderResolutionIncrement(
+                mission_id=mission_id,
+                since_sequence=since_sequence,
+                latest_sequence=latest_sequence,
+                has_more=has_more,
+                items=items,
+            )
+
         async with self._mission_read_repository_factory.open() as repository:
             mission = await repository.get(mission_id)
         if mission is None:
@@ -440,4 +515,13 @@ def provider_event_to_history_item(
         event_type=event_type,
         occurred_at=event.timestamp,
         payload=payload_type.model_validate(event.metadata),
+    )
+
+
+def _projection_to_history_item(event: object) -> ProviderResolutionHistoryItem:
+    return ProviderResolutionHistoryItem(
+        sequence=event.sequence,
+        event_type=event.event_type,
+        occurred_at=event.occurred_at,
+        payload=event.payload,
     )
