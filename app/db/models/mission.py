@@ -19,6 +19,7 @@ from app.domain.mission import (
     TrainConstraints,
 )
 from app.domain.provider import ProviderOption
+from app.services.mission_event_store import mission_json_event_store
 
 
 class AwareDateTime(TypeDecorator[datetime]):
@@ -150,10 +151,7 @@ def mission_to_model(mission: Mission) -> MissionModel:
         ],
         constraints=mission.constraints.model_dump(mode="json"),
         fallback_rules=mission.fallback_rules.model_dump(mode="json"),
-        execution_log=[
-            event.model_dump(mode="json")
-            for event in mission.execution_log
-        ],
+        execution_log=mission_json_event_store.serialize(mission.execution_log),
         best_option=(
             mission.best_option.model_dump(mode="json")
             if mission.best_option is not None
@@ -165,13 +163,9 @@ def mission_to_model(mission: Mission) -> MissionModel:
 def mission_from_model(model: MissionModel) -> Mission:
     execution_attempts = getattr(model, "execution_attempts", 0) or 0
     max_execution_attempts = getattr(model, "max_execution_attempts", 3) or 3
-    execution_log = [
-        ExecutionEvent.model_validate(event)
-        for event in model.execution_log
-    ]
     last_event_sequence = getattr(model, "last_event_sequence", 0) or 0
-    validate_event_sequence(
-        execution_log,
+    execution_log = mission_json_event_store.deserialize(
+        model.execution_log,
         last_event_sequence=last_event_sequence,
     )
     mission_data = {

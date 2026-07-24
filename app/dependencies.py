@@ -32,6 +32,7 @@ from app.services.provider_resolution_preview import (
 from app.services.provider_history_verification import (
     VerifyMissionProviderHistoryProjection,
 )
+from app.services.mission_event_store import MissionJsonEventStore, mission_json_event_store
 from app.services.provider_resolver import ProviderResolver
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
@@ -117,6 +118,10 @@ def get_provider_history_projection_reader_factory(
 
 def get_current_time() -> datetime:
     return utc_now()
+
+
+def get_mission_event_store() -> MissionJsonEventStore:
+    return mission_json_event_store
 
 
 def get_provider_registry() -> ProviderRegistry:

@@ -22,6 +22,7 @@ from app.services.provider_history_projection import (
     execution_event_to_provider_projection,
 )
 from app.services.mission_state_machine import MissionStateMachine
+from app.services.mission_event_store import mission_json_event_store
 
 
 class MissionEventSequenceConflictError(Exception):
@@ -239,8 +240,12 @@ class SqlAlchemyMissionRepository(MissionRepository):
     ) -> None:
         events = [
             projection
-            for event_index, event in enumerate(mission.execution_log)
-            if event.sequence > previous_last_event_sequence
+            for event_index, event in (
+                mission_json_event_store.indexed_events_after(
+                    mission.execution_log,
+                    previous_last_event_sequence,
+                )
+            )
             if (
                 projection := execution_event_to_provider_projection(
                     mission_id=mission.id,

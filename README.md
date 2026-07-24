@@ -655,6 +655,17 @@ sequences, and mismatched field names. It never repairs rows or exposes payload
 diffs. A detected inconsistency is a successful `200` diagnostic result with
 status `inconsistent`; an unknown Mission returns `404`.
 
+## Mission Event Store Abstraction
+
+Application code now has a `MissionEventStore` boundary for loading and
+appending canonical Mission events. Today `MissionJsonEventStore` implements
+that boundary using the existing Mission JSON event list; sequence allocation
+still belongs to `Mission.record_event`. The JSON adapter owns event
+serialization, deserialization, and selection of newly persisted events for
+the provider projection writer. A future canonical event storage mechanism can
+replace this adapter without requiring provider history use cases to learn its
+physical representation.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.
