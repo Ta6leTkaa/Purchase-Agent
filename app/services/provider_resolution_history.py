@@ -1,8 +1,12 @@
+import asyncio
 import base64
 import binascii
 import json
-from datetime import datetime
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import datetime, timedelta
 from enum import Enum
+from typing import Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -18,6 +22,12 @@ from app.services.mission_errors import MissionNotFoundError
 
 DEFAULT_PROVIDER_HISTORY_PAGE_SIZE = 50
 MAX_PROVIDER_HISTORY_PAGE_SIZE = 100
+DEFAULT_PROVIDER_HISTORY_WAIT_SECONDS = 0
+MAX_PROVIDER_HISTORY_WAIT_SECONDS = 30
+MAX_PROVIDER_HISTORY_WAIT = timedelta(
+    seconds=MAX_PROVIDER_HISTORY_WAIT_SECONDS
+)
+PROVIDER_HISTORY_POLL_INTERVAL = timedelta(milliseconds=500)
 _CURSOR_VERSION = 1
 
 
@@ -159,6 +169,51 @@ class ProviderResolutionIncrementRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     since_sequence: int = Field(ge=0)
+    wait_timeout: timedelta = timedelta(
+        seconds=DEFAULT_PROVIDER_HISTORY_WAIT_SECONDS
+    )
+
+    @model_validator(mode="after")
+    def validate_wait_timeout(self) -> "ProviderResolutionIncrementRequest":
+        if self.wait_timeout < timedelta(0):
+            raise ValueError("wait timeout must not be negative")
+        if self.wait_timeout > MAX_PROVIDER_HISTORY_WAIT:
+            raise ValueError(
+                "wait timeout exceeds the maximum provider history wait"
+            )
+        return self
+
+
+class AsyncWaiter(Protocol):
+    def monotonic(self) -> float:
+        ...
+
+    async def sleep(self, delay: timedelta) -> None:
+        ...
+
+
+class AsyncioWaiter:
+    def monotonic(self) -> float:
+        return asyncio.get_running_loop().time()
+
+    async def sleep(self, delay: timedelta) -> None:
+        await asyncio.sleep(delay.total_seconds())
+
+
+class MissionReadRepositoryFactory(Protocol):
+    def open(self) -> AbstractAsyncContextManager[MissionRepository]:
+        ...
+
+
+class StaticMissionReadRepositoryFactory:
+    """Supplies a read-only repository where persistence has no session scope."""
+
+    def __init__(self, mission_repository: MissionRepository) -> None:
+        self._mission_repository = mission_repository
+
+    @asynccontextmanager
+    async def open(self) -> AsyncIterator[MissionRepository]:
+        yield self._mission_repository
 
 
 class MissionProviderResolutionIncrement(BaseModel):
@@ -249,15 +304,64 @@ class GetMissionProviderResolutionHistory:
 
 
 class GetMissionProviderResolutionIncrement:
-    def __init__(self, mission_repository: MissionRepository) -> None:
-        self._mission_repository = mission_repository
+    def __init__(
+        self,
+        mission_read_repository_factory: MissionReadRepositoryFactory,
+        waiter: AsyncWaiter,
+        poll_interval: timedelta = PROVIDER_HISTORY_POLL_INTERVAL,
+    ) -> None:
+        if poll_interval <= timedelta(0):
+            raise ValueError("poll interval must be greater than zero")
+        if poll_interval > MAX_PROVIDER_HISTORY_WAIT:
+            raise ValueError("poll interval exceeds the maximum wait")
+        self._mission_read_repository_factory = (
+            mission_read_repository_factory
+        )
+        self._waiter = waiter
+        self._poll_interval = poll_interval
 
     async def execute(
         self,
         mission_id: UUID,
         request: ProviderResolutionIncrementRequest,
     ) -> MissionProviderResolutionIncrement:
-        mission = await self._mission_repository.get(mission_id)
+        result = await self._read_increment_once(
+            mission_id=mission_id,
+            since_sequence=request.since_sequence,
+        )
+        if result.items or request.wait_timeout <= timedelta(0):
+            return result
+
+        deadline = self._waiter.monotonic() + request.wait_timeout.total_seconds()
+        while True:
+            remaining_seconds = deadline - self._waiter.monotonic()
+            if remaining_seconds <= 0:
+                return await self._read_increment_once(
+                    mission_id=mission_id,
+                    since_sequence=request.since_sequence,
+                )
+
+            await self._waiter.sleep(
+                min(
+                    self._poll_interval,
+                    timedelta(seconds=remaining_seconds),
+                )
+            )
+            result = await self._read_increment_once(
+                mission_id=mission_id,
+                since_sequence=request.since_sequence,
+            )
+            if result.items or self._waiter.monotonic() >= deadline:
+                return result
+
+    async def _read_increment_once(
+        self,
+        *,
+        mission_id: UUID,
+        since_sequence: int,
+    ) -> MissionProviderResolutionIncrement:
+        async with self._mission_read_repository_factory.open() as repository:
+            mission = await repository.get(mission_id)
         if mission is None:
             raise MissionNotFoundError
 
@@ -265,14 +369,14 @@ class GetMissionProviderResolutionIncrement:
             provider_event_to_history_item(event)
             for event in mission.execution_log
             if event.type in PROVIDER_HISTORY_EVENT_TYPES
-            and event.sequence > request.since_sequence
+            and event.sequence > since_sequence
         )
         latest_sequence = (
-            items[-1].sequence if items else request.since_sequence
+            items[-1].sequence if items else since_sequence
         )
         return MissionProviderResolutionIncrement(
             mission_id=mission.id,
-            since_sequence=request.since_sequence,
+            since_sequence=since_sequence,
             latest_sequence=latest_sequence,
             items=items,
         )

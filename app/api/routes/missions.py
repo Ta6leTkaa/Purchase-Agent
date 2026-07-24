@@ -1,7 +1,8 @@
+from datetime import timedelta
 from typing import Annotated, TypeAlias
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 
 from app.dependencies import (
     get_identity_repository,
@@ -41,6 +42,7 @@ from app.services.provider_resolution_history import (
     GetMissionProviderResolutionIncrement,
     InvalidProviderHistoryCursorError,
     MAX_PROVIDER_HISTORY_PAGE_SIZE,
+    MAX_PROVIDER_HISTORY_WAIT_SECONDS,
     ProviderHistoryCursorCodec,
     ProviderResolutionHistoryPageRequest,
     ProviderResolutionIncrementRequest,
@@ -155,8 +157,10 @@ async def preview_mission_provider_resolution_endpoint(
     summary="Get incremental mission provider resolution history",
     description=(
         "Returns provider selection and resolution events with a persisted "
-        "sequence greater than the requested boundary. This read-only "
-        "endpoint does not resolve providers or execute the mission."
+        "sequence greater than the requested boundary. With a positive "
+        "wait_seconds value, it waits for newly committed matching events. "
+        "This read-only endpoint does not resolve providers or execute the "
+        "mission."
     ),
     responses={
         404: {"description": "Mission not found"},
@@ -176,14 +180,31 @@ async def get_mission_provider_resolution_increment_endpoint(
         ),
     ],
     provider_resolution_increment: ProviderResolutionIncrementDep,
+    response: Response,
+    wait_seconds: Annotated[
+        int,
+        Query(
+            ge=0,
+            le=MAX_PROVIDER_HISTORY_WAIT_SECONDS,
+            description=(
+                "Maximum number of seconds to wait for new provider-related "
+                "mission events. The endpoint reads immediately first and "
+                "returns an empty response when the timeout expires."
+            ),
+        ),
+    ] = 0,
 ) -> MissionProviderResolutionIncrementResponse:
     try:
         increment = await provider_resolution_increment.execute(
             mission_id,
-            ProviderResolutionIncrementRequest(since_sequence=sequence),
+            ProviderResolutionIncrementRequest(
+                since_sequence=sequence,
+                wait_timeout=timedelta(seconds=wait_seconds),
+            ),
         )
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
+    response.headers["Cache-Control"] = "no-store"
     return MissionProviderResolutionIncrementResponse.from_application(
         increment
     )

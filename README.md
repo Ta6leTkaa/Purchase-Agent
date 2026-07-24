@@ -576,6 +576,13 @@ curl \
   "/missions/{mission_id}/provider-resolution-history/since/12"
 ```
 
+The optional bounded long-poll form waits for newly committed provider events:
+
+```bash
+curl \
+  "/missions/{mission_id}/provider-resolution-history/since/12?wait_seconds=20"
+```
+
 ```json
 {
   "mission_id": "...",
@@ -589,11 +596,21 @@ curl \
 ```
 
 `latest_sequence` is the last returned provider-event sequence, or the
-requested value when no provider events match. The endpoint currently loads
-the Mission's persisted JSON event list and filters it in the application
-layer; it is correct for the current storage model but is not an indexed event
-table scan. Opaque cursor pagination remains available separately for browsing
-historical pages.
+requested value when no provider events match. `wait_seconds` defaults to `0`
+and is bounded to 30 seconds. The endpoint always reads immediately; it returns
+already available events without waiting, otherwise it rereads fresh persisted
+Mission state at a fixed internal interval. Timeout returns `200` with an empty
+`items` array. Unrelated Mission events do not end the wait, and request
+cancellation stops the poll.
+
+Each polling read uses a fresh database session, so its transaction and pooled
+connection are released before sleeping. The endpoint currently loads the
+Mission's persisted JSON event list and filters it in the application layer; it
+is correct for the current storage model but is not an indexed event table scan.
+Clients should store `latest_sequence`, process items in ascending sequence
+order, then start the next request using that value. Opaque cursor pagination
+remains available separately for browsing historical pages and does not support
+long polling.
 
 ## Explicit provider selection
 

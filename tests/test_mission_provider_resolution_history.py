@@ -1,6 +1,7 @@
 import asyncio
 from datetime import date, datetime, timedelta, timezone
-from uuid import uuid4
+from typing import Callable
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,6 +21,7 @@ from app.domain.provider_resolution import (
 from app.main import app
 from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_resolution_history import (
+    AsyncWaiter,
     DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
     GetMissionProviderResolutionHistory,
     GetMissionProviderResolutionIncrement,
@@ -29,11 +31,51 @@ from app.services.provider_resolution_history import (
     ProviderHistoryEventType,
     ProviderResolutionHistoryPageRequest,
     ProviderResolutionIncrementRequest,
+    StaticMissionReadRepositoryFactory,
     provider_event_to_history_item,
 )
 from app.storage.memory import InMemoryMissionRepository
 
 CURRENT_TIME = datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc)
+
+
+class FakeAsyncWaiter(AsyncWaiter):
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[timedelta] = []
+        self.on_sleep: Callable[[], None] | None = None
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, delay: timedelta) -> None:
+        self.sleeps.append(delay)
+        self.now += delay.total_seconds()
+        if self.on_sleep is not None:
+            self.on_sleep()
+
+
+class CountingInMemoryMissionRepository(InMemoryMissionRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.get_calls = 0
+
+    async def get(self, mission_id: UUID) -> Mission | None:
+        self.get_calls += 1
+        return await super().get(mission_id)
+
+
+def build_increment_service(
+    repository: InMemoryMissionRepository,
+    waiter: FakeAsyncWaiter,
+    *,
+    poll_interval: timedelta = timedelta(milliseconds=500),
+) -> GetMissionProviderResolutionIncrement:
+    return GetMissionProviderResolutionIncrement(
+        StaticMissionReadRepositoryFactory(repository),
+        waiter,
+        poll_interval,
+    )
 
 
 def make_mission(
@@ -203,8 +245,9 @@ def test_increment_returns_provider_events_after_sequence_in_order() -> None:
         mission = make_mission(make_provider_events())
         await repository.create(mission)
 
-        increment = await GetMissionProviderResolutionIncrement(
-            repository
+        increment = await build_increment_service(
+            repository,
+            FakeAsyncWaiter(),
         ).execute(
             mission.id,
             ProviderResolutionIncrementRequest(since_sequence=2),
@@ -226,8 +269,9 @@ def test_increment_returns_empty_result_after_high_sequence() -> None:
         mission = make_mission(make_provider_events())
         await repository.create(mission)
 
-        increment = await GetMissionProviderResolutionIncrement(
-            repository
+        increment = await build_increment_service(
+            repository,
+            FakeAsyncWaiter(),
         ).execute(
             mission.id,
             ProviderResolutionIncrementRequest(since_sequence=999),
@@ -248,6 +292,116 @@ def test_history_page_request_rejects_invalid_limits(limit: int) -> None:
 def test_increment_request_rejects_negative_sequence() -> None:
     with pytest.raises(ValidationError):
         ProviderResolutionIncrementRequest(since_sequence=-1)
+
+
+@pytest.mark.parametrize(
+    "wait_timeout",
+    [timedelta(seconds=-1), timedelta(seconds=31)],
+)
+def test_increment_request_rejects_invalid_wait_timeout(
+    wait_timeout: timedelta,
+) -> None:
+    with pytest.raises(ValidationError):
+        ProviderResolutionIncrementRequest(
+            since_sequence=0,
+            wait_timeout=wait_timeout,
+        )
+
+
+def test_long_poll_returns_existing_events_without_sleep() -> None:
+    async def scenario() -> None:
+        repository = CountingInMemoryMissionRepository()
+        mission = make_mission(make_provider_events())
+        await repository.create(mission)
+        waiter = FakeAsyncWaiter()
+
+        increment = await build_increment_service(repository, waiter).execute(
+            mission.id,
+            ProviderResolutionIncrementRequest(
+                since_sequence=0,
+                wait_timeout=timedelta(seconds=20),
+            ),
+        )
+
+        assert [item.sequence for item in increment.items] == [2, 3, 4]
+        assert waiter.sleeps == []
+        assert repository.get_calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_long_poll_reads_fresh_events_after_one_interval() -> None:
+    async def scenario() -> None:
+        repository = CountingInMemoryMissionRepository()
+        mission = make_mission()
+        await repository.create(mission)
+        waiter = FakeAsyncWaiter()
+
+        def add_provider_event() -> None:
+            mission.execution_log = make_provider_events()
+            mission.last_event_sequence = 5
+
+        waiter.on_sleep = add_provider_event
+        increment = await build_increment_service(repository, waiter).execute(
+            mission.id,
+            ProviderResolutionIncrementRequest(
+                since_sequence=0,
+                wait_timeout=timedelta(seconds=2),
+            ),
+        )
+
+        assert [item.sequence for item in increment.items] == [2, 3, 4]
+        assert waiter.sleeps == [timedelta(milliseconds=500)]
+        assert repository.get_calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_long_poll_timeout_performs_final_read_at_deadline() -> None:
+    async def scenario() -> None:
+        repository = CountingInMemoryMissionRepository()
+        mission = make_mission()
+        await repository.create(mission)
+        waiter = FakeAsyncWaiter()
+
+        increment = await build_increment_service(
+            repository,
+            waiter,
+            poll_interval=timedelta(milliseconds=500),
+        ).execute(
+            mission.id,
+            ProviderResolutionIncrementRequest(
+                since_sequence=0,
+                wait_timeout=timedelta(milliseconds=200),
+            ),
+        )
+
+        assert increment.items == ()
+        assert increment.latest_sequence == 0
+        assert waiter.sleeps == [timedelta(milliseconds=200)]
+        assert repository.get_calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_long_poll_returns_missing_mission_without_waiting() -> None:
+    async def scenario() -> None:
+        repository = CountingInMemoryMissionRepository()
+        waiter = FakeAsyncWaiter()
+
+        with pytest.raises(MissionNotFoundError):
+            await build_increment_service(repository, waiter).execute(
+                uuid4(),
+                ProviderResolutionIncrementRequest(
+                    since_sequence=0,
+                    wait_timeout=timedelta(seconds=20),
+                ),
+            )
+
+        assert repository.get_calls == 1
+        assert waiter.sleeps == []
+
+    asyncio.run(scenario())
 
 
 def test_history_cursor_codec_rejects_malformed_cursor() -> None:
@@ -456,6 +610,7 @@ def test_increment_api_returns_snapshot_and_latest_sequence() -> None:
     )
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     assert response.json()["since_sequence"] == 2
     assert response.json()["latest_sequence"] == 4
     assert [item["sequence"] for item in response.json()["items"]] == [3, 4]
@@ -490,7 +645,8 @@ def test_increment_api_returns_404_for_missing_mission() -> None:
     client = TestClient(app)
 
     response = client.get(
-        f"/missions/{uuid4()}/provider-resolution-history/since/0"
+        f"/missions/{uuid4()}/provider-resolution-history/since/0",
+        params={"wait_seconds": 20},
     )
 
     assert response.status_code == 404
@@ -505,3 +661,31 @@ def test_increment_api_rejects_invalid_sequence(sequence: str) -> None:
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("wait_seconds", ["-1", "31", "not-a-number"])
+def test_increment_api_rejects_invalid_wait_seconds(
+    wait_seconds: str,
+) -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{uuid4()}/provider-resolution-history/since/0",
+        params={"wait_seconds": wait_seconds},
+    )
+
+    assert response.status_code == 422
+
+
+def test_increment_api_returns_existing_events_immediately_with_wait() -> None:
+    mission = make_mission(make_provider_events())
+    asyncio.run(mission_repository.create(mission))
+    client = TestClient(app)
+
+    response = client.get(
+        f"/missions/{mission.id}/provider-resolution-history/since/2",
+        params={"wait_seconds": 20},
+    )
+
+    assert response.status_code == 200
+    assert [item["sequence"] for item in response.json()["items"]] == [3, 4]
