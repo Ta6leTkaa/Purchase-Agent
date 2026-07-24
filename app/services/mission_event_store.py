@@ -1,8 +1,12 @@
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.domain.execution import ExecutionEvent, validate_event_sequence
+from app.services.mission_event_serializer import (
+    MissionEventSerializer,
+    mission_event_serializer,
+)
 
 
 class MissionEventStore(Protocol):
@@ -20,21 +24,27 @@ class MissionEventStore(Protocol):
 class MissionJsonEventStore:
     """Canonical Mission event adapter backed by the existing JSON column."""
 
+    def __init__(
+        self,
+        serializer: MissionEventSerializer = mission_event_serializer,
+    ) -> None:
+        self._serializer = serializer
+
     def deserialize(
         self,
         events: Sequence[dict[str, object]],
         *,
         last_event_sequence: int,
     ) -> list[ExecutionEvent]:
-        restored = [ExecutionEvent.model_validate(event) for event in events]
+        restored = [self._serializer.deserialize(event) for event in events]
         validate_event_sequence(
             restored,
             last_event_sequence=last_event_sequence,
         )
         return restored
 
-    def serialize(self, events: Sequence[ExecutionEvent]) -> list[dict[str, object]]:
-        return [event.model_dump(mode="json") for event in events]
+    def serialize(self, events: Sequence[ExecutionEvent]) -> list[dict[str, Any]]:
+        return [self._serializer.serialize(event) for event in events]
 
     def events_after(
         self,
@@ -55,4 +65,4 @@ class MissionJsonEventStore:
         )
 
 
-mission_json_event_store = MissionJsonEventStore()
+mission_json_event_store = MissionJsonEventStore(mission_event_serializer)

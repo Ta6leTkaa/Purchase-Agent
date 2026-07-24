@@ -660,11 +660,29 @@ status `inconsistent`; an unknown Mission returns `404`.
 Application code now has a `MissionEventStore` boundary for loading and
 appending canonical Mission events. Today `MissionJsonEventStore` implements
 that boundary using the existing Mission JSON event list; sequence allocation
-still belongs to `Mission.record_event`. The JSON adapter owns event
-serialization, deserialization, and selection of newly persisted events for
-the provider projection writer. A future canonical event storage mechanism can
-replace this adapter without requiring provider history use cases to learn its
-physical representation.
+still belongs to `Mission.record_event`. A future canonical event storage
+mechanism can replace this adapter without requiring provider history use cases
+to learn its physical representation.
+
+## Mission Event Serialization
+
+`MissionEventSerializer` is the sole owner of the persisted JSON format for
+canonical Mission events. `MissionJsonEventStore` delegates conversion between
+typed `ExecutionEvent` objects and JSON to this serializer; repositories,
+projection rebuilds, and verification work with typed events only. Provider
+payloads, including `ProviderResolutionSnapshot`, are validated and serialized
+through their typed Pydantic models. Changing the persisted event format only
+requires changing the serializer while preserving the existing JSON schema.
+
+```text
+MissionJsonEventStore
+        |
+        v
+MissionEventSerializer
+        |
+        v
+Canonical Mission JSON
+```
 
 ## Explicit provider selection
 

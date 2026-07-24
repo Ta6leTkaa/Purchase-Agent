@@ -161,10 +161,9 @@ class SqlAlchemyMissionRepository(MissionRepository):
             model.status = mission.status.value
             model.claimed_at = mission.claimed_at
             model.last_event_sequence = mission.last_event_sequence
-            model.execution_log = [
-                event.model_dump(mode="json")
-                for event in mission.execution_log
-            ]
+            model.execution_log = mission_json_event_store.serialize(
+                mission.execution_log
+            )
             recovered_missions.append(mission)
 
         await self._session.flush()
