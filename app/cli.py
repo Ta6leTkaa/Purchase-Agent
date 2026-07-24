@@ -23,6 +23,10 @@ from app.services.due_mission_processor import (
     process_due_missions,
 )
 from app.services.provider_resolver import ProviderResolver
+from app.services.provider_history_rebuild import (
+    ProviderHistoryProjectionRebuildResult,
+    RebuildProviderHistoryProjection,
+)
 
 
 @dataclass(frozen=True)
@@ -127,6 +131,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.command == "process-due":
         raise SystemExit(asyncio.run(process_due_command(args.limit)))
+    if args.command == "rebuild-provider-history":
+        exit_code, result = asyncio.run(
+            rebuild_provider_history_command()
+        )
+        if exit_code == 0:
+            sys.stdout.write(
+                "Processed missions: "
+                f"{result.processed_missions}\n"
+                "Processed provider events: "
+                f"{result.processed_provider_events}\n"
+                f"Inserted rows: {result.inserted_rows}\n"
+            )
+        raise SystemExit(exit_code)
 
     exit_code, result = asyncio.run(
         recover_stale_command(
@@ -179,6 +196,23 @@ async def _recover_stale_with_database_session(
             raise
 
 
+async def rebuild_provider_history_command(
+    *,
+    dependencies: CliDependencies | None = None,
+    stderr: TextIO | None = None,
+) -> tuple[int, ProviderHistoryProjectionRebuildResult]:
+    error_output = stderr or sys.stderr
+    resolved_dependencies = dependencies or get_cli_dependencies()
+    try:
+        async with resolved_dependencies.session_maker() as session:
+            result = await RebuildProviderHistoryProjection().execute(session)
+            await session.commit()
+            return 0, result
+    except Exception:
+        error_output.write("Infrastructure error while rebuilding provider history.\n")
+        return 1, ProviderHistoryProjectionRebuildResult(0, 0, 0)
+
+
 def _resolve_dependencies(
     dependencies: CliDependencies | None,
     session_maker: async_sessionmaker[AsyncSession] | None,
@@ -216,6 +250,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_parse_claim_timeout_seconds,
         default=900,
         help="Maximum claim age in seconds, from 1 to 86400.",
+    )
+
+    subparsers.add_parser(
+        "rebuild-provider-history",
+        help="Rebuild the provider history projection from Mission events.",
     )
     recover_stale_parser.add_argument(
         "--limit",

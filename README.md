@@ -634,6 +634,16 @@ history cursor. It supports sequence batches and chronological history pages
 without deserializing an entire Mission event list. The projection is rebuildable
 from canonical JSON, but this project does not expose a rebuild command or API.
 
+Run the controlled maintenance rebuild with:
+
+```bash
+python -m app.cli rebuild-provider-history
+```
+
+The command rebuilds the whole projection in one transaction from canonical
+Mission JSON. Avoid normal Mission writes while it runs; projection readers may
+temporarily observe no history until the transaction commits.
+
 Administrators can verify one Mission without changing either representation:
 
 ```text
