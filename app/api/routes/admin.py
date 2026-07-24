@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
 from typing import Annotated, TypeAlias
+from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.dependencies.auth import require_admin_api_key
@@ -11,6 +12,7 @@ from app.dependencies import (
     get_identity_repository,
     get_mission_repository,
     get_provider_resolver,
+    get_provider_history_projection_verifier,
 )
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
@@ -18,7 +20,12 @@ from app.services.due_mission_processor import (
     DueMissionProcessingResult,
     process_due_missions,
 )
+from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_resolver import ProviderResolver
+from app.services.provider_history_verification import (
+    MissionProviderHistoryProjectionVerification,
+    VerifyMissionProviderHistoryProjection,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 MissionRepositoryDep: TypeAlias = Annotated[
@@ -35,6 +42,10 @@ ProviderResolverDep: TypeAlias = Annotated[
 ]
 CurrentTimeDep: TypeAlias = Annotated[datetime, Depends(get_current_time)]
 AdminApiKeyDep: TypeAlias = Annotated[None, Depends(require_admin_api_key)]
+ProviderHistoryVerifierDep: TypeAlias = Annotated[
+    VerifyMissionProviderHistoryProjection,
+    Depends(get_provider_history_projection_verifier),
+]
 
 
 class ProcessDueMissionsRequest(BaseModel):
@@ -100,3 +111,19 @@ async def recover_stale_missions_endpoint(
         recovered_count=len(recovered_missions),
         recovered_mission_ids=[mission.id for mission in recovered_missions],
     )
+
+
+@router.get(
+    "/missions/{mission_id}/provider-history-projection/verification",
+    response_model=MissionProviderHistoryProjectionVerification,
+    summary="Verify provider history projection consistency",
+)
+async def verify_provider_history_projection_endpoint(
+    mission_id: UUID,
+    _admin_api_key: AdminApiKeyDep,
+    verifier: ProviderHistoryVerifierDep,
+) -> MissionProviderHistoryProjectionVerification:
+    try:
+        return await verifier.execute(mission_id)
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc

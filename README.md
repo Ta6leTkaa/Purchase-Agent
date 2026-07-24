@@ -634,6 +634,17 @@ history cursor. It supports sequence batches and chronological history pages
 without deserializing an entire Mission event list. The projection is rebuildable
 from canonical JSON, but this project does not expose a rebuild command or API.
 
+Administrators can verify one Mission without changing either representation:
+
+```text
+GET /admin/missions/{mission_id}/provider-history-projection/verification
+```
+
+The diagnostic response reports only event counts, missing or unexpected
+sequences, and mismatched field names. It never repairs rows or exposes payload
+diffs. A detected inconsistency is a successful `200` diagnostic result with
+status `inconsistent`; an unknown Mission returns `404`.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.

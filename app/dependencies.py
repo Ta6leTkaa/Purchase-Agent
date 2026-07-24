@@ -29,6 +29,9 @@ from app.services.provider_resolution_history import (
 from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
 )
+from app.services.provider_history_verification import (
+    VerifyMissionProviderHistoryProjection,
+)
 from app.services.provider_resolver import ProviderResolver
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
@@ -185,3 +188,15 @@ def get_mission_provider_resolution_increment(
         waiter,
         projection_reader_factory=projection_reader_factory,
     )
+
+
+def get_provider_history_projection_verifier(
+    mission_repository: Annotated[MissionRepository, Depends(get_mission_repository)],
+    projection_reader: Annotated[
+        SqlAlchemyProviderHistoryProjectionRepository | None,
+        Depends(get_provider_history_projection_reader),
+    ],
+) -> VerifyMissionProviderHistoryProjection:
+    if projection_reader is None:
+        raise RuntimeError("Provider history projection is unavailable")
+    return VerifyMissionProviderHistoryProjection(mission_repository, projection_reader)

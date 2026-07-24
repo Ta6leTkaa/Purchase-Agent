@@ -59,6 +59,17 @@ class SqlAlchemyProviderHistoryProjectionRepository:
             for model in result.scalars().all()
         ]
 
+    async def list_all_for_mission(
+        self,
+        mission_id: UUID,
+    ) -> list[ProviderHistoryProjectionEvent]:
+        result = await self._session.execute(
+            select(MissionProviderHistoryEventModel)
+            .where(MissionProviderHistoryEventModel.mission_id == mission_id)
+            .order_by(MissionProviderHistoryEventModel.sequence.asc())
+        )
+        return [projection_from_model(model) for model in result.scalars().all()]
+
     async def list_page(
         self,
         *,
