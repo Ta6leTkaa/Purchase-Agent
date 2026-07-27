@@ -355,12 +355,18 @@ async def run_mission_endpoint(
     identity_repository: IdentityRepositoryDep,
     provider_resolver: ProviderResolverDep,
     idempotency_store: MissionCommandIdempotencyStoreDep,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1)],
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1)
+    ] = None,
 ) -> Mission:
     try:
-        previous = await idempotency_store.begin(
-            key=idempotency_key, mission_id=mission_id, command=MissionCommandType.RUN
-        )
+        previous = None
+        if idempotency_key is not None:
+            previous = await idempotency_store.begin(
+                key=idempotency_key,
+                mission_id=mission_id,
+                command=MissionCommandType.RUN,
+            )
         if previous is not None:
             result = await mission_repository.get(previous)
             assert result is not None
@@ -371,7 +377,11 @@ async def run_mission_endpoint(
             identity_repository,
             provider_resolver,
         )
-        await idempotency_store.complete(key=idempotency_key, mission_id=result.id)
+        if idempotency_key is not None:
+            await idempotency_store.complete(
+                key=idempotency_key,
+                mission_id=result.id,
+            )
         return result
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
@@ -390,20 +400,28 @@ async def confirm_mission_endpoint(
     mission_id: UUID,
     mission_repository: MissionRepositoryDep,
     idempotency_store: MissionCommandIdempotencyStoreDep,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1)],
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1)
+    ] = None,
 ) -> Mission:
     try:
-        previous = await idempotency_store.begin(
-            key=idempotency_key,
-            mission_id=mission_id,
-            command=MissionCommandType.CONFIRM,
-        )
+        previous = None
+        if idempotency_key is not None:
+            previous = await idempotency_store.begin(
+                key=idempotency_key,
+                mission_id=mission_id,
+                command=MissionCommandType.CONFIRM,
+            )
         if previous is not None:
             result = await mission_repository.get(previous)
             assert result is not None
             return result
         result = await confirm_mission(mission_id, mission_repository)
-        await idempotency_store.complete(key=idempotency_key, mission_id=result.id)
+        if idempotency_key is not None:
+            await idempotency_store.complete(
+                key=idempotency_key,
+                mission_id=result.id,
+            )
         return result
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
