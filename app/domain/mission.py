@@ -11,7 +11,12 @@ from pydantic import (
     model_validator,
 )
 
-from app.domain.execution import ExecutionEvent, validate_event_sequence
+from app.domain.execution import (
+    EventIdFactory,
+    ExecutionEvent,
+    new_mission_event_id,
+    validate_event_sequence,
+)
 from app.domain.provider_id import normalize_provider_id
 from app.domain.provider import ProviderOption
 
@@ -165,8 +170,15 @@ class Mission(BaseModel):
         event_type: str,
         message: str,
         metadata: dict[str, object] | None = None,
+        event_id_factory: EventIdFactory = new_mission_event_id,
     ) -> ExecutionEvent:
+        event_id = event_id_factory()
+        if event_id.int == 0:
+            raise ValueError("Mission event ID must not be nil")
+        if any(event.event_id == event_id for event in self.execution_log):
+            raise ValueError("Mission event ID must be unique")
         event = ExecutionEvent(
+            event_id=event_id,
             sequence=self.last_event_sequence + 1,
             timestamp=timestamp,
             type=event_type,

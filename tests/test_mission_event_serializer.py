@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import UUID
 
 import pytest
 
@@ -23,10 +24,15 @@ from app.services.mission_event_upcaster import (
     InvalidMissionEventUpcasterRegistryError,
     MissionEventSchemaVersionError,
     MissionEventUpcasterV0ToV1,
+    MissionEventUpcasterV1ToV2,
+    MissionEventDeserializationContext,
     UnsupportedMissionEventSchemaVersionError,
 )
 
 CURRENT_TIME = datetime(2026, 7, 24, 12, 0, tzinfo=timezone.utc)
+CONTEXT = MissionEventDeserializationContext(
+    mission_id=UUID("14dbe878-d3eb-4f66-a28a-b7904393f0c0")
+)
 
 
 def _provider_events() -> list[ExecutionEvent]:
@@ -218,7 +224,7 @@ def test_serializer_upcasts_legacy_event_without_mutating_it() -> None:
     legacy_event["unknown_top_level"] = {"preserved": True}
     original_nested_payload = dict(legacy_event["metadata"])
 
-    restored = serializer.deserialize(legacy_event)
+    restored = serializer.deserialize(legacy_event, context=CONTEXT)
     current_event = serializer.serialize(restored)
 
     assert restored == _provider_events()[0]
@@ -235,12 +241,14 @@ def test_serializer_upcasts_all_legacy_provider_events(
     legacy_event = serializer.serialize(event)
     legacy_event.pop("schema_version")
 
-    assert serializer.deserialize(legacy_event) == event
+    assert serializer.deserialize(legacy_event, context=CONTEXT) == event
 
 
 def test_current_schema_event_bypasses_legacy_upcaster() -> None:
     upcaster = _CountingUpcaster()
-    serializer = PydanticMissionEventSerializer(upcasters=(upcaster,))
+    serializer = PydanticMissionEventSerializer(
+        upcasters=(upcaster, MissionEventUpcasterV1ToV2()),
+    )
     current_event = PydanticMissionEventSerializer().serialize(
         _provider_events()[0]
     )
@@ -259,6 +267,7 @@ def test_store_deserializes_mixed_version_events_in_sequence_order() -> None:
     restored = MissionJsonEventStore(serializer).deserialize(
         raw_events,
         last_event_sequence=3,
+        mission_id=CONTEXT.mission_id,
     )
 
     assert restored == events
@@ -302,7 +311,10 @@ def test_serializer_rejects_invalid_schema_versions(
 )
 def test_serializer_rejects_invalid_upcaster_result(result: object) -> None:
     serializer = PydanticMissionEventSerializer(
-        upcasters=(_InvalidResultUpcaster(result),),
+        upcasters=(
+            _InvalidResultUpcaster(result),
+            MissionEventUpcasterV1ToV2(),
+        ),
     )
     legacy_event = PydanticMissionEventSerializer().serialize(
         _provider_events()[0]
@@ -310,7 +322,7 @@ def test_serializer_rejects_invalid_upcaster_result(result: object) -> None:
     legacy_event.pop("schema_version")
 
     with pytest.raises(InvalidMissionEventUpcastResultError):
-        serializer.deserialize(legacy_event)
+        serializer.deserialize(legacy_event, context=CONTEXT)
 
 
 def test_serializer_rejects_incomplete_upcaster_registry() -> None:
@@ -343,7 +355,11 @@ class _CountingUpcaster:
     def __init__(self) -> None:
         self.calls = 0
 
-    def upcast(self, raw_event: dict[str, object]) -> dict[str, object]:
+    def upcast(
+        self,
+        raw_event: dict[str, object],
+        **_: object,
+    ) -> dict[str, object]:
         self.calls += 1
         upcasted_event = dict(raw_event)
         upcasted_event["schema_version"] = self.target_version
@@ -357,7 +373,7 @@ class _InvalidResultUpcaster:
     def __init__(self, result: object) -> None:
         self._result = result
 
-    def upcast(self, raw_event: dict[str, object]) -> object:
+    def upcast(self, raw_event: dict[str, object], **_: object) -> object:
         return self._result
 
 
@@ -366,7 +382,11 @@ class _NoopUpcaster:
         self.source_version = source_version
         self.target_version = target_version
 
-    def upcast(self, raw_event: dict[str, object]) -> dict[str, object]:
+    def upcast(
+        self,
+        raw_event: dict[str, object],
+        **_: object,
+    ) -> dict[str, object]:
         upcasted_event = dict(raw_event)
         upcasted_event["schema_version"] = self.target_version
         return upcasted_event

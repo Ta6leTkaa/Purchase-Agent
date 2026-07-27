@@ -167,6 +167,7 @@ def mission_from_model(model: MissionModel) -> Mission:
     execution_log = mission_json_event_store.deserialize(
         model.execution_log,
         last_event_sequence=last_event_sequence,
+        mission_id=model.id,
     )
     mission_data = {
         "id": model.id,

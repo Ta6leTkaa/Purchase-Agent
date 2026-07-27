@@ -704,6 +704,21 @@ and payload stay unchanged. Incompatible persisted JSON changes require a new
 current version, a contiguous upcaster, legacy fixtures, round-trip coverage,
 and projection rebuild verification.
 
+## Mission Event Identity
+
+Every typed Mission event has an immutable `event_id` in addition to its
+per-Mission `sequence`. New events receive UUIDv4 IDs during centralized
+`Mission.record_event` creation. Persisted V2 events retain that ID, while V0
+and V1 events are lazily upcasted to a deterministic UUIDv5 derived from the
+stable namespace `a42492d0-825a-4c3d-908c-678e4900753b` and the exact name
+`mission-event:v1:{mission_id}:{sequence}`. Thus repeated legacy loads produce
+the same identity without rewriting canonical JSON. `event_id` is not exposed
+by the public provider-history API and never replaces sequence-based cursors.
+The existing provider-history projection keeps its established `(mission_id,
+sequence)` identity and does not duplicate `event_id`; canonical Mission JSON
+remains the source for event identity until a dedicated projection migration is
+introduced.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.

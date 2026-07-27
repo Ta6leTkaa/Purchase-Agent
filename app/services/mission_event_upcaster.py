@@ -1,16 +1,41 @@
 from collections.abc import Iterable, Mapping
 from types import MappingProxyType
+from dataclasses import dataclass
 from typing import Any, Protocol
+from uuid import UUID, uuid5
 
 LEGACY_MISSION_EVENT_SCHEMA_VERSION = 0
-CURRENT_MISSION_EVENT_SCHEMA_VERSION = 1
+CURRENT_MISSION_EVENT_SCHEMA_VERSION = 2
+MISSION_EVENT_ID_NAMESPACE = UUID("a42492d0-825a-4c3d-908c-678e4900753b")
+
+
+@dataclass(frozen=True)
+class MissionEventDeserializationContext:
+    mission_id: UUID | None = None
+    event_index: int | None = None
+
+
+class MissingMissionEventDeserializationContextError(ValueError):
+    pass
+
+
+def derive_legacy_event_id(*, mission_id: UUID, sequence: int) -> UUID:
+    return uuid5(
+        MISSION_EVENT_ID_NAMESPACE,
+        f"mission-event:v1:{mission_id}:{sequence}",
+    )
 
 
 class MissionEventUpcaster(Protocol):
     source_version: int
     target_version: int
 
-    def upcast(self, raw_event: Mapping[str, Any]) -> dict[str, Any]:
+    def upcast(
+        self,
+        raw_event: Mapping[str, Any],
+        *,
+        context: MissionEventDeserializationContext,
+    ) -> dict[str, Any]:
         ...
 
 
@@ -72,16 +97,52 @@ class InvalidMissionEventUpcasterRegistryError(ValueError):
 
 class MissionEventUpcasterV0ToV1:
     source_version = LEGACY_MISSION_EVENT_SCHEMA_VERSION
-    target_version = CURRENT_MISSION_EVENT_SCHEMA_VERSION
+    target_version = 1
 
-    def upcast(self, raw_event: Mapping[str, Any]) -> dict[str, Any]:
+    def upcast(
+        self,
+        raw_event: Mapping[str, Any],
+        *,
+        context: MissionEventDeserializationContext,
+    ) -> dict[str, Any]:
         upcasted_event = dict(raw_event)
         upcasted_event["schema_version"] = self.target_version
         return upcasted_event
 
 
+class MissionEventUpcasterV1ToV2:
+    source_version = 1
+    target_version = CURRENT_MISSION_EVENT_SCHEMA_VERSION
+
+    def upcast(
+        self,
+        raw_event: Mapping[str, Any],
+        *,
+        context: MissionEventDeserializationContext,
+    ) -> dict[str, Any]:
+        mission_id = context.mission_id
+        if mission_id is None:
+            raise MissingMissionEventDeserializationContextError(
+                "mission_id is required to upcast a legacy Mission event"
+            )
+        sequence = raw_event.get("sequence")
+        if type(sequence) is not int or sequence < 1:
+            raise ValueError("Legacy Mission event sequence must be positive")
+        upcasted_event = dict(raw_event)
+        upcasted_event["schema_version"] = self.target_version
+        if "event_id" not in upcasted_event:
+            upcasted_event["event_id"] = str(
+                derive_legacy_event_id(
+                    mission_id=mission_id,
+                    sequence=sequence,
+                )
+            )
+        return upcasted_event
+
+
 DEFAULT_MISSION_EVENT_UPCASTERS = (
     MissionEventUpcasterV0ToV1(),
+    MissionEventUpcasterV1ToV2(),
 )
 
 

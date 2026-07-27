@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Protocol
+from uuid import UUID
 
 from pydantic import ValidationError
 
@@ -18,6 +19,7 @@ from app.services.mission_event_upcaster import (
     MissingMissionEventUpcasterError,
     MissionEventSchemaVersionError,
     MissionEventUpcaster,
+    MissionEventDeserializationContext,
     UnsupportedMissionEventSchemaVersionError,
     build_mission_event_upcaster_registry,
 )
@@ -51,7 +53,12 @@ class MissionEventSerializer(Protocol):
     def serialize(self, event: ExecutionEvent) -> dict[str, Any]:
         ...
 
-    def deserialize(self, raw: Mapping[str, Any]) -> ExecutionEvent:
+    def deserialize(
+        self,
+        raw: Mapping[str, Any],
+        *,
+        context: MissionEventDeserializationContext | None = None,
+    ) -> ExecutionEvent:
         ...
 
 
@@ -106,6 +113,7 @@ class PydanticMissionEventSerializer:
             persisted_event = self._with_serialized_payload(event).model_dump(
                 mode="json"
             )
+            self._validate_event_id(event.event_id)
             persisted_event["schema_version"] = self._current_schema_version
             return persisted_event
         except (TypeError, ValidationError, ValueError) as exc:
@@ -115,12 +123,21 @@ class PydanticMissionEventSerializer:
                 sequence=event.sequence,
             ) from exc
 
-    def deserialize(self, raw: Mapping[str, Any]) -> ExecutionEvent:
+    def deserialize(
+        self,
+        raw: Mapping[str, Any],
+        *,
+        context: MissionEventDeserializationContext | None = None,
+    ) -> ExecutionEvent:
         event_type = raw.get("type")
         sequence = raw.get("sequence")
         try:
-            current_raw = self._upcast_to_current(raw)
+            current_raw = self._upcast_to_current(
+                raw,
+                context=context or MissionEventDeserializationContext(),
+            )
             event = ExecutionEvent.model_validate(current_raw)
+            self._validate_event_id(event.event_id)
             return self._with_serialized_payload(event)
         except MissionEventSchemaVersionError:
             raise
@@ -134,6 +151,8 @@ class PydanticMissionEventSerializer:
     def _upcast_to_current(
         self,
         raw: Mapping[str, Any],
+        *,
+        context: MissionEventDeserializationContext,
     ) -> Mapping[str, Any]:
         event_type = raw.get("type")
         sequence = raw.get("sequence")
@@ -155,7 +174,7 @@ class PydanticMissionEventSerializer:
                     event_type=event_type,
                     sequence=sequence,
                 )
-            upcasted_raw = upcaster.upcast(current_raw)
+            upcasted_raw = upcaster.upcast(current_raw, context=context)
             self._validate_upcast_result(
                 upcasted_raw,
                 target_version=upcaster.target_version,
@@ -207,6 +226,10 @@ class PydanticMissionEventSerializer:
                 event_type=event_type,
                 sequence=sequence,
             )
+
+    def _validate_event_id(self, event_id: UUID) -> None:
+        if event_id.int == 0:
+            raise ValueError("Mission event ID must not be nil")
 
     def _with_serialized_payload(self, event: ExecutionEvent) -> ExecutionEvent:
         payload_type = self._payload_types.get(event.type)

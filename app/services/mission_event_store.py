@@ -7,6 +7,7 @@ from app.services.mission_event_serializer import (
     MissionEventSerializer,
     mission_event_serializer,
 )
+from app.services.mission_event_upcaster import MissionEventDeserializationContext
 
 
 class MissionEventStore(Protocol):
@@ -35,8 +36,18 @@ class MissionJsonEventStore:
         events: Sequence[dict[str, object]],
         *,
         last_event_sequence: int,
+        mission_id: UUID | None = None,
     ) -> list[ExecutionEvent]:
-        restored = [self._serializer.deserialize(event) for event in events]
+        restored = [
+            self._serializer.deserialize(
+                event,
+                context=MissionEventDeserializationContext(
+                    mission_id=mission_id,
+                    event_index=index,
+                ),
+            )
+            for index, event in enumerate(events)
+        ]
         validate_event_sequence(
             restored,
             last_event_sequence=last_event_sequence,
