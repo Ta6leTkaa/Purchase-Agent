@@ -854,3 +854,15 @@ uv run ruff check .
 ```bash
 uv run mypy
 ```
+## Execution attempt audit
+
+Every successful `claim_due` operation creates an immutable execution-attempt
+record. The record is opened with the Mission claim and is closed when that
+attempt completes, fails, waits for confirmation, or is recovered after a
+stale claim. The audit record preserves the attempt number, claim time, final
+outcome, and resolved provider when one was selected.
+
+This history is diagnostic metadata only. It does not add a retry policy,
+backoff, automatic scheduling, or a new public API. Existing Missions are not
+backfilled with invented attempt records; auditing starts with claims made
+after the migration.

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
+from app.domain.execution_attempt import MissionExecutionAttempt
 from app.domain.mission import Mission
 
 
@@ -48,6 +49,12 @@ class MissionRepository(Protocol):
         claim_timeout: timedelta,
         limit: int = 100,
     ) -> list[Mission]:
+        ...
+
+    async def list_execution_attempts(
+        self,
+        mission_id: UUID,
+    ) -> list[MissionExecutionAttempt]:
         ...
 
     async def get(self, mission_id: UUID) -> Mission | None:

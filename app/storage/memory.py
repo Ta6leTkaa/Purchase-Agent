@@ -2,6 +2,10 @@ import asyncio
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from app.domain.execution_attempt import (
+    MissionExecutionAttempt,
+    MissionExecutionAttemptStatus,
+)
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionStatus
 from app.repositories.mission import InvalidRepositoryTimeError
@@ -29,6 +33,7 @@ class InMemoryIdentityRepository:
 class InMemoryMissionRepository:
     def __init__(self) -> None:
         self._missions: dict[UUID, Mission] = {}
+        self._execution_attempts: dict[UUID, list[MissionExecutionAttempt]] = {}
         self._claim_lock = asyncio.Lock()
 
     async def create(self, mission: Mission) -> Mission:
@@ -80,6 +85,14 @@ class InMemoryMissionRepository:
                 mission.status = MissionStatus.processing
                 mission.claimed_at = current_time
                 mission.execution_attempts += 1
+                self._execution_attempts.setdefault(mission.id, []).append(
+                    MissionExecutionAttempt(
+                        mission_id=mission.id,
+                        attempt_number=mission.execution_attempts,
+                        status=MissionExecutionAttemptStatus.processing,
+                        claimed_at=current_time,
+                    )
+                )
                 self._missions[mission.id] = mission
             return claimed_missions
 
@@ -134,8 +147,23 @@ class InMemoryMissionRepository:
             state_machine = MissionStateMachine()
             for mission in recovered_missions:
                 state_machine.recover_stale(mission, current_time)
+                self._close_execution_attempt(
+                    mission,
+                    finished_at=current_time,
+                    status=(
+                        MissionExecutionAttemptStatus.failed
+                        if mission.status is MissionStatus.failed
+                        else MissionExecutionAttemptStatus.recovered
+                    ),
+                )
                 self._missions[mission.id] = mission
             return recovered_missions
+
+    async def list_execution_attempts(
+        self,
+        mission_id: UUID,
+    ) -> list[MissionExecutionAttempt]:
+        return list(self._execution_attempts.get(mission_id, ()))
 
     async def get(self, mission_id: UUID) -> Mission | None:
         return self._missions.get(mission_id)
@@ -144,11 +172,56 @@ class InMemoryMissionRepository:
         return mission_id in self._missions
 
     async def update(self, mission: Mission) -> Mission:
+        if mission.status is MissionStatus.processing:
+            self._set_open_attempt_provider(mission)
+        elif mission.status in {
+            MissionStatus.requires_confirmation,
+            MissionStatus.completed,
+            MissionStatus.failed,
+        }:
+            self._close_execution_attempt(
+                mission,
+                finished_at=_mission_event_time(mission),
+                status=MissionExecutionAttemptStatus(mission.status.value),
+            )
         self._missions[mission.id] = mission
         return mission
 
     async def clear(self) -> None:
         self._missions.clear()
+        self._execution_attempts.clear()
+
+    def _set_open_attempt_provider(self, mission: Mission) -> None:
+        attempts = self._execution_attempts.get(mission.id, [])
+        if not attempts or mission.resolved_provider_id is None:
+            return
+        attempt = attempts[-1]
+        if attempt.status is not MissionExecutionAttemptStatus.processing:
+            return
+        attempts[-1] = attempt.model_copy(
+            update={"resolved_provider_id": mission.resolved_provider_id}
+        )
+
+    def _close_execution_attempt(
+        self,
+        mission: Mission,
+        *,
+        finished_at: datetime,
+        status: MissionExecutionAttemptStatus,
+    ) -> None:
+        attempts = self._execution_attempts.get(mission.id, [])
+        if not attempts:
+            return
+        attempt = attempts[-1]
+        if attempt.status is not MissionExecutionAttemptStatus.processing:
+            return
+        attempts[-1] = attempt.model_copy(
+            update={
+                "status": status,
+                "finished_at": finished_at,
+                "resolved_provider_id": mission.resolved_provider_id,
+            }
+        )
 
 
 class MemoryStore:
@@ -183,6 +256,7 @@ class MemoryStore:
     def clear(self) -> None:
         self.identities._identities.clear()
         self.missions._missions.clear()
+        self.missions._execution_attempts.clear()
 
 
 store = MemoryStore()
@@ -208,3 +282,11 @@ def _validate_stale_processing_arguments(
     _validate_list_due_arguments(current_time, limit)
     if claim_timeout <= timedelta(0):
         raise ValueError("claim_timeout must be greater than 0")
+
+
+def _mission_event_time(mission: Mission) -> datetime:
+    if mission.execution_log:
+        return mission.execution_log[-1].timestamp
+    if mission.claimed_at is not None:
+        return mission.claimed_at
+    raise ValueError("cannot close execution attempt without a timestamp")

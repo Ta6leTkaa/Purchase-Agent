@@ -1,6 +1,7 @@
 from app.db.models.identity import DocumentModel, IdentityModel
 from app.db.models.mission import MissionModel
 from app.db.models.mission_command import MissionCommandReceiptModel
+from app.db.models.mission_execution_attempt import MissionExecutionAttemptModel
 from app.db.models.provider_history import MissionProviderHistoryEventModel
 
 __all__ = [
@@ -8,5 +9,6 @@ __all__ = [
     "IdentityModel",
     "MissionModel",
     "MissionCommandReceiptModel",
+    "MissionExecutionAttemptModel",
     "MissionProviderHistoryEventModel",
 ]

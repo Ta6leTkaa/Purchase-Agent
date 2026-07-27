@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,11 @@ from app.db.models.mission import (
     MissionModel,
     mission_from_model,
     mission_to_model,
+)
+from app.db.models.mission_execution_attempt import MissionExecutionAttemptModel
+from app.domain.execution_attempt import (
+    MissionExecutionAttempt,
+    MissionExecutionAttemptStatus,
 )
 from app.domain.mission import Mission, MissionStatus
 from app.repositories.mission import (
@@ -99,6 +104,15 @@ class SqlAlchemyMissionRepository(MissionRepository):
             model.status = MissionStatus.processing.value
             model.claimed_at = current_time
             model.execution_attempts += 1
+            self._session.add(
+                MissionExecutionAttemptModel(
+                    id=uuid4(),
+                    mission_id=model.id,
+                    attempt_number=model.execution_attempts,
+                    status=MissionExecutionAttemptStatus.processing.value,
+                    claimed_at=current_time,
+                )
+            )
 
         await self._session.flush()
         await self._session.commit()
@@ -164,11 +178,34 @@ class SqlAlchemyMissionRepository(MissionRepository):
             model.execution_log = mission_json_event_store.serialize(
                 mission.execution_log
             )
+            await self._close_open_execution_attempt(
+                mission,
+                finished_at=current_time,
+                status=(
+                    MissionExecutionAttemptStatus.failed
+                    if mission.status is MissionStatus.failed
+                    else MissionExecutionAttemptStatus.recovered
+                ),
+            )
             recovered_missions.append(mission)
 
         await self._session.flush()
         await self._session.commit()
         return recovered_missions
+
+    async def list_execution_attempts(
+        self,
+        mission_id: UUID,
+    ) -> list[MissionExecutionAttempt]:
+        result = await self._session.execute(
+            select(MissionExecutionAttemptModel)
+            .where(MissionExecutionAttemptModel.mission_id == mission_id)
+            .order_by(MissionExecutionAttemptModel.attempt_number.asc())
+        )
+        return [
+            _execution_attempt_from_model(model)
+            for model in result.scalars().all()
+        ]
 
     async def get(self, mission_id: UUID) -> Mission | None:
         model = await self._session.get(MissionModel, mission_id)
@@ -219,6 +256,8 @@ class SqlAlchemyMissionRepository(MissionRepository):
             raise MissionEventSequenceConflictError
 
         await self._session.flush()
+        await self._synchronize_open_execution_attempt(mission)
+        await self._session.flush()
         await self._append_provider_history_events(
             mission,
             previous_last_event_sequence=mission.persisted_last_event_sequence,
@@ -226,6 +265,61 @@ class SqlAlchemyMissionRepository(MissionRepository):
         await self._session.flush()
         mission.mark_event_sequence_persisted()
         return mission
+
+    async def _synchronize_open_execution_attempt(
+        self,
+        mission: Mission,
+    ) -> None:
+        if mission.status is MissionStatus.processing:
+            if mission.resolved_provider_id is not None:
+                await self._session.execute(
+                    update(MissionExecutionAttemptModel)
+                    .where(
+                        MissionExecutionAttemptModel.mission_id == mission.id
+                    )
+                    .where(
+                        MissionExecutionAttemptModel.status
+                        == MissionExecutionAttemptStatus.processing.value
+                    )
+                    .values(resolved_provider_id=mission.resolved_provider_id)
+                )
+            return
+
+        status_by_mission_status = {
+            MissionStatus.requires_confirmation: (
+                MissionExecutionAttemptStatus.requires_confirmation
+            ),
+            MissionStatus.completed: MissionExecutionAttemptStatus.completed,
+            MissionStatus.failed: MissionExecutionAttemptStatus.failed,
+        }
+        attempt_status = status_by_mission_status.get(mission.status)
+        if attempt_status is not None:
+            await self._close_open_execution_attempt(
+                mission,
+                finished_at=_mission_event_time(mission),
+                status=attempt_status,
+            )
+
+    async def _close_open_execution_attempt(
+        self,
+        mission: Mission,
+        *,
+        finished_at: datetime,
+        status: MissionExecutionAttemptStatus,
+    ) -> None:
+        await self._session.execute(
+            update(MissionExecutionAttemptModel)
+            .where(MissionExecutionAttemptModel.mission_id == mission.id)
+            .where(
+                MissionExecutionAttemptModel.status
+                == MissionExecutionAttemptStatus.processing.value
+            )
+            .values(
+                status=status.value,
+                finished_at=finished_at,
+                resolved_provider_id=mission.resolved_provider_id,
+            )
+        )
 
     async def clear(self) -> None:
         await self._session.execute(delete(MissionModel))
@@ -285,3 +379,25 @@ def _validate_stale_processing_arguments(
     _validate_list_due_arguments(current_time, limit)
     if claim_timeout <= timedelta(0):
         raise ValueError("claim_timeout must be greater than 0")
+
+
+def _execution_attempt_from_model(
+    model: MissionExecutionAttemptModel,
+) -> MissionExecutionAttempt:
+    return MissionExecutionAttempt(
+        id=model.id,
+        mission_id=model.mission_id,
+        attempt_number=model.attempt_number,
+        status=MissionExecutionAttemptStatus(model.status),
+        claimed_at=model.claimed_at,
+        finished_at=model.finished_at,
+        resolved_provider_id=model.resolved_provider_id,
+    )
+
+
+def _mission_event_time(mission: Mission) -> datetime:
+    if mission.execution_log:
+        return mission.execution_log[-1].timestamp
+    if mission.claimed_at is not None:
+        return mission.claimed_at
+    raise ValueError("cannot close execution attempt without a timestamp")
