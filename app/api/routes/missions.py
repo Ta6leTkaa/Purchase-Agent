@@ -2,11 +2,12 @@ from datetime import timedelta
 from typing import Annotated, TypeAlias
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response
 
 from app.dependencies import (
     get_identity_repository,
     get_mission_repository,
+    get_mission_command_idempotency_store,
     get_mission_provider_resolution_history,
     get_mission_provider_resolution_increment,
     get_mission_provider_resolution_preview,
@@ -31,6 +32,11 @@ from app.services.mission_engine import (
     run_mission,
 )
 from app.services.mission_errors import MissionNotFoundError
+from app.services.mission_command_idempotency import (
+    MissionCommandIdempotencyConflictError,
+    MissionCommandInProgressError,
+    MissionCommandType,
+)
 from app.services.provider_resolver import ProviderResolver
 from app.services.mission_provider_selection import (
     MissionProviderSelectionNotAllowedError,
@@ -81,6 +87,9 @@ ProviderResolutionHistoryDep: TypeAlias = Annotated[
 ProviderResolutionIncrementDep: TypeAlias = Annotated[
     GetMissionProviderResolutionIncrement,
     Depends(get_mission_provider_resolution_increment),
+]
+MissionCommandIdempotencyStoreDep: TypeAlias = Annotated[
+    object, Depends(get_mission_command_idempotency_store)
 ]
 
 
@@ -345,30 +354,62 @@ async def run_mission_endpoint(
     mission_repository: MissionRepositoryDep,
     identity_repository: IdentityRepositoryDep,
     provider_resolver: ProviderResolverDep,
+    idempotency_store: MissionCommandIdempotencyStoreDep,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1)],
 ) -> Mission:
     try:
-        return await run_mission(
+        previous = await idempotency_store.begin(
+            key=idempotency_key, mission_id=mission_id, command=MissionCommandType.RUN
+        )
+        if previous is not None:
+            result = await mission_repository.get(previous)
+            assert result is not None
+            return result
+        result = await run_mission(
             mission_id,
             mission_repository,
             identity_repository,
             provider_resolver,
         )
+        await idempotency_store.complete(key=idempotency_key, mission_id=result.id)
+        return result
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except InvalidMissionRunError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except MissionNotReadyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MissionCommandIdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail="Idempotency key conflict") from exc
+    except MissionCommandInProgressError as exc:
+        raise HTTPException(status_code=409, detail="Command is in progress") from exc
 
 
 @router.post("/{mission_id}/confirm")
 async def confirm_mission_endpoint(
     mission_id: UUID,
     mission_repository: MissionRepositoryDep,
+    idempotency_store: MissionCommandIdempotencyStoreDep,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1)],
 ) -> Mission:
     try:
-        return await confirm_mission(mission_id, mission_repository)
+        previous = await idempotency_store.begin(
+            key=idempotency_key,
+            mission_id=mission_id,
+            command=MissionCommandType.CONFIRM,
+        )
+        if previous is not None:
+            result = await mission_repository.get(previous)
+            assert result is not None
+            return result
+        result = await confirm_mission(mission_id, mission_repository)
+        await idempotency_store.complete(key=idempotency_key, mission_id=result.id)
+        return result
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except InvalidMissionConfirmationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MissionCommandIdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail="Idempotency key conflict") from exc
+    except MissionCommandInProgressError as exc:
+        raise HTTPException(status_code=409, detail="Command is in progress") from exc

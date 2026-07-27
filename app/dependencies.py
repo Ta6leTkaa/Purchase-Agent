@@ -13,6 +13,9 @@ from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
+from app.repositories.sqlalchemy.mission_command_idempotency import (
+    SqlAlchemyMissionCommandIdempotencyStore,
+)
 from app.repositories.sqlalchemy.provider_history import (
     SqlAlchemyProviderHistoryProjectionRepository,
 )
@@ -35,11 +38,15 @@ from app.services.provider_history_verification import (
 from app.services.mission_event_store import MissionJsonEventStore, mission_json_event_store
 from app.services.provider_resolver import ProviderResolver
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
+from app.storage.mission_command_idempotency import (
+    InMemoryMissionCommandIdempotencyStore,
+)
 
 identity_repository = InMemoryIdentityRepository()
 mission_repository = InMemoryMissionRepository()
 provider_resolver = ProviderResolver(provider_registry)
 provider_history_waiter = AsyncioWaiter()
+mission_command_idempotency_store = InMemoryMissionCommandIdempotencyStore()
 DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 
 
@@ -87,6 +94,12 @@ def get_mission_repository(session: DbSessionDep) -> MissionRepository:
     if settings.storage_backend == "database":
         return SqlAlchemyMissionRepository(session)
     return mission_repository
+
+
+def get_mission_command_idempotency_store(session: DbSessionDep) -> object:
+    if settings.storage_backend == "database":
+        return SqlAlchemyMissionCommandIdempotencyStore(session)
+    return mission_command_idempotency_store
 
 
 def get_mission_read_repository_factory() -> MissionReadRepositoryFactory:

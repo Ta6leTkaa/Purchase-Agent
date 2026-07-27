@@ -727,6 +727,15 @@ event inherits that correlation and names the preceding event as its cause.
 Legacy V0-V2 streams are upcasted deterministically in persisted order. These
 fields remain internal metadata: they are not public API fields or cursors.
 
+## Command Idempotency
+
+Manual `run` and `confirm` commands require an `Idempotency-Key` header. The
+key is reserved before provider work begins and the completed Mission result is
+stored with it in PostgreSQL. Repeating the same key for the same Mission and
+command returns that result without repeating provider side effects; using it
+for another Mission or command returns a conflict. Scheduled processing and
+recovery do not use this HTTP command boundary.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.
