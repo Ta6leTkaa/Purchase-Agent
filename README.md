@@ -684,6 +684,26 @@ MissionEventSerializer
 Canonical Mission JSON
 ```
 
+## Mission Event Schema Versioning
+
+Each persisted Mission event has its own `schema_version`. New writes use the
+current schema version, while historical events without that field are treated
+as V0 and are lazily upcasted in memory before deserialization. No migration
+rewrites canonical Mission JSON merely to add a schema version, so one Mission
+stream may contain V0 and V1 events.
+
+The current V1 envelope preserves the existing `sequence`, `timestamp`,
+`type`, `message`, and `metadata` fields and adds only `schema_version: 1`.
+Upcasters are pure, sequential, and must form a contiguous chain. A future
+schema version fails explicitly instead of being deserialized as an older one.
+
+The SQL repository currently replaces a Mission's full JSON event list during
+an aggregate update. Therefore, saving a Mission loaded from V0 rewrites its
+events as equivalent V1 representations; business fields, sequence, timestamp,
+and payload stay unchanged. Incompatible persisted JSON changes require a new
+current version, a contiguous upcaster, legacy fixtures, round-trip coverage,
+and projection rebuild verification.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.

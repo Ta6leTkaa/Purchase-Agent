@@ -17,6 +17,14 @@ from app.services.mission_event_serializer import (
     PydanticMissionEventSerializer,
 )
 from app.services.mission_event_store import MissionJsonEventStore
+from app.services.mission_event_upcaster import (
+    CURRENT_MISSION_EVENT_SCHEMA_VERSION,
+    InvalidMissionEventUpcastResultError,
+    InvalidMissionEventUpcasterRegistryError,
+    MissionEventSchemaVersionError,
+    MissionEventUpcasterV0ToV1,
+    UnsupportedMissionEventSchemaVersionError,
+)
 
 CURRENT_TIME = datetime(2026, 7, 24, 12, 0, tzinfo=timezone.utc)
 
@@ -190,4 +198,175 @@ def test_serializer_preserves_existing_extra_field_policy() -> None:
         "type": "mission_started",
         "message": "Mission started.",
         "metadata": {"source": "legacy"},
+        "schema_version": CURRENT_MISSION_EVENT_SCHEMA_VERSION,
     }
+
+
+def test_serializer_writes_current_schema_version() -> None:
+    serializer = PydanticMissionEventSerializer()
+
+    for event in _provider_events():
+        assert serializer.serialize(event)["schema_version"] == (
+            CURRENT_MISSION_EVENT_SCHEMA_VERSION
+        )
+
+
+def test_serializer_upcasts_legacy_event_without_mutating_it() -> None:
+    serializer = PydanticMissionEventSerializer()
+    legacy_event = serializer.serialize(_provider_events()[0])
+    legacy_event.pop("schema_version")
+    legacy_event["unknown_top_level"] = {"preserved": True}
+    original_nested_payload = dict(legacy_event["metadata"])
+
+    restored = serializer.deserialize(legacy_event)
+    current_event = serializer.serialize(restored)
+
+    assert restored == _provider_events()[0]
+    assert "schema_version" not in legacy_event
+    assert legacy_event["metadata"] == original_nested_payload
+    assert current_event["schema_version"] == CURRENT_MISSION_EVENT_SCHEMA_VERSION
+
+
+@pytest.mark.parametrize("event", _provider_events())
+def test_serializer_upcasts_all_legacy_provider_events(
+    event: ExecutionEvent,
+) -> None:
+    serializer = PydanticMissionEventSerializer()
+    legacy_event = serializer.serialize(event)
+    legacy_event.pop("schema_version")
+
+    assert serializer.deserialize(legacy_event) == event
+
+
+def test_current_schema_event_bypasses_legacy_upcaster() -> None:
+    upcaster = _CountingUpcaster()
+    serializer = PydanticMissionEventSerializer(upcasters=(upcaster,))
+    current_event = PydanticMissionEventSerializer().serialize(
+        _provider_events()[0]
+    )
+
+    assert serializer.deserialize(current_event) == _provider_events()[0]
+    assert upcaster.calls == 0
+
+
+def test_store_deserializes_mixed_version_events_in_sequence_order() -> None:
+    serializer = PydanticMissionEventSerializer()
+    events = _provider_events()
+    raw_events = [serializer.serialize(event) for event in events]
+    raw_events[0].pop("schema_version")
+    raw_events[1].pop("schema_version")
+
+    restored = MissionJsonEventStore(serializer).deserialize(
+        raw_events,
+        last_event_sequence=3,
+    )
+
+    assert restored == events
+
+
+def test_serializer_rejects_future_schema_version() -> None:
+    raw = PydanticMissionEventSerializer().serialize(_provider_events()[0])
+    raw["schema_version"] = 999
+
+    with pytest.raises(UnsupportedMissionEventSchemaVersionError) as error:
+        PydanticMissionEventSerializer().deserialize(raw)
+
+    assert error.value.actual_version == 999
+    assert error.value.current_version == CURRENT_MISSION_EVENT_SCHEMA_VERSION
+    assert error.value.event_type == "provider_resolved"
+    assert error.value.sequence == 1
+
+
+@pytest.mark.parametrize(
+    "invalid_version",
+    [None, True, False, "1", 1.0, -1, {}, []],
+)
+def test_serializer_rejects_invalid_schema_versions(
+    invalid_version: object,
+) -> None:
+    raw = PydanticMissionEventSerializer().serialize(_provider_events()[0])
+    raw["schema_version"] = invalid_version
+
+    with pytest.raises(MissionEventSchemaVersionError):
+        PydanticMissionEventSerializer().deserialize(raw)
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {},
+        {"schema_version": 0},
+        {"schema_version": 2},
+        "not-a-mapping",
+    ],
+)
+def test_serializer_rejects_invalid_upcaster_result(result: object) -> None:
+    serializer = PydanticMissionEventSerializer(
+        upcasters=(_InvalidResultUpcaster(result),),
+    )
+    legacy_event = PydanticMissionEventSerializer().serialize(
+        _provider_events()[0]
+    )
+    legacy_event.pop("schema_version")
+
+    with pytest.raises(InvalidMissionEventUpcastResultError):
+        serializer.deserialize(legacy_event)
+
+
+def test_serializer_rejects_incomplete_upcaster_registry() -> None:
+    with pytest.raises(InvalidMissionEventUpcasterRegistryError):
+        PydanticMissionEventSerializer(
+            current_schema_version=2,
+            upcasters=(MissionEventUpcasterV0ToV1(),),
+        )
+
+
+@pytest.mark.parametrize(
+    "upcasters",
+    [
+        (_NoopUpcaster(0, 1), _NoopUpcaster(0, 1)),
+        (_NoopUpcaster(0, 2),),
+        (_NoopUpcaster(1, 2),),
+    ],
+)
+def test_serializer_rejects_invalid_upcaster_registry(
+    upcasters: tuple[object, ...],
+) -> None:
+    with pytest.raises(InvalidMissionEventUpcasterRegistryError):
+        PydanticMissionEventSerializer(upcasters=upcasters)  # type: ignore[arg-type]
+
+
+class _CountingUpcaster:
+    source_version = 0
+    target_version = 1
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def upcast(self, raw_event: dict[str, object]) -> dict[str, object]:
+        self.calls += 1
+        upcasted_event = dict(raw_event)
+        upcasted_event["schema_version"] = self.target_version
+        return upcasted_event
+
+
+class _InvalidResultUpcaster:
+    source_version = 0
+    target_version = 1
+
+    def __init__(self, result: object) -> None:
+        self._result = result
+
+    def upcast(self, raw_event: dict[str, object]) -> object:
+        return self._result
+
+
+class _NoopUpcaster:
+    def __init__(self, source_version: int, target_version: int) -> None:
+        self.source_version = source_version
+        self.target_version = target_version
+
+    def upcast(self, raw_event: dict[str, object]) -> dict[str, object]:
+        upcasted_event = dict(raw_event)
+        upcasted_event["schema_version"] = self.target_version
+        return upcasted_event

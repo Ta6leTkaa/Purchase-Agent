@@ -10,6 +10,17 @@ from app.domain.provider_resolution import (
     ProviderResolvedEventPayload,
     ProviderSelectionChangedEventPayload,
 )
+from app.services.mission_event_upcaster import (
+    CURRENT_MISSION_EVENT_SCHEMA_VERSION,
+    DEFAULT_MISSION_EVENT_UPCASTERS,
+    LEGACY_MISSION_EVENT_SCHEMA_VERSION,
+    InvalidMissionEventUpcastResultError,
+    MissingMissionEventUpcasterError,
+    MissionEventSchemaVersionError,
+    MissionEventUpcaster,
+    UnsupportedMissionEventSchemaVersionError,
+    build_mission_event_upcaster_registry,
+)
 
 
 class MissionEventSerializationError(ValueError):
@@ -30,6 +41,10 @@ class MissionEventSerializationError(ValueError):
             f"{operation} Mission event type {event_type!r} at sequence "
             f"{sequence!r}"
         )
+
+
+class MissionEventDeserializationError(MissionEventSerializationError):
+    pass
 
 
 class MissionEventSerializer(Protocol):
@@ -72,9 +87,27 @@ class PydanticMissionEventSerializer:
         }
     )
 
+    def __init__(
+        self,
+        *,
+        current_schema_version: int = CURRENT_MISSION_EVENT_SCHEMA_VERSION,
+        upcasters: tuple[MissionEventUpcaster, ...] = DEFAULT_MISSION_EVENT_UPCASTERS,
+    ) -> None:
+        self._current_schema_version = current_schema_version
+        self._upcasters_by_source_version = (
+            build_mission_event_upcaster_registry(
+                upcasters,
+                current_schema_version=current_schema_version,
+            )
+        )
+
     def serialize(self, event: ExecutionEvent) -> dict[str, Any]:
         try:
-            return self._with_serialized_payload(event).model_dump(mode="json")
+            persisted_event = self._with_serialized_payload(event).model_dump(
+                mode="json"
+            )
+            persisted_event["schema_version"] = self._current_schema_version
+            return persisted_event
         except (TypeError, ValidationError, ValueError) as exc:
             raise MissionEventSerializationError(
                 operation="serialize",
@@ -86,14 +119,94 @@ class PydanticMissionEventSerializer:
         event_type = raw.get("type")
         sequence = raw.get("sequence")
         try:
-            event = ExecutionEvent.model_validate(raw)
+            current_raw = self._upcast_to_current(raw)
+            event = ExecutionEvent.model_validate(current_raw)
             return self._with_serialized_payload(event)
+        except MissionEventSchemaVersionError:
+            raise
         except (TypeError, ValidationError, ValueError) as exc:
-            raise MissionEventSerializationError(
+            raise MissionEventDeserializationError(
                 operation="deserialize",
                 event_type=event_type,
                 sequence=sequence,
             ) from exc
+
+    def _upcast_to_current(
+        self,
+        raw: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        event_type = raw.get("type")
+        sequence = raw.get("sequence")
+        schema_version = self._extract_schema_version(raw)
+        if schema_version > self._current_schema_version:
+            raise UnsupportedMissionEventSchemaVersionError(
+                actual_version=schema_version,
+                current_version=self._current_schema_version,
+                event_type=event_type,
+                sequence=sequence,
+            )
+
+        current_raw: Mapping[str, Any] = raw
+        while schema_version < self._current_schema_version:
+            upcaster = self._upcasters_by_source_version.get(schema_version)
+            if upcaster is None:
+                raise MissingMissionEventUpcasterError(
+                    schema_version=schema_version,
+                    event_type=event_type,
+                    sequence=sequence,
+                )
+            upcasted_raw = upcaster.upcast(current_raw)
+            self._validate_upcast_result(
+                upcasted_raw,
+                target_version=upcaster.target_version,
+                event_type=event_type,
+                sequence=sequence,
+            )
+            current_raw = upcasted_raw
+            schema_version = upcaster.target_version
+
+        if current_raw.get("schema_version") != self._current_schema_version:
+            raise InvalidMissionEventUpcastResultError(
+                schema_version=current_raw.get("schema_version"),
+                event_type=event_type,
+                sequence=sequence,
+            )
+        return current_raw
+
+    def _extract_schema_version(self, raw: Mapping[str, Any]) -> int:
+        if "schema_version" not in raw:
+            return LEGACY_MISSION_EVENT_SCHEMA_VERSION
+        schema_version = raw["schema_version"]
+        if type(schema_version) is not int or schema_version < 0:
+            raise MissionEventSchemaVersionError(
+                schema_version=schema_version,
+                event_type=raw.get("type"),
+                sequence=raw.get("sequence"),
+            )
+        return schema_version
+
+    def _validate_upcast_result(
+        self,
+        raw: object,
+        *,
+        target_version: int,
+        event_type: object | None,
+        sequence: object | None,
+    ) -> None:
+        if (
+            not isinstance(raw, Mapping)
+            or raw.get("schema_version") != target_version
+        ):
+            schema_version = (
+                raw.get("schema_version")
+                if isinstance(raw, Mapping)
+                else None
+            )
+            raise InvalidMissionEventUpcastResultError(
+                schema_version=schema_version,
+                event_type=event_type,
+                sequence=sequence,
+            )
 
     def _with_serialized_payload(self, event: ExecutionEvent) -> ExecutionEvent:
         payload_type = self._payload_types.get(event.type)
