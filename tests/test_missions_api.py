@@ -460,6 +460,52 @@ def test_post_mission_run_returns_requires_confirmation() -> None:
     assert response.json()["execution_attempts"] == 0
 
 
+def test_post_mission_run_replays_completed_idempotent_command() -> None:
+    client = TestClient(app)
+    mission_id = create_requires_confirmation_mission_with_key(
+        client,
+        "run-idempotency-key",
+    )
+
+    response = client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": "run-idempotency-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "requires_confirmation"
+
+
+def create_requires_confirmation_mission_with_key(
+    client: TestClient,
+    key: str,
+) -> str:
+    identity_ids = make_existing_participant_ids(client, count=4)
+    payload = make_mission_payload(
+        participant_ids=identity_ids,
+        passengers_count=4,
+        provider="mock_train",
+    )
+    payload["constraints"] = {
+        "from_city": "Moscow",
+        "to_city": "Saint Petersburg",
+        "travel_date": "2026-08-01",
+        "passengers_count": 4,
+        "must_be_same_compartment": True,
+        "min_lower_berths": 2,
+        "max_total_price": 30000,
+        "avoid_toilet": True,
+    }
+    created = client.post("/missions", json=payload)
+    mission_id = created.json()["id"]
+    response = client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": key},
+    )
+    assert response.status_code == 200
+    return str(mission_id)
+
+
 def test_post_scheduled_mission_run_before_time_returns_409() -> None:
     client = TestClient(app)
     identity_ids = make_existing_participant_ids(client, count=4)
