@@ -177,8 +177,17 @@ class Mission(BaseModel):
             raise ValueError("Mission event ID must not be nil")
         if any(event.event_id == event_id for event in self.execution_log):
             raise ValueError("Mission event ID must be unique")
+        previous_event = self.execution_log[-1] if self.execution_log else None
         event = ExecutionEvent(
             event_id=event_id,
+            correlation_id=(
+                previous_event.correlation_id
+                if previous_event is not None
+                else event_id
+            ),
+            causation_id=(
+                previous_event.event_id if previous_event is not None else None
+            ),
             sequence=self.last_event_sequence + 1,
             timestamp=timestamp,
             type=event_type,

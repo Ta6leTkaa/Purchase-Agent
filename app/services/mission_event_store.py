@@ -38,16 +38,22 @@ class MissionJsonEventStore:
         last_event_sequence: int,
         mission_id: UUID | None = None,
     ) -> list[ExecutionEvent]:
-        restored = [
-            self._serializer.deserialize(
+        restored: list[ExecutionEvent] = []
+        for index, event in enumerate(events):
+            previous_event = restored[-1] if restored else None
+            restored.append(self._serializer.deserialize(
                 event,
                 context=MissionEventDeserializationContext(
                     mission_id=mission_id,
                     event_index=index,
+                    previous_event_id=(
+                        previous_event.event_id if previous_event else None
+                    ),
+                    previous_correlation_id=(
+                        previous_event.correlation_id if previous_event else None
+                    ),
                 ),
-            )
-            for index, event in enumerate(events)
-        ]
+            ))
         validate_event_sequence(
             restored,
             last_event_sequence=last_event_sequence,

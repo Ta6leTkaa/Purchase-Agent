@@ -5,7 +5,7 @@ from typing import Any, Protocol
 from uuid import UUID, uuid5
 
 LEGACY_MISSION_EVENT_SCHEMA_VERSION = 0
-CURRENT_MISSION_EVENT_SCHEMA_VERSION = 2
+CURRENT_MISSION_EVENT_SCHEMA_VERSION = 3
 MISSION_EVENT_ID_NAMESPACE = UUID("a42492d0-825a-4c3d-908c-678e4900753b")
 
 
@@ -13,6 +13,8 @@ MISSION_EVENT_ID_NAMESPACE = UUID("a42492d0-825a-4c3d-908c-678e4900753b")
 class MissionEventDeserializationContext:
     mission_id: UUID | None = None
     event_index: int | None = None
+    previous_event_id: UUID | None = None
+    previous_correlation_id: UUID | None = None
 
 
 class MissingMissionEventDeserializationContextError(ValueError):
@@ -140,9 +142,34 @@ class MissionEventUpcasterV1ToV2:
         return upcasted_event
 
 
+class MissionEventUpcasterV2ToV3:
+    source_version = 2
+    target_version = CURRENT_MISSION_EVENT_SCHEMA_VERSION
+
+    def upcast(
+        self,
+        raw_event: Mapping[str, Any],
+        *,
+        context: MissionEventDeserializationContext,
+    ) -> dict[str, Any]:
+        event_id = UUID(str(raw_event["event_id"]))
+        upcasted_event = dict(raw_event)
+        upcasted_event["schema_version"] = self.target_version
+        upcasted_event["correlation_id"] = str(
+            context.previous_correlation_id or event_id
+        )
+        upcasted_event["causation_id"] = (
+            str(context.previous_event_id)
+            if context.previous_event_id is not None
+            else None
+        )
+        return upcasted_event
+
+
 DEFAULT_MISSION_EVENT_UPCASTERS = (
     MissionEventUpcasterV0ToV1(),
     MissionEventUpcasterV1ToV2(),
+    MissionEventUpcasterV2ToV3(),
 )
 
 

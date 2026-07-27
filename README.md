@@ -719,6 +719,14 @@ sequence)` identity and does not duplicate `event_id`; canonical Mission JSON
 remains the source for event identity until a dedicated projection migration is
 introduced.
 
+## Mission Event Causality
+
+Persisted V3 events add immutable `correlation_id` and optional `causation_id`.
+The first event in a workflow is its own correlation root; each subsequent
+event inherits that correlation and names the preceding event as its cause.
+Legacy V0-V2 streams are upcasted deterministically in persisted order. These
+fields remain internal metadata: they are not public API fields or cursors.
+
 ## Explicit provider selection
 
 A Mission may optionally carry `provider_id` as an explicit provider selection.

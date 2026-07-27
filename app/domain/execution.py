@@ -25,6 +25,8 @@ class ExecutionEvent(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     event_id: UUID = Field(default_factory=new_mission_event_id)
+    correlation_id: UUID = Field(default_factory=new_mission_event_id)
+    causation_id: UUID | None = None
     sequence: int = Field(ge=1)
     timestamp: datetime
     type: str
@@ -53,6 +55,11 @@ def validate_event_sequence(
                 f"Mission event IDs must be unique at position {position}"
             )
         event_ids.add(event.event_id)
+        if event.correlation_id.int == 0:
+            raise InvalidMissionEventIdError("Mission correlation ID must not be nil")
+        if event.causation_id is not None:
+            if event.causation_id.int == 0 or event.causation_id == event.event_id:
+                raise InvalidMissionEventIdError("Mission event causation ID is invalid")
     if last_event_sequence != previous_sequence:
         raise InvalidMissionEventSequenceError(
             "last_event_sequence must match the final event sequence"
