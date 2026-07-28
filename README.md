@@ -308,7 +308,8 @@ perform automatic payment or call real booking websites.
 Example:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/missions/{mission_id}/run
+curl -X POST http://127.0.0.1:8000/missions/{mission_id}/run \
+  -H "Idempotency-Key: run-unique-key"
 ```
 
 Mission execution is not a repeatable operation. Re-running a mission from an
@@ -318,7 +319,8 @@ new Mission or a dedicated retry mechanism.
 Confirm a mission waiting for user confirmation:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/missions/{mission_id}/confirm
+curl -X POST http://127.0.0.1:8000/missions/{mission_id}/confirm \
+  -H "Idempotency-Key: confirm-unique-key"
 ```
 
 The confirmation endpoint only simulates user confirmation. It does not perform

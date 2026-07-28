@@ -468,12 +468,24 @@ def test_post_mission_run_returns_requires_confirmation() -> None:
     create_response = client.post("/missions", json=mission_payload)
     mission_id = create_response.json()["id"]
 
-    response = client.post(f"/missions/{mission_id}/run")
+    response = client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": "run-success-key"},
+    )
 
     assert response.status_code == 200
     assert response.json()["status"] == "requires_confirmation"
     assert response.json()["best_option"]["train_number"] == "001A"
     assert response.json()["execution_attempts"] == 0
+
+
+@pytest.mark.parametrize("path_suffix", ["run", "confirm"])
+def test_execution_commands_require_idempotency_key(path_suffix: str) -> None:
+    client = TestClient(app)
+
+    response = client.post(f"/missions/{uuid4()}/{path_suffix}")
+
+    assert response.status_code == 422
 
 
 def test_post_mission_run_replays_completed_idempotent_command() -> None:
@@ -545,7 +557,10 @@ def test_post_scheduled_mission_run_before_time_returns_409() -> None:
     create_response = client.post("/missions", json=mission_payload)
     mission_id = create_response.json()["id"]
 
-    response = client.post(f"/missions/{mission_id}/run")
+    response = client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": "run-before-schedule-key"},
+    )
 
     assert response.status_code == 409
     assert response.json()["detail"] == "Mission is scheduled for a future time"
@@ -555,7 +570,10 @@ def test_post_mission_run_twice_returns_409() -> None:
     client = TestClient(app)
     mission_id = create_requires_confirmation_mission(client)
 
-    response = client.post(f"/missions/{mission_id}/run")
+    response = client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": "run-second-key"},
+    )
 
     assert response.status_code == 409
     assert "requires_confirmation" in response.json()["detail"]
@@ -564,7 +582,10 @@ def test_post_mission_run_twice_returns_409() -> None:
 def test_post_unknown_mission_run_returns_404() -> None:
     client = TestClient(app)
 
-    response = client.post(f"/missions/{uuid4()}/run")
+    response = client.post(
+        f"/missions/{uuid4()}/run",
+        headers={"Idempotency-Key": "run-unknown-key"},
+    )
 
     assert response.status_code == 404
 
@@ -592,7 +613,10 @@ def create_requires_confirmation_mission(client: TestClient) -> str:
     }
     create_response = client.post("/missions", json=mission_payload)
     mission_id = create_response.json()["id"]
-    client.post(f"/missions/{mission_id}/run")
+    client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": "initial-run-key"},
+    )
     return str(mission_id)
 
 
@@ -600,7 +624,10 @@ def test_post_mission_confirm_returns_completed() -> None:
     client = TestClient(app)
     mission_id = create_requires_confirmation_mission(client)
 
-    response = client.post(f"/missions/{mission_id}/confirm")
+    response = client.post(
+        f"/missions/{mission_id}/confirm",
+        headers={"Idempotency-Key": "confirm-success-key"},
+    )
     event_types = [event["type"] for event in response.json()["execution_log"]]
 
     assert response.status_code == 200
@@ -617,7 +644,10 @@ def test_post_mission_confirm_before_run_returns_409() -> None:
     create_response = client.post("/missions", json=payload)
     mission_id = create_response.json()["id"]
 
-    response = client.post(f"/missions/{mission_id}/confirm")
+    response = client.post(
+        f"/missions/{mission_id}/confirm",
+        headers={"Idempotency-Key": "confirm-before-run-key"},
+    )
 
     assert response.status_code == 409
 
@@ -635,7 +665,10 @@ def test_failed_confirmation_releases_idempotency_key_for_retry() -> None:
         f"/missions/{mission_id}/confirm",
         headers=headers,
     )
-    run_response = client.post(f"/missions/{mission_id}/run")
+    run_response = client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": "run-after-confirm-failure-key"},
+    )
     retry_confirmation = client.post(
         f"/missions/{mission_id}/confirm",
         headers=headers,
@@ -656,7 +689,10 @@ def test_failed_confirmation_releases_idempotency_key_for_retry() -> None:
 def test_post_unknown_mission_confirm_returns_404() -> None:
     client = TestClient(app)
 
-    response = client.post(f"/missions/{uuid4()}/confirm")
+    response = client.post(
+        f"/missions/{uuid4()}/confirm",
+        headers={"Idempotency-Key": "confirm-unknown-key"},
+    )
 
     assert response.status_code == 404
 
@@ -664,9 +700,15 @@ def test_post_unknown_mission_confirm_returns_404() -> None:
 def test_post_mission_confirm_twice_returns_409() -> None:
     client = TestClient(app)
     mission_id = create_requires_confirmation_mission(client)
-    client.post(f"/missions/{mission_id}/confirm")
+    client.post(
+        f"/missions/{mission_id}/confirm",
+        headers={"Idempotency-Key": "confirm-first-key"},
+    )
 
-    response = client.post(f"/missions/{mission_id}/confirm")
+    response = client.post(
+        f"/missions/{mission_id}/confirm",
+        headers={"Idempotency-Key": "confirm-second-key"},
+    )
 
     assert response.status_code == 409
 
@@ -674,9 +716,15 @@ def test_post_mission_confirm_twice_returns_409() -> None:
 def test_post_completed_mission_run_returns_409() -> None:
     client = TestClient(app)
     mission_id = create_requires_confirmation_mission(client)
-    client.post(f"/missions/{mission_id}/confirm")
+    client.post(
+        f"/missions/{mission_id}/confirm",
+        headers={"Idempotency-Key": "confirm-complete-key"},
+    )
 
-    response = client.post(f"/missions/{mission_id}/run")
+    response = client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": "run-after-complete-key"},
+    )
 
     assert response.status_code == 409
     assert "completed" in response.json()["detail"]

@@ -88,7 +88,10 @@ async def test_mission_execution_flow_persists_result_to_postgres(
     )
     await create_execution_data(test_session, identities, mission)
 
-    response = await client.post(f"/missions/{mission.id}/run")
+    response = await client.post(
+        f"/missions/{mission.id}/run",
+        headers={"Idempotency-Key": "postgres-run-success-key"},
+    )
 
     assert response.status_code == 200
     response_body = response.json()
@@ -175,7 +178,10 @@ async def test_mission_execution_failure_persists_missing_participant(
     mission = make_mission(participant_ids=participant_ids)
     await create_execution_data(test_session, identities, mission)
 
-    response = await client.post(f"/missions/{mission.id}/run")
+    response = await client.post(
+        f"/missions/{mission.id}/run",
+        headers={"Idempotency-Key": "postgres-run-failure-key"},
+    )
 
     assert response.status_code == 200
     response_body = response.json()
@@ -207,8 +213,14 @@ async def test_mission_confirmation_persists_completed_status(
     )
     await create_execution_data(test_session, identities, mission)
 
-    run_response = await client.post(f"/missions/{mission.id}/run")
-    confirm_response = await client.post(f"/missions/{mission.id}/confirm")
+    run_response = await client.post(
+        f"/missions/{mission.id}/run",
+        headers={"Idempotency-Key": "postgres-run-confirm-key"},
+    )
+    confirm_response = await client.post(
+        f"/missions/{mission.id}/confirm",
+        headers={"Idempotency-Key": "postgres-confirm-key"},
+    )
 
     assert run_response.status_code == 200
     assert confirm_response.status_code == 200
@@ -241,9 +253,15 @@ async def test_mission_rerun_is_rejected_without_persistence_changes(
     )
     await create_execution_data(test_session, identities, mission)
 
-    first_response = await client.post(f"/missions/{mission.id}/run")
+    first_response = await client.post(
+        f"/missions/{mission.id}/run",
+        headers={"Idempotency-Key": "postgres-run-first-key"},
+    )
     persisted_after_first_run = await load_mission(test_engine, mission.id)
-    second_response = await client.post(f"/missions/{mission.id}/run")
+    second_response = await client.post(
+        f"/missions/{mission.id}/run",
+        headers={"Idempotency-Key": "postgres-run-second-key"},
+    )
     persisted_after_second_run = await load_mission(test_engine, mission.id)
 
     assert first_response.status_code == 200

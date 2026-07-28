@@ -379,7 +379,11 @@ async def set_mission_provider_endpoint(
         ) from exc
 
 
-@router.post("/{mission_id}/run")
+@router.post(
+    "/{mission_id}/run",
+    summary="Run mission",
+    description="Runs a Mission once and requires an Idempotency-Key header.",
+)
 async def run_mission_endpoint(
     mission_id: UUID,
     mission_repository: MissionRepositoryDep,
@@ -387,8 +391,8 @@ async def run_mission_endpoint(
     provider_resolver: ProviderResolverDep,
     idempotency_store: MissionCommandIdempotencyStoreDep,
     idempotency_key: Annotated[
-        str | None, Header(alias="Idempotency-Key", min_length=1)
-    ] = None,
+        str, Header(alias="Idempotency-Key", min_length=1)
+    ],
 ) -> Mission:
     try:
         return await _execute_idempotent_mission_command(
@@ -416,14 +420,20 @@ async def run_mission_endpoint(
         raise HTTPException(status_code=409, detail="Command is in progress") from exc
 
 
-@router.post("/{mission_id}/confirm")
+@router.post(
+    "/{mission_id}/confirm",
+    summary="Confirm mission reservation",
+    description=(
+        "Confirms a Mission reservation and requires an Idempotency-Key header."
+    ),
+)
 async def confirm_mission_endpoint(
     mission_id: UUID,
     mission_repository: MissionRepositoryDep,
     idempotency_store: MissionCommandIdempotencyStoreDep,
     idempotency_key: Annotated[
-        str | None, Header(alias="Idempotency-Key", min_length=1)
-    ] = None,
+        str, Header(alias="Idempotency-Key", min_length=1)
+    ],
 ) -> Mission:
     try:
         return await _execute_idempotent_mission_command(
@@ -448,14 +458,11 @@ async def _execute_idempotent_mission_command(
     *,
     mission_id: UUID,
     command: MissionCommandType,
-    idempotency_key: str | None,
+    idempotency_key: str,
     idempotency_store: MissionCommandIdempotencyStore,
     mission_repository: MissionRepository,
     execute: Callable[[], Awaitable[Mission]],
 ) -> Mission:
-    if idempotency_key is None:
-        return await execute()
-
     previous = await idempotency_store.begin(
         key=idempotency_key,
         mission_id=mission_id,
