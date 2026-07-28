@@ -1,4 +1,5 @@
 import asyncio
+import builtins
 import io
 import json
 from datetime import date, datetime, timedelta, timezone
@@ -9,6 +10,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import cli
+from app.domain.execution_attempt import MissionExecutionAttempt
 from app.domain.identity import Identity
 from app.domain.mission import (
     FallbackRules,
@@ -96,7 +98,6 @@ def test_process_due_command_returns_zero_and_writes_json_on_success() -> None:
         assert UUID(output["succeeded_mission_ids"][0]) == mission.id
         assert stored_mission is not None
         assert stored_mission.status is MissionStatus.requires_confirmation
-        assert stored_mission.status is not MissionStatus.processing
 
     asyncio.run(scenario())
 
@@ -361,21 +362,21 @@ class BrokenMissionRepository:
     async def create(self, mission: Mission) -> Mission:
         raise NotImplementedError
 
-    async def list(self) -> list[Mission]:
+    async def list(self) -> builtins.list[Mission]:
         raise NotImplementedError
 
     async def list_due(
         self,
         current_time: datetime,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         raise NotImplementedError
 
     async def claim_due(
         self,
         current_time: datetime,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         raise RuntimeError(self._message)
 
     async def list_stale_processing(
@@ -383,7 +384,7 @@ class BrokenMissionRepository:
         current_time: datetime,
         claim_timeout: timedelta,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         raise NotImplementedError
 
     async def recover_stale_processing(
@@ -391,10 +392,19 @@ class BrokenMissionRepository:
         current_time: datetime,
         claim_timeout: timedelta,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         raise RuntimeError(self._message)
 
     async def get(self, mission_id: UUID) -> Mission | None:
+        raise NotImplementedError
+
+    async def exists(self, mission_id: UUID) -> bool:
+        raise NotImplementedError
+
+    async def list_execution_attempts(
+        self,
+        mission_id: UUID,
+    ) -> builtins.list[MissionExecutionAttempt]:
         raise NotImplementedError
 
     async def update(self, mission: Mission) -> Mission:

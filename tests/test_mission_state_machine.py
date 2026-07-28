@@ -23,19 +23,19 @@ def test_allowed_status_transitions() -> None:
     assert mission.status is MissionStatus.running
 
     state_machine.transition(mission, MissionStatus.searching)
-    assert mission.status is MissionStatus.searching
+    assert mission.status.value == MissionStatus.searching.value
 
     state_machine.transition(mission, MissionStatus.option_found)
-    assert mission.status is MissionStatus.option_found
+    assert mission.status.value == MissionStatus.option_found.value
 
     state_machine.transition(mission, MissionStatus.reserving)
-    assert mission.status is MissionStatus.reserving
+    assert mission.status.value == MissionStatus.reserving.value
 
     state_machine.transition(mission, MissionStatus.requires_confirmation)
-    assert mission.status is MissionStatus.requires_confirmation
+    assert mission.status.value == MissionStatus.requires_confirmation.value
 
     state_machine.transition(mission, MissionStatus.completed)
-    assert mission.status is MissionStatus.completed
+    assert mission.status.value == MissionStatus.completed.value
 
 
 def test_processing_status_can_transition_to_terminal_results() -> None:

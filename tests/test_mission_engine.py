@@ -19,11 +19,11 @@ from app.services.mission_engine import (
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
     MissionNotReadyError,
-    MissionNotFoundError,
     UnsupportedMissionTypeError,
     confirm_mission,
     run_mission,
 )
+from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_errors import ProviderOperationError
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 

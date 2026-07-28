@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -24,6 +25,7 @@ from app.services.mission_event_upcaster import (
     InvalidMissionEventUpcastResultError,
     MissionEventDeserializationContext,
     MissionEventSchemaVersionError,
+    MissionEventUpcaster,
     MissionEventUpcasterV0ToV1,
     MissionEventUpcasterV1ToV2,
     MissionEventUpcasterV2ToV3,
@@ -266,10 +268,13 @@ def test_serializer_upcasts_all_legacy_provider_events(
 def test_current_schema_event_bypasses_legacy_upcaster() -> None:
     upcaster = _CountingUpcaster()
     serializer = PydanticMissionEventSerializer(
-        upcasters=(
-            upcaster,
-            MissionEventUpcasterV1ToV2(),
-            MissionEventUpcasterV2ToV3(),
+        upcasters=cast(
+            tuple[MissionEventUpcaster, ...],
+            (
+                upcaster,
+                MissionEventUpcasterV1ToV2(),
+                MissionEventUpcasterV2ToV3(),
+            ),
         ),
     )
     source_event = _provider_events()[0]
@@ -333,10 +338,13 @@ def test_serializer_rejects_invalid_schema_versions(
 )
 def test_serializer_rejects_invalid_upcaster_result(result: object) -> None:
     serializer = PydanticMissionEventSerializer(
-        upcasters=(
-            _InvalidResultUpcaster(result),
-            MissionEventUpcasterV1ToV2(),
-            MissionEventUpcasterV2ToV3(),
+        upcasters=cast(
+            tuple[MissionEventUpcaster, ...],
+            (
+                _InvalidResultUpcaster(result),
+                MissionEventUpcasterV1ToV2(),
+                MissionEventUpcasterV2ToV3(),
+            ),
         ),
     )
     legacy_event = PydanticMissionEventSerializer().serialize(

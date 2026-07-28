@@ -53,7 +53,6 @@ def test_due_mission_is_started_and_future_mission_is_skipped() -> None:
         assert result.failed_mission_ids == []
         assert stored_due_mission is not None
         assert stored_due_mission.status is MissionStatus.requires_confirmation
-        assert stored_due_mission.status is not MissionStatus.processing
         assert stored_due_mission.claimed_at is None
         assert stored_future_mission is not None
         assert stored_future_mission.status is MissionStatus.waiting

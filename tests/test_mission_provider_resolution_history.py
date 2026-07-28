@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -524,7 +524,7 @@ def test_history_mapper_rejects_unrelated_event_type() -> None:
 
 
 @pytest.fixture(autouse=True)
-def clear_api_state() -> None:
+def clear_api_state() -> Iterator[None]:
     asyncio.run(mission_repository.clear())
     yield
     asyncio.run(mission_repository.clear())

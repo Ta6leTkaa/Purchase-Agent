@@ -34,7 +34,7 @@ def test_reservation_id_migration_adds_and_removes_only_target_columns() -> None
             attempts.insert().values(id="attempt-1", mission_id="mission-1")
         )
         context = MigrationContext.configure(connection)
-        migration.op = Operations(context)
+        migration.op = Operations(context)  # type: ignore[attr-defined]
         migration.upgrade()
 
         mission_columns = {

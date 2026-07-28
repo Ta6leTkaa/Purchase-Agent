@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Iterator
 from datetime import date
 from uuid import uuid4
 
@@ -176,7 +177,10 @@ def test_preview_maps_all_resolution_failures(
     assert preview.resolved_provider_id is None
     assert preview.candidate_provider_ids == candidates
     assert mission.model_dump(mode="json") == before
-    assert all(adapter.operations == [] for adapter in adapters)
+    assert all(
+        isinstance(adapter, PreviewAdapter) and adapter.operations == []
+        for adapter in adapters
+    )
 
 
 def test_preview_works_for_terminal_mission_status() -> None:
@@ -213,7 +217,7 @@ def test_preview_model_rejects_invalid_semantics() -> None:
 
 
 @pytest.fixture(autouse=True)
-def clear_api_state() -> None:
+def clear_api_state() -> Iterator[None]:
     asyncio.run(mission_repository.clear())
     app.dependency_overrides.clear()
     yield

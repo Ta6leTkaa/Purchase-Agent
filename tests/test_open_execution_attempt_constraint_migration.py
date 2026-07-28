@@ -25,7 +25,7 @@ def test_open_execution_attempt_constraint_allows_only_one_processing_row() -> N
 
     with engine.begin() as connection:
         context = MigrationContext.configure(connection)
-        migration.op = Operations(context)
+        migration.op = Operations(context)  # type: ignore[attr-defined]
         migration.upgrade()
 
         indexes = sa.inspect(connection).get_indexes(
@@ -100,7 +100,7 @@ def test_open_execution_attempt_constraint_rejects_existing_duplicates() -> None
             ],
         )
         context = MigrationContext.configure(connection)
-        migration.op = Operations(context)
+        migration.op = Operations(context)  # type: ignore[attr-defined]
 
         with pytest.raises(RuntimeError, match="multiple processing attempts"):
             migration.upgrade()

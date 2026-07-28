@@ -22,7 +22,7 @@ def test_mission_type_migration_updates_existing_rows() -> None:
     with engine.begin() as connection:
         connection.execute(missions.insert().values(id="mission-1"))
         context = MigrationContext.configure(connection)
-        migration.op = Operations(context)
+        migration.op = Operations(context)  # type: ignore[attr-defined]
         migration.upgrade()
 
         row = connection.execute(sa.text(

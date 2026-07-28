@@ -26,7 +26,7 @@ def test_max_execution_attempts_migration_preserves_attempt_counts() -> None:
             {"id": "mission-5", "execution_attempts": 5},
         ])
         context = MigrationContext.configure(connection)
-        migration.op = Operations(context)
+        migration.op = Operations(context)  # type: ignore[attr-defined]
 
         migration.upgrade()
 

@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -72,7 +74,7 @@ class SpyProviderRegistry(ProviderRegistry):
 
 
 @pytest.fixture(autouse=True)
-def clear_dependency_overrides() -> None:
+def clear_dependency_overrides() -> Iterator[None]:
     app.dependency_overrides.clear()
     yield
     app.dependency_overrides.clear()

@@ -30,7 +30,7 @@ def test_claimed_at_migration_preserves_existing_missions() -> None:
             )
         )
         context = MigrationContext.configure(connection)
-        migration.op = Operations(context)
+        migration.op = Operations(context)  # type: ignore[attr-defined]
 
         migration.upgrade()
 

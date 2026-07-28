@@ -25,7 +25,7 @@ def test_mission_provider_id_migration_preserves_legacy_rows() -> None:
             missions.insert().values(id="mission-1", title="Legacy mission")
         )
         context = MigrationContext.configure(connection)
-        migration.op = Operations(context)
+        migration.op = Operations(context)  # type: ignore[attr-defined]
         migration.upgrade()
 
         row = connection.execute(sa.text(

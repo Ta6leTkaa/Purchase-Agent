@@ -28,7 +28,7 @@ def test_execution_attempt_is_immutable_and_requires_a_terminal_time() -> None:
     )
 
     with pytest.raises(ValidationError):
-        attempt.attempt_number = 2  # type: ignore[misc]
+        attempt.attempt_number = 2
 
     with pytest.raises(ValueError, match="finished attempt"):
         MissionExecutionAttempt(

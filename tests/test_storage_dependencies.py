@@ -53,6 +53,8 @@ def test_database_backend_returns_sqlalchemy_repositories(
 
     assert isinstance(resolved_identity_repository, SqlAlchemyIdentityRepository)
     assert isinstance(resolved_mission_repository, SqlAlchemyMissionRepository)
+    assert resolved_identity_repository._session is session
+    assert resolved_mission_repository._session is session
 
 
 def test_database_repositories_receive_passed_session(
@@ -66,6 +68,3 @@ def test_database_repositories_receive_passed_session(
         resolved_mission_repository = get_mission_repository(session)
     finally:
         asyncio.run(session.close())
-
-    assert resolved_identity_repository._session is session
-    assert resolved_mission_repository._session is session

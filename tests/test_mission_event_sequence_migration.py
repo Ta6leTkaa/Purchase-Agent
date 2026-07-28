@@ -1,5 +1,6 @@
 import importlib
 import json
+from typing import cast
 
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
@@ -39,7 +40,7 @@ def test_event_sequence_migration_normalizes_json_event_order() -> None:
             missions.insert().values(id="mission-1", execution_log=events)
         )
         context = MigrationContext.configure(connection)
-        migration.op = Operations(context)
+        migration.op = Operations(context)  # type: ignore[attr-defined]
 
         migration.upgrade()
 
@@ -71,6 +72,6 @@ def test_event_sequence_migration_normalizes_json_event_order() -> None:
 
 def _json_value(value: object) -> list[dict[str, object]]:
     if isinstance(value, str):
-        return json.loads(value)
+        return cast(list[dict[str, object]], json.loads(value))
     assert isinstance(value, list)
     return value

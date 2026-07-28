@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Iterator
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
@@ -325,7 +326,7 @@ def test_set_mission_provider_reports_missing_mission_before_registry() -> None:
 
 
 @pytest.fixture(autouse=True)
-def clear_api_state() -> None:
+def clear_api_state() -> Iterator[None]:
     asyncio.run(mission_repository.clear())
     app.dependency_overrides.clear()
     yield

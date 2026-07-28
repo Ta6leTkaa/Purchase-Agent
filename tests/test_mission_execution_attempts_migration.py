@@ -25,7 +25,7 @@ def test_execution_attempts_migration_preserves_existing_missions() -> None:
             missions.insert().values(id="mission-1", status="waiting")
         )
         context = MigrationContext.configure(connection)
-        migration.op = Operations(context)
+        migration.op = Operations(context)  # type: ignore[attr-defined]
 
         migration.upgrade()
 
