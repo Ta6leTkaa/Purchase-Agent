@@ -6,6 +6,7 @@ import pytest
 
 from app.adapters.mock_train import MockTrainAdapter
 from app.adapters.registry import ProviderRegistry
+from app.domain.execution_attempt import MissionExecutionAttemptStatus
 from app.domain.identity import Identity
 from app.domain.mission import (
     FallbackRules,
@@ -16,6 +17,7 @@ from app.domain.mission import (
 )
 from app.domain.provider import ProviderOption
 from app.services.due_mission_processor import process_due_missions
+from app.services.provider_errors import ProviderOperationError
 from app.services.provider_resolver import ProviderResolver
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
@@ -216,6 +218,56 @@ def test_exception_for_one_mission_does_not_stop_next_due_mission() -> None:
         assert stored_broken_mission.execution_log[-1].type == (
             "mission_processing_failed"
         )
+
+    asyncio.run(scenario())
+
+
+def test_typed_provider_failure_closes_claimed_attempt_without_batch_error() -> None:
+    class FailingSearchAdapter(MockTrainAdapter):
+        async def search_options(
+            self,
+            mission: Mission,
+            identities: list[Identity],
+        ) -> list[ProviderOption]:
+            raise ProviderOperationError(
+                provider_id=self.provider_id,
+                operation="search",
+            )
+
+    async def scenario() -> None:
+        identity_repository = InMemoryIdentityRepository()
+        mission_repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        identities = [
+            await identity_repository.create(make_identity())
+            for _ in range(4)
+        ]
+        mission = make_mission(
+            [identity.id for identity in identities],
+            scheduled_at=current_time,
+        )
+        await mission_repository.create(mission)
+        resolver = ProviderResolver(ProviderRegistry([FailingSearchAdapter()]))
+
+        result = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            current_time,
+            provider_resolver=resolver,
+        )
+        stored_mission = await mission_repository.get(mission.id)
+        attempts = await mission_repository.list_execution_attempts(mission.id)
+
+        assert result.processed_count == 1
+        assert result.succeeded_mission_ids == []
+        assert result.failed_mission_ids == [mission.id]
+        assert result.errors == {}
+        assert stored_mission is not None
+        assert stored_mission.status is MissionStatus.failed
+        assert stored_mission.claimed_at is None
+        assert stored_mission.execution_log[-1].type == "provider_operation_failed"
+        assert len(attempts) == 1
+        assert attempts[0].status is MissionExecutionAttemptStatus.failed
 
     asyncio.run(scenario())
 

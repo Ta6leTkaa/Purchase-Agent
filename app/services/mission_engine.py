@@ -18,7 +18,10 @@ from app.repositories.mission import MissionRepository
 from app.services.clock import utc_now
 from app.services.mission_errors import MissionNotFoundError
 from app.services.mission_state_machine import MissionStateMachine
-from app.services.provider_errors import UnsupportedMissionTypeError
+from app.services.provider_errors import (
+    ProviderOperationError,
+    UnsupportedMissionTypeError,
+)
 from app.services.provider_resolver import (
     AmbiguousProviderError,
     NoSupportingProviderError,
@@ -133,7 +136,16 @@ async def run_mission(
         state_machine.transition(mission, MissionStatus.searching)
     _add_event(mission, "search_started", "Provider option search started.")
 
-    options = await adapter.search_options(mission, identities)
+    try:
+        options = await adapter.search_options(mission, identities)
+    except ProviderOperationError:
+        return await _fail_provider_operation(
+            mission,
+            mission_repository,
+            state_machine,
+            provider_id=adapter.provider_id,
+            operation="search",
+        )
     _add_event(
         mission,
         "options_found",
@@ -172,18 +184,27 @@ async def run_mission(
         state_machine.transition(mission, MissionStatus.reserving)
     _add_event(mission, "reservation_started", "Reservation started.")
 
-    reservation_result = await adapter.reserve_option(
-        best.option,
-        mission,
-        idempotency_key=_reservation_idempotency_key(mission),
-    )
+    try:
+        reservation_result = await adapter.reserve_option(
+            best.option,
+            mission,
+            idempotency_key=_reservation_idempotency_key(mission),
+        )
+    except ProviderOperationError:
+        return await _fail_provider_operation(
+            mission,
+            mission_repository,
+            state_machine,
+            provider_id=adapter.provider_id,
+            operation="reservation",
+        )
     if not reservation_result.success:
         state_machine.transition(mission, MissionStatus.failed)
         _add_event(
             mission,
             "reservation_failed",
             "Reservation failed.",
-            {"message": reservation_result.message},
+            {"provider_id": adapter.provider_id},
         )
         return await mission_repository.update(mission)
 
@@ -245,6 +266,27 @@ async def _get_participants(
         if identity is not None:
             identities.append(identity)
     return identities
+
+
+async def _fail_provider_operation(
+    mission: Mission,
+    mission_repository: MissionRepository,
+    state_machine: MissionStateMachine,
+    *,
+    provider_id: str,
+    operation: str,
+) -> Mission:
+    state_machine.transition(mission, MissionStatus.failed)
+    _add_event(
+        mission,
+        "provider_operation_failed",
+        "Provider operation failed.",
+        {
+            "provider_id": provider_id,
+            "operation": operation,
+        },
+    )
+    return await mission_repository.update(mission)
 
 
 def _add_event(

@@ -893,3 +893,10 @@ Mission and on the completed execution attempt. It is read-only execution
 metadata: Mission creation requests cannot set it. The execution log also
 records a `reservation_succeeded` event with the reservation ID and whether
 user confirmation is required.
+
+Adapters report expected search and reservation failures with
+`ProviderOperationError`. Mission Engine records a safe
+`provider_operation_failed` event, moves the Mission to `failed`, and closes a
+claimed execution attempt. Provider-supplied error text is not persisted in the
+Mission audit log. Unexpected exceptions remain visible as infrastructure or
+programming failures rather than being silently classified as provider errors.

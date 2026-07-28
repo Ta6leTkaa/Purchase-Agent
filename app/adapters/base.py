@@ -33,6 +33,8 @@ class ProviderAdapter(ABC):
         mission: Mission,
         identities: list[Identity],
     ) -> list[ProviderOption]:
+        """Return provider options or raise ProviderOperationError."""
+
         raise NotImplementedError
 
     @abstractmethod
@@ -43,4 +45,6 @@ class ProviderAdapter(ABC):
         *,
         idempotency_key: str,
     ) -> ReservationResult:
+        """Reserve an option or raise ProviderOperationError."""
+
         raise NotImplementedError

@@ -109,6 +109,24 @@ def test_serializer_preserves_sequence_timestamp_and_nested_snapshot() -> None:
     }
 
 
+def test_serializer_round_trips_provider_operation_failure_event() -> None:
+    serializer = PydanticMissionEventSerializer()
+    event = ExecutionEvent(
+        sequence=4,
+        timestamp=CURRENT_TIME,
+        type="provider_operation_failed",
+        message="Provider operation failed.",
+        metadata={
+            "provider_id": "mock_train",
+            "operation": "search",
+        },
+    )
+
+    persisted = serializer.serialize(event)
+
+    assert serializer.deserialize(persisted) == event
+
+
 def test_store_uses_serializer_for_mission_json_round_trip() -> None:
     store = MissionJsonEventStore(PydanticMissionEventSerializer())
     events = _provider_events()

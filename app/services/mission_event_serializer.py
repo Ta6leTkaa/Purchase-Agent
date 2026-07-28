@@ -87,6 +87,7 @@ class PydanticMissionEventSerializer:
             "no_valid_option_found",
             "options_found",
             "participant_missing",
+            "provider_operation_failed",
             "reservation_failed",
             "reservation_started",
             "reservation_succeeded",

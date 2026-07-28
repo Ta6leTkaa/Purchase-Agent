@@ -24,6 +24,7 @@ from app.services.mission_engine import (
     confirm_mission,
     run_mission,
 )
+from app.services.provider_errors import ProviderOperationError
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 
@@ -371,6 +372,99 @@ def test_run_mission_fails_when_participant_is_missing(
 
     assert updated_mission.status is MissionStatus.failed
     assert updated_mission.execution_log[-1].type == "participant_missing"
+
+
+def test_run_mission_persists_typed_provider_search_failure(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    class FailingSearchAdapter(MockTrainAdapter):
+        async def search_options(
+            self,
+            mission: Mission,
+            identities: list[Identity],
+        ) -> list[ProviderOption]:
+            raise ProviderOperationError(
+                provider_id=self.provider_id,
+                operation="search",
+            )
+
+    class StaticResolver:
+        def __init__(self, adapter: FailingSearchAdapter) -> None:
+            self._adapter = adapter
+
+        def resolve(self, mission: Mission) -> FailingSearchAdapter:
+            return self._adapter
+
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+
+    updated_mission = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            StaticResolver(FailingSearchAdapter()),  # type: ignore[arg-type]
+        )
+    )
+
+    assert updated_mission.status is MissionStatus.failed
+    assert updated_mission.resolved_provider_id == "mock_train"
+    assert updated_mission.execution_log[-1].type == "provider_operation_failed"
+    assert updated_mission.execution_log[-1].metadata == {
+        "provider_id": "mock_train",
+        "operation": "search",
+    }
+
+
+def test_run_mission_does_not_persist_provider_failure_message(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    class DeclinedReservationAdapter(MockTrainAdapter):
+        async def reserve_option(
+            self,
+            option: ProviderOption,
+            mission: Mission,
+            *,
+            idempotency_key: str,
+        ) -> ReservationResult:
+            del option, mission, idempotency_key
+            return ReservationResult(
+                success=False,
+                message="provider token: must-not-be-persisted",
+            )
+
+    class StaticResolver:
+        def __init__(self, adapter: DeclinedReservationAdapter) -> None:
+            self._adapter = adapter
+
+        def resolve(self, mission: Mission) -> DeclinedReservationAdapter:
+            return self._adapter
+
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+
+    updated_mission = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            StaticResolver(DeclinedReservationAdapter()),  # type: ignore[arg-type]
+        )
+    )
+
+    assert updated_mission.status is MissionStatus.failed
+    reservation_event = updated_mission.execution_log[-1]
+    assert reservation_event.type == "reservation_failed"
+    assert reservation_event.metadata == {"provider_id": "mock_train"}
+    assert "must-not-be-persisted" not in reservation_event.message
 
 
 def test_run_unknown_mission_raises_mission_not_found_error(
