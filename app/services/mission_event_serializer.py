@@ -1,5 +1,4 @@
 from collections.abc import Mapping
-from types import MappingProxyType
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -17,9 +16,9 @@ from app.services.mission_event_upcaster import (
     LEGACY_MISSION_EVENT_SCHEMA_VERSION,
     InvalidMissionEventUpcastResultError,
     MissingMissionEventUpcasterError,
+    MissionEventDeserializationContext,
     MissionEventSchemaVersionError,
     MissionEventUpcaster,
-    MissionEventDeserializationContext,
     UnsupportedMissionEventSchemaVersionError,
     build_mission_event_upcaster_registry,
 )
@@ -65,13 +64,6 @@ class MissionEventSerializer(Protocol):
 class PydanticMissionEventSerializer:
     """Owns the persisted JSON representation of canonical Mission events."""
 
-    _payload_types = MappingProxyType(
-        {
-            "provider_resolved": ProviderResolvedEventPayload,
-            "provider_resolution_failed": ProviderResolutionFailedEventPayload,
-            "provider_selection_changed": ProviderSelectionChangedEventPayload,
-        }
-    )
     _generic_event_types = frozenset(
         {
             "best_option_selected",
@@ -234,12 +226,25 @@ class PydanticMissionEventSerializer:
             raise ValueError("Mission event ID must not be nil")
 
     def _with_serialized_payload(self, event: ExecutionEvent) -> ExecutionEvent:
-        payload_type = self._payload_types.get(event.type)
-        if payload_type is None:
+        payload: (
+            ProviderResolvedEventPayload
+            | ProviderResolutionFailedEventPayload
+            | ProviderSelectionChangedEventPayload
+        )
+        if event.type == "provider_resolved":
+            payload = ProviderResolvedEventPayload.model_validate(event.metadata)
+        elif event.type == "provider_resolution_failed":
+            payload = ProviderResolutionFailedEventPayload.model_validate(
+                event.metadata
+            )
+        elif event.type == "provider_selection_changed":
+            payload = ProviderSelectionChangedEventPayload.model_validate(
+                event.metadata
+            )
+        else:
             if event.type not in self._generic_event_types:
                 raise ValueError("Unknown Mission event type")
             return event
-        payload = payload_type.model_validate(event.metadata)
         return event.model_copy(
             update={"metadata": payload.model_dump(mode="json")}
         )

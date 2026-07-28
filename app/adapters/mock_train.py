@@ -5,7 +5,6 @@ from uuid import uuid4
 from app.adapters.base import ProviderAdapter
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionType
-from app.domain.provider_capability import ProviderCapability
 from app.domain.provider import (
     ProviderOption,
     ProviderOptionType,
@@ -13,6 +12,7 @@ from app.domain.provider import (
     Seat,
     SeatBerth,
 )
+from app.domain.provider_capability import ProviderCapability
 
 
 class MockTrainAdapter(ProviderAdapter):
@@ -41,10 +41,9 @@ class MockTrainAdapter(ProviderAdapter):
         mission: Mission,
         identities: list[Identity],
     ) -> list[ProviderOption]:
-        departure_at = datetime.combine(
-            mission.payload.departure_date,
-            time(hour=20),
-        )
+        payload = mission.payload
+        assert payload is not None
+        departure_at = datetime.combine(payload.departure_date, time(hour=20))
         arrival_at = departure_at + timedelta(hours=10)
 
         return [
@@ -135,8 +134,8 @@ class MockTrainAdapter(ProviderAdapter):
             id=uuid4(),
             type=ProviderOptionType.train_option,
             train_number=train_number,
-            from_city=mission.payload.origin,
-            to_city=mission.payload.destination,
+            from_city=mission.origin,
+            to_city=mission.destination,
             departure_at=departure_at,
             arrival_at=arrival_at,
             total_price=total_price,

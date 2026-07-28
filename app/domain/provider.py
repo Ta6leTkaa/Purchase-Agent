@@ -7,8 +7,8 @@ from pydantic import BaseModel, field_validator, model_validator
 
 
 class SeatBerth(str, Enum):
-    lower = "lower"
-    upper = "upper"
+    lower = "lower"  # type: ignore[assignment]
+    upper = "upper"  # type: ignore[assignment]
 
 
 class Seat(BaseModel):

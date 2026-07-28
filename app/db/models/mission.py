@@ -133,11 +133,13 @@ def mission_to_model(mission: Mission) -> MissionModel:
         mission.execution_log,
         last_event_sequence=mission.last_event_sequence,
     )
+    payload = mission.payload
+    assert payload is not None
     return MissionModel(
         id=mission.id,
         type="train_trip",
         mission_type=mission.mission_type.value,
-        payload=mission.payload.model_dump(mode="json"),
+        payload=payload.model_dump(mode="json"),
         title=mission.title,
         status=mission.status.value,
         provider=mission.provider,
@@ -173,7 +175,7 @@ def mission_from_model(model: MissionModel) -> Mission:
         last_event_sequence=last_event_sequence,
         mission_id=model.id,
     )
-    mission_data = {
+    mission_data: dict[str, Any] = {
         "id": model.id,
         "type": MissionType.TRAIN_TICKET,
         "mission_type": MissionType(

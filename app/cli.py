@@ -1,10 +1,10 @@
 import argparse
 import asyncio
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from typing import Callable, TextIO
+from typing import TextIO
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -22,11 +22,11 @@ from app.services.due_mission_processor import (
     DueMissionProcessingResult,
     process_due_missions,
 )
-from app.services.provider_resolver import ProviderResolver
 from app.services.provider_history_rebuild import (
     ProviderHistoryProjectionRebuildResult,
     RebuildProviderHistoryProjection,
 )
+from app.services.provider_resolver import ProviderResolver
 
 
 @dataclass(frozen=True)
@@ -132,27 +132,27 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "process-due":
         raise SystemExit(asyncio.run(process_due_command(args.limit)))
     if args.command == "rebuild-provider-history":
-        exit_code, result = asyncio.run(
+        exit_code, rebuild_result = asyncio.run(
             rebuild_provider_history_command()
         )
         if exit_code == 0:
             sys.stdout.write(
                 "Processed missions: "
-                f"{result.processed_missions}\n"
+                f"{rebuild_result.processed_missions}\n"
                 "Processed provider events: "
-                f"{result.processed_provider_events}\n"
-                f"Inserted rows: {result.inserted_rows}\n"
+                f"{rebuild_result.processed_provider_events}\n"
+                f"Inserted rows: {rebuild_result.inserted_rows}\n"
             )
         raise SystemExit(exit_code)
 
-    exit_code, result = asyncio.run(
+    exit_code, recovery_result = asyncio.run(
         recover_stale_command(
             timedelta(seconds=args.claim_timeout_seconds),
             args.limit,
         )
     )
     if exit_code == 0:
-        sys.stdout.write(result.model_dump_json() + "\n")
+        sys.stdout.write(recovery_result.model_dump_json() + "\n")
     raise SystemExit(exit_code)
 
 

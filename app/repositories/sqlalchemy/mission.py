@@ -1,7 +1,11 @@
+from __future__ import annotations
+
+import builtins
 from datetime import datetime, timedelta
+from typing import cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.mission import (
@@ -23,11 +27,11 @@ from app.repositories.mission import (
 from app.repositories.sqlalchemy.provider_history import (
     SqlAlchemyProviderHistoryProjectionRepository,
 )
+from app.services.mission_event_store import mission_json_event_store
+from app.services.mission_state_machine import MissionStateMachine
 from app.services.provider_history_projection import (
     execution_event_to_provider_projection,
 )
-from app.services.mission_state_machine import MissionStateMachine
-from app.services.mission_event_store import mission_json_event_store
 
 
 class MissionEventSequenceConflictError(Exception):
@@ -48,7 +52,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         await self._session.flush()
         return mission_from_model(model)
 
-    async def list(self) -> list[Mission]:
+    async def list(self) -> builtins.list[Mission]:
         result = await self._session.execute(
             select(MissionModel).order_by(MissionModel.created_at)
         )
@@ -61,7 +65,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         self,
         current_time: datetime,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         _validate_list_due_arguments(current_time, limit)
         result = await self._session.execute(
             select(MissionModel)
@@ -84,7 +88,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         self,
         current_time: datetime,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         _validate_list_due_arguments(current_time, limit)
         result = await self._session.execute(
             select(MissionModel)
@@ -126,7 +130,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         current_time: datetime,
         claim_timeout: timedelta,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         _validate_stale_processing_arguments(
             current_time,
             claim_timeout,
@@ -151,7 +155,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
         current_time: datetime,
         claim_timeout: timedelta,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         _validate_stale_processing_arguments(
             current_time,
             claim_timeout,
@@ -196,7 +200,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
     async def list_execution_attempts(
         self,
         mission_id: UUID,
-    ) -> list[MissionExecutionAttempt]:
+    ) -> builtins.list[MissionExecutionAttempt]:
         result = await self._session.execute(
             select(MissionExecutionAttemptModel)
             .where(MissionExecutionAttemptModel.mission_id == mission_id)
@@ -250,7 +254,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
                 best_option=updated_model.best_option,
             )
         )
-        if result.rowcount == 0:
+        if cast(CursorResult[object], result).rowcount == 0:
             existing_model = await self._session.get(MissionModel, mission.id)
             if existing_model is None:
                 raise RepositoryEntityNotFoundError

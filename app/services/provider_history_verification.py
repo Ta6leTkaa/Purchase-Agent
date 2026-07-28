@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -61,7 +62,11 @@ class MissionProviderHistoryProjectionVerification(BaseModel):
 
 
 class VerifyMissionProviderHistoryProjection:
-    def __init__(self, mission_repository: MissionRepository, projection_reader: object) -> None:
+    def __init__(
+        self,
+        mission_repository: MissionRepository,
+        projection_reader: "ProviderHistoryProjectionVerificationReader",
+    ) -> None:
         self._mission_repository = mission_repository
         self._projection_reader = projection_reader
 
@@ -75,6 +80,14 @@ class VerifyMissionProviderHistoryProjection:
             canonical_events=mission.execution_log,
             projection_events=projection_events,
         )
+
+
+class ProviderHistoryProjectionVerificationReader(Protocol):
+    async def list_all_for_mission(
+        self,
+        mission_id: UUID,
+    ) -> list[ProviderHistoryProjectionEvent]:
+        ...
 
 
 def compare_provider_history_projection(
@@ -127,4 +140,4 @@ def compare_provider_history_projection(
 def _normalize_datetime(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("provider history timestamp must be timezone-aware")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)

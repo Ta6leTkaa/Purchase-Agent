@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import asyncio
+import builtins
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -40,14 +43,14 @@ class InMemoryMissionRepository:
         self._missions[mission.id] = mission
         return mission
 
-    async def list(self) -> list[Mission]:
+    async def list(self) -> builtins.list[Mission]:
         return list(self._missions.values())
 
     async def list_due(
         self,
         current_time: datetime,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         _validate_list_due_arguments(current_time, limit)
         due_missions = [
             mission
@@ -66,7 +69,7 @@ class InMemoryMissionRepository:
         self,
         current_time: datetime,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         _validate_list_due_arguments(current_time, limit)
         async with self._claim_lock:
             due_missions = [
@@ -101,7 +104,7 @@ class InMemoryMissionRepository:
         current_time: datetime,
         claim_timeout: timedelta,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         _validate_stale_processing_arguments(
             current_time,
             claim_timeout,
@@ -125,7 +128,7 @@ class InMemoryMissionRepository:
         current_time: datetime,
         claim_timeout: timedelta,
         limit: int = 100,
-    ) -> list[Mission]:
+    ) -> builtins.list[Mission]:
         _validate_stale_processing_arguments(
             current_time,
             claim_timeout,
@@ -162,7 +165,7 @@ class InMemoryMissionRepository:
     async def list_execution_attempts(
         self,
         mission_id: UUID,
-    ) -> list[MissionExecutionAttempt]:
+    ) -> builtins.list[MissionExecutionAttempt]:
         return list(self._execution_attempts.get(mission_id, ()))
 
     async def get(self, mission_id: UUID) -> Mission | None:

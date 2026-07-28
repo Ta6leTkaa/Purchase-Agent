@@ -109,16 +109,16 @@ def projection_from_model(
     model: MissionProviderHistoryEventModel,
 ) -> ProviderHistoryProjectionEvent:
     event_type = ProviderHistoryEventType(model.event_type)
-    payload_type = {
-        ProviderHistoryEventType.provider_selection_changed: (
-            ProviderSelectionChangedEventPayload
-        ),
-        ProviderHistoryEventType.provider_resolved: ProviderResolvedEventPayload,
-        ProviderHistoryEventType.provider_resolution_failed: (
-            ProviderResolutionFailedEventPayload
-        ),
-    }[event_type]
-    payload_model = payload_type.model_validate(model.payload)
+    if event_type is ProviderHistoryEventType.provider_selection_changed:
+        payload_model: ProviderSelectionChangedEventPayload | ProviderResolvedEventPayload | ProviderResolutionFailedEventPayload = (
+            ProviderSelectionChangedEventPayload.model_validate(model.payload)
+        )
+    elif event_type is ProviderHistoryEventType.provider_resolved:
+        payload_model = ProviderResolvedEventPayload.model_validate(model.payload)
+    else:
+        payload_model = ProviderResolutionFailedEventPayload.model_validate(
+            model.payload
+        )
     return ProviderHistoryProjectionEvent(
         mission_id=model.mission_id,
         sequence=model.sequence,

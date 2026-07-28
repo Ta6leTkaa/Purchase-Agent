@@ -69,14 +69,19 @@ def map_provider_resolution_error(
 def register_provider_resolution_exception_handlers(app: FastAPI) -> None:
     async def handle_provider_resolution_error(
         request: Request,
-        error: (
-            UnknownProviderError
-            | UnsupportedMissionTypeError
-            | NoSupportingProviderError
-            | AmbiguousProviderError
-        ),
+        error: Exception,
     ) -> JSONResponse:
         del request
+        if not isinstance(
+            error,
+            (
+                UnknownProviderError,
+                UnsupportedMissionTypeError,
+                NoSupportingProviderError,
+                AmbiguousProviderError,
+            ),
+        ):
+            raise error
         mapped_error = map_provider_resolution_error(error)
         return JSONResponse(
             status_code=mapped_error.status_code,

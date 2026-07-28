@@ -130,13 +130,14 @@ class ProviderResolutionFailedEventPayload(BaseModel):
         cls,
         value: tuple[str, ...],
     ) -> tuple[str, ...]:
-        normalized_ids = tuple(
-            normalize_provider_id(provider_id)
-            for provider_id in value
-        )
+        normalized_ids = []
+        for provider_id in value:
+            normalized_provider_id = normalize_provider_id(provider_id)
+            assert normalized_provider_id is not None
+            normalized_ids.append(normalized_provider_id)
         if len(set(normalized_ids)) != len(normalized_ids):
             raise ValueError("candidate provider IDs must be unique")
-        return normalized_ids
+        return tuple(normalized_ids)
 
     @model_validator(mode="after")
     def validate_reason_fields(self) -> "ProviderResolutionFailedEventPayload":

@@ -2,7 +2,7 @@ import asyncio
 import base64
 import binascii
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime, timedelta
 from enum import Enum
@@ -144,6 +144,41 @@ class ProviderResolutionHistoryItem(BaseModel):
         return self
 
 
+class ProviderHistoryProjectionEventReader(Protocol):
+    sequence: int
+    event_type: ProviderHistoryEventType
+    occurred_at: datetime
+    payload: ProviderHistoryPayload
+    legacy_event_index: int
+
+
+class ProviderHistoryProjectionReader(Protocol):
+    async def list_page(
+        self,
+        *,
+        mission_id: UUID,
+        cursor: ProviderHistoryCursor | None,
+        fetch_limit: int,
+    ) -> Sequence[ProviderHistoryProjectionEventReader]:
+        ...
+
+    async def list_since(
+        self,
+        *,
+        mission_id: UUID,
+        since_sequence: int,
+        fetch_limit: int,
+    ) -> Sequence[ProviderHistoryProjectionEventReader]:
+        ...
+
+
+class ProviderHistoryProjectionReaderFactory(Protocol):
+    def open(
+        self,
+    ) -> AbstractAsyncContextManager[ProviderHistoryProjectionReader]:
+        ...
+
+
 class MissionProviderResolutionHistoryPage(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -258,7 +293,7 @@ class GetMissionProviderResolutionHistory:
     def __init__(
         self,
         mission_repository: MissionRepository,
-        projection_reader: object | None = None,
+        projection_reader: ProviderHistoryProjectionReader | None = None,
     ) -> None:
         self._mission_repository = mission_repository
         self._projection_reader = projection_reader
@@ -369,7 +404,7 @@ class GetMissionProviderResolutionIncrement:
         mission_read_repository_factory: MissionReadRepositoryFactory,
         waiter: AsyncWaiter,
         poll_interval: timedelta = PROVIDER_HISTORY_POLL_INTERVAL,
-        projection_reader_factory: object | None = None,
+        projection_reader_factory: ProviderHistoryProjectionReaderFactory | None = None,
     ) -> None:
         if poll_interval <= timedelta(0):
             raise ValueError("poll interval must be greater than zero")
@@ -431,15 +466,15 @@ class GetMissionProviderResolutionIncrement:
     ) -> MissionProviderResolutionIncrement:
         if self._projection_reader_factory is not None:
             async with self._projection_reader_factory.open() as reader:
-                candidates = await reader.list_since(
+                projection_candidates = await reader.list_since(
                     mission_id=mission_id,
                     since_sequence=since_sequence,
                     fetch_limit=limit + 1,
                 )
-            has_more = len(candidates) > limit
+            has_more = len(projection_candidates) > limit
             items = tuple(
                 _projection_to_history_item(event)
-                for event in candidates[:limit]
+                for event in projection_candidates[:limit]
             )
             latest_sequence = (
                 items[-1].sequence if items else since_sequence
@@ -501,24 +536,29 @@ def provider_event_to_history_item(
             f"Unsupported provider history event type '{event.type}'"
         ) from exc
 
-    payload_type = {
-        ProviderHistoryEventType.provider_selection_changed: (
-            ProviderSelectionChangedEventPayload
-        ),
-        ProviderHistoryEventType.provider_resolved: ProviderResolvedEventPayload,
-        ProviderHistoryEventType.provider_resolution_failed: (
-            ProviderResolutionFailedEventPayload
-        ),
-    }[event_type]
+    if event_type is ProviderHistoryEventType.provider_selection_changed:
+        payload: ProviderHistoryPayload = (
+            ProviderSelectionChangedEventPayload.model_validate(
+            event.metadata
+            )
+        )
+    elif event_type is ProviderHistoryEventType.provider_resolved:
+        payload = ProviderResolvedEventPayload.model_validate(event.metadata)
+    else:
+        payload = ProviderResolutionFailedEventPayload.model_validate(
+            event.metadata
+        )
     return ProviderResolutionHistoryItem(
         sequence=event.sequence,
         event_type=event_type,
         occurred_at=event.timestamp,
-        payload=payload_type.model_validate(event.metadata),
+        payload=payload,
     )
 
 
-def _projection_to_history_item(event: object) -> ProviderResolutionHistoryItem:
+def _projection_to_history_item(
+    event: ProviderHistoryProjectionEventReader,
+) -> ProviderResolutionHistoryItem:
     return ProviderResolutionHistoryItem(
         sequence=event.sequence,
         event_type=event.event_type,
