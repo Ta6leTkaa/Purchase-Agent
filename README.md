@@ -887,3 +887,7 @@ a stable `idempotency_key` derived from the Mission ID. A provider must treat
 repeated reserve calls with that key as the same logical reservation. This
 protects the external reservation boundary when execution is retried after an
 interrupted attempt; it does not add automatic retry or fallback behavior.
+
+When a provider succeeds, its external `reservation_id` is persisted on the
+Mission and on the completed execution attempt. It is read-only execution
+metadata: Mission creation requests cannot set it.

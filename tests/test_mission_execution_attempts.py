@@ -57,6 +57,7 @@ def test_claim_creates_and_completion_closes_execution_attempt() -> None:
 
         claimed.resolved_provider_id = "mock_train"
         await repository.update(claimed)
+        claimed.reservation_id = "mock-reservation-123"
         claimed.status = MissionStatus.completed
         claimed.claimed_at = None
         claimed.record_event(
@@ -70,6 +71,7 @@ def test_claim_creates_and_completion_closes_execution_attempt() -> None:
         assert attempts[0].status is MissionExecutionAttemptStatus.completed
         assert attempts[0].finished_at == current_time + timedelta(minutes=1)
         assert attempts[0].resolved_provider_id == "mock_train"
+        assert attempts[0].reservation_id == "mock-reservation-123"
 
     asyncio.run(scenario())
 

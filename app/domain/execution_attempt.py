@@ -27,6 +27,7 @@ class MissionExecutionAttempt(BaseModel):
     claimed_at: datetime
     finished_at: datetime | None = None
     resolved_provider_id: str | None = None
+    reservation_id: str | None = Field(default=None, max_length=255)
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> "MissionExecutionAttempt":
@@ -49,4 +50,13 @@ class MissionExecutionAttempt(BaseModel):
             "resolved_provider_id",
             normalize_provider_id(self.resolved_provider_id),
         )
+        return self
+
+    @model_validator(mode="after")
+    def normalize_reservation_id(self) -> "MissionExecutionAttempt":
+        if self.reservation_id is not None:
+            normalized_value = self.reservation_id.strip()
+            if not normalized_value:
+                raise ValueError("reservation_id must be a non-empty string")
+            object.__setattr__(self, "reservation_id", normalized_value)
         return self

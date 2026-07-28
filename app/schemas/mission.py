@@ -154,6 +154,7 @@ class MissionExecutionAttemptResponse(BaseModel):
     claimed_at: datetime
     finished_at: datetime | None
     resolved_provider_id: str | None
+    reservation_id: str | None
 
     @classmethod
     def from_domain(
@@ -167,6 +168,7 @@ class MissionExecutionAttemptResponse(BaseModel):
             claimed_at=attempt.claimed_at,
             finished_at=attempt.finished_at,
             resolved_provider_id=attempt.resolved_provider_id,
+            reservation_id=attempt.reservation_id,
         )
 
 

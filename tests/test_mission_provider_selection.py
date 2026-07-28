@@ -122,11 +122,13 @@ def test_mission_provider_selection_normalizes_and_clears_resolution() -> None:
         provider_id="provider_a",
         resolved_provider_id="provider_a",
     )
+    mission.reservation_id = "provider-reservation-123"
 
     updated = mission.with_provider_selection("  provider_b  ")
 
     assert updated.provider_id == "provider_b"
     assert updated.resolved_provider_id is None
+    assert updated.reservation_id is None
     assert updated.status is mission.status
     assert updated.payload == mission.payload
     assert updated.execution_attempts == mission.execution_attempts

@@ -237,6 +237,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
                 provider=updated_model.provider,
                 provider_id=updated_model.provider_id,
                 resolved_provider_id=updated_model.resolved_provider_id,
+                reservation_id=updated_model.reservation_id,
                 scheduled_at=updated_model.scheduled_at,
                 claimed_at=updated_model.claimed_at,
                 execution_attempts=updated_model.execution_attempts,
@@ -318,6 +319,7 @@ class SqlAlchemyMissionRepository(MissionRepository):
                 status=status.value,
                 finished_at=finished_at,
                 resolved_provider_id=mission.resolved_provider_id,
+                reservation_id=mission.reservation_id,
             )
         )
 
@@ -392,6 +394,7 @@ def _execution_attempt_from_model(
         claimed_at=model.claimed_at,
         finished_at=model.finished_at,
         resolved_provider_id=model.resolved_provider_id,
+        reservation_id=model.reservation_id,
     )
 
 

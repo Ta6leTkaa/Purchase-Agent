@@ -94,6 +94,7 @@ class Mission(BaseModel):
     provider: str = Field(min_length=1)
     provider_id: str | None = None
     resolved_provider_id: str | None = None
+    reservation_id: str | None = Field(default=None, max_length=255)
     constraints: TrainConstraints
     fallback_rules: FallbackRules = FallbackRules()
     scheduled_at: datetime | None = None
@@ -131,6 +132,16 @@ class Mission(BaseModel):
     @classmethod
     def validate_provider_id(cls, value: str | None) -> str | None:
         return normalize_provider_id(value)
+
+    @field_validator("reservation_id")
+    @classmethod
+    def validate_reservation_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("reservation_id must be a non-empty string")
+        return normalized_value
 
     @model_validator(mode="after")
     def validate_claimed_at_for_status(self) -> "Mission":
@@ -246,5 +257,6 @@ class Mission(BaseModel):
             update={
                 "provider_id": normalized_provider_id,
                 "resolved_provider_id": None,
+                "reservation_id": None,
             }
         )

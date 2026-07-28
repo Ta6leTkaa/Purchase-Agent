@@ -220,6 +220,7 @@ class InMemoryMissionRepository:
                 "status": status,
                 "finished_at": finished_at,
                 "resolved_provider_id": mission.resolved_provider_id,
+                "reservation_id": mission.reservation_id,
             }
         )
 

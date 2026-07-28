@@ -95,6 +95,9 @@ async def test_mission_execution_flow_persists_result_to_postgres(
     assert response_body["status"] == "requires_confirmation"
     assert response_body["best_option"] is not None
     assert response_body["best_option"]["train_number"] == "001A"
+    assert response_body["reservation_id"] == (
+        f"mock-reservation-mission:{mission.id}"
+    )
     response_resolution_event = next(
         event
         for event in response_body["execution_log"]
@@ -127,6 +130,9 @@ async def test_mission_execution_flow_persists_result_to_postgres(
     assert persisted_mission.status is MissionStatus.requires_confirmation
     assert persisted_mission.best_option is not None
     assert persisted_mission.best_option.train_number == "001A"
+    assert persisted_mission.reservation_id == (
+        f"mock-reservation-mission:{mission.id}"
+    )
     persisted_resolution_event = next(
         event
         for event in persisted_mission.execution_log

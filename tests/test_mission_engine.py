@@ -96,6 +96,7 @@ def test_run_mission_sets_requires_confirmation_and_selects_best_option(
     assert updated_mission.best_option is not None
     assert updated_mission.best_option.train_number == "001A"
     assert updated_mission.resolved_provider_id == "mock_train"
+    assert updated_mission.reservation_id == f"mock-reservation-mission:{mission.id}"
     resolution_event = updated_mission.execution_log[0]
     assert resolution_event.type == "provider_resolved"
     assert resolution_event.metadata == {
