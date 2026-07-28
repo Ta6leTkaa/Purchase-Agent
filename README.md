@@ -862,6 +862,10 @@ attempt completes, fails, waits for confirmation, or is recovered after a
 stale claim. The audit record preserves the attempt number, claim time, final
 outcome, and resolved provider when one was selected.
 
+The database also enforces that a Mission has at most one open attempt. This
+is a storage invariant in addition to the claim lock; completed, failed,
+recovered, and confirmation-pending attempts remain available as history.
+
 This history is diagnostic metadata only. It does not add a retry policy,
 backoff, or automatic scheduling. Existing Missions are not backfilled with
 invented attempt records; auditing starts with claims made after the migration.

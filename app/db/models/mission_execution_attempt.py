@@ -9,6 +9,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +30,13 @@ class MissionExecutionAttemptModel(Base):
             "ix_mission_execution_attempts_mission_claimed_at",
             "mission_id",
             "claimed_at",
+        ),
+        Index(
+            "uq_mission_execution_attempts_one_open",
+            "mission_id",
+            unique=True,
+            postgresql_where=text("status = 'processing'"),
+            sqlite_where=text("status = 'processing'"),
         ),
     )
 
