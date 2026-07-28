@@ -172,7 +172,11 @@ async def run_mission(
         state_machine.transition(mission, MissionStatus.reserving)
     _add_event(mission, "reservation_started", "Reservation started.")
 
-    reservation_result = await adapter.reserve_option(best.option, mission)
+    reservation_result = await adapter.reserve_option(
+        best.option,
+        mission,
+        idempotency_key=_reservation_idempotency_key(mission),
+    )
     if not reservation_result.success:
         state_machine.transition(mission, MissionStatus.failed)
         _add_event(
@@ -254,6 +258,10 @@ def _is_scheduled_for_future(
         mission.scheduled_at is not None
         and mission.scheduled_at > current_time
     )
+
+
+def _reservation_idempotency_key(mission: Mission) -> str:
+    return f"mission:{mission.id}"
 
 
 def _provider_resolution_failure_payload(

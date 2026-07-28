@@ -63,6 +63,8 @@ class PreviewAdapter(ProviderAdapter):
         self,
         option: ProviderOption,
         mission: Mission,
+        *,
+        idempotency_key: str,
     ) -> ReservationResult:
         self.operations.append("reserve_option")
         raise NotImplementedError

@@ -25,6 +25,9 @@ class MockTrainAdapter(ProviderAdapter):
         }
     )
 
+    def __init__(self) -> None:
+        self._reservations_by_key: dict[str, ReservationResult] = {}
+
     @property
     def provider_id(self) -> str:
         return self.PROVIDER_ID
@@ -103,13 +106,20 @@ class MockTrainAdapter(ProviderAdapter):
         self,
         option: ProviderOption,
         mission: Mission,
+        *,
+        idempotency_key: str,
     ) -> ReservationResult:
-        return ReservationResult(
+        existing = self._reservations_by_key.get(idempotency_key)
+        if existing is not None:
+            return existing
+        result = ReservationResult(
             success=True,
-            reservation_id=f"mock-reservation-{option.id}",
+            reservation_id=f"mock-reservation-{idempotency_key}",
             requires_confirmation=True,
             message="Mock reservation created. User confirmation required.",
         )
+        self._reservations_by_key[idempotency_key] = result
+        return result
 
     def _build_option(
         self,

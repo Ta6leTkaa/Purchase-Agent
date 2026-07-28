@@ -55,6 +55,8 @@ class FakeAdapter(ProviderAdapter):
         self,
         option: ProviderOption,
         mission: Mission,
+        *,
+        idempotency_key: str,
     ) -> ReservationResult:
         self.reserve_calls += 1
         raise AssertionError("Provider operations must not be called")

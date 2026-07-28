@@ -879,3 +879,11 @@ curl http://127.0.0.1:8000/missions/{mission_id}/execution-attempts
 The response is ordered by attempt number and contains claim time, terminal
 outcome when available, and the resolved provider. Reading it never executes
 or changes a Mission.
+
+## Provider reservation idempotency
+
+Before reserving an option, Mission Engine supplies the selected provider with
+a stable `idempotency_key` derived from the Mission ID. A provider must treat
+repeated reserve calls with that key as the same logical reservation. This
+protects the external reservation boundary when execution is retried after an
+interrupted attempt; it does not add automatic retry or fallback behavior.

@@ -54,6 +54,8 @@ class DiscoveryAdapter(ProviderAdapter):
         self,
         option: ProviderOption,
         mission: Mission,
+        *,
+        idempotency_key: str,
     ) -> ReservationResult:
         self.provider_operations.append("reserve_option")
         raise NotImplementedError

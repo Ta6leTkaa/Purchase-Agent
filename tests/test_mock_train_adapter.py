@@ -81,11 +81,41 @@ def test_reserve_option_returns_success_with_confirmation_required() -> None:
     mission = make_mission()
     option = asyncio.run(adapter.search_options(mission, []))[0]
 
-    result = asyncio.run(adapter.reserve_option(option, mission))
+    result = asyncio.run(
+        adapter.reserve_option(
+            option,
+            mission,
+            idempotency_key=f"mission:{mission.id}",
+        )
+    )
 
     assert result.success is True
     assert result.requires_confirmation is True
-    assert result.reservation_id == f"mock-reservation-{option.id}"
+    assert result.reservation_id == f"mock-reservation-mission:{mission.id}"
+
+
+def test_reserve_option_is_idempotent_for_same_key() -> None:
+    adapter = MockTrainAdapter()
+    mission = make_mission()
+    options = asyncio.run(adapter.search_options(mission, []))
+    idempotency_key = f"mission:{mission.id}"
+
+    first = asyncio.run(
+        adapter.reserve_option(
+            options[0],
+            mission,
+            idempotency_key=idempotency_key,
+        )
+    )
+    second = asyncio.run(
+        adapter.reserve_option(
+            options[1],
+            mission,
+            idempotency_key=idempotency_key,
+        )
+    )
+
+    assert second == first
 
 
 def test_unknown_provider_raises_unknown_provider_error() -> None:

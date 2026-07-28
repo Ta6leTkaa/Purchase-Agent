@@ -14,6 +14,7 @@ from app.domain.mission import (
     MissionType,
     TrainConstraints,
 )
+from app.domain.provider import ProviderOption, ReservationResult
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
@@ -144,6 +145,55 @@ def test_run_mission_resolves_adapter_once_without_setting_provider_id(
     assert updated_mission.status is MissionStatus.requires_confirmation
     assert updated_mission.provider_id is None
     assert updated_mission.resolved_provider_id == "mock_train"
+
+
+def test_run_mission_passes_stable_reservation_idempotency_key(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    class CapturingAdapter(MockTrainAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.idempotency_keys: list[str] = []
+
+        async def reserve_option(
+            self,
+            option: ProviderOption,
+            mission: Mission,
+            *,
+            idempotency_key: str,
+        ) -> ReservationResult:
+            self.idempotency_keys.append(idempotency_key)
+            return await super().reserve_option(
+                option,
+                mission,
+                idempotency_key=idempotency_key,
+            )
+
+    class StaticResolver:
+        def __init__(self, adapter: CapturingAdapter) -> None:
+            self._adapter = adapter
+
+        def resolve(self, mission: Mission) -> CapturingAdapter:
+            return self._adapter
+
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    adapter = CapturingAdapter()
+
+    asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            StaticResolver(adapter),  # type: ignore[arg-type]
+        )
+    )
+
+    assert adapter.idempotency_keys == [f"mission:{mission.id}"]
 
 
 def test_run_mission_records_explicit_provider_resolution(

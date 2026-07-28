@@ -36,6 +36,8 @@ class TrainOnlyAdapter(ProviderAdapter):
         self,
         option: ProviderOption,
         mission: Mission,
+        *,
+        idempotency_key: str,
     ) -> ReservationResult:
         raise NotImplementedError
 
