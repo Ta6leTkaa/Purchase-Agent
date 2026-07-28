@@ -6,6 +6,7 @@ from app.adapters.base import ProviderAdapter
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionType
 from app.domain.provider import (
+    CancellationResult,
     ConfirmationResult,
     ProviderOption,
     ProviderOptionType,
@@ -29,6 +30,8 @@ class MockTrainAdapter(ProviderAdapter):
     def __init__(self) -> None:
         self._reservations_by_key: dict[str, ReservationResult] = {}
         self._confirmations_by_key: dict[str, ConfirmationResult] = {}
+        self._cancellations_by_key: dict[str, CancellationResult] = {}
+        self._cancelled_reservation_ids: set[str] = set()
 
     @property
     def provider_id(self) -> str:
@@ -137,15 +140,47 @@ class MockTrainAdapter(ProviderAdapter):
             result.reservation_id
             for result in self._reservations_by_key.values()
         }
+        is_confirmable = (
+            reservation_id in reserved_ids
+            and reservation_id not in self._cancelled_reservation_ids
+        )
         result = ConfirmationResult(
-            success=reservation_id in reserved_ids,
+            success=is_confirmable,
             message=(
                 "Mock reservation confirmed."
+                if is_confirmable
+                else "Mock reservation is unavailable for confirmation."
+            ),
+        )
+        self._confirmations_by_key[idempotency_key] = result
+        return result
+
+    async def cancel_reservation(
+        self,
+        reservation_id: str,
+        mission: Mission,
+        *,
+        idempotency_key: str,
+    ) -> CancellationResult:
+        existing = self._cancellations_by_key.get(idempotency_key)
+        if existing is not None:
+            return existing
+
+        reserved_ids = {
+            result.reservation_id
+            for result in self._reservations_by_key.values()
+        }
+        result = CancellationResult(
+            success=reservation_id in reserved_ids,
+            message=(
+                "Mock reservation cancelled."
                 if reservation_id in reserved_ids
                 else "Mock reservation was not found."
             ),
         )
-        self._confirmations_by_key[idempotency_key] = result
+        if result.success:
+            self._cancelled_reservation_ids.add(reservation_id)
+        self._cancellations_by_key[idempotency_key] = result
         return result
 
     def _build_option(

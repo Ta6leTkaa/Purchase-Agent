@@ -16,15 +16,18 @@ from app.domain.mission import (
     TrainConstraints,
 )
 from app.domain.provider import (
+    CancellationResult,
     ConfirmationResult,
     ProviderOption,
     ReservationResult,
 )
 from app.services.mission_engine import (
+    InvalidMissionCancellationError,
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
     MissionNotReadyError,
     UnsupportedMissionTypeError,
+    cancel_mission,
     confirm_mission,
     run_mission,
 )
@@ -678,6 +681,111 @@ def test_confirm_mission_marks_failed_when_provider_confirmation_fails(
         "provider_id": adapter.provider_id,
         "operation": "confirmation",
     }
+
+
+def test_cancel_waiting_mission_does_not_call_a_provider(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    _identity_repository, mission_repository = repositories
+    mission = create_mission(mission_repository, [uuid4()])
+    mission.status = MissionStatus.waiting
+    asyncio.run(mission_repository.update(mission))
+
+    updated_mission = asyncio.run(cancel_mission(mission.id, mission_repository))
+
+    assert updated_mission.status is MissionStatus.cancelled
+    assert updated_mission.execution_log[-1].type == "mission_cancelled"
+
+
+def test_cancel_mission_cancels_provider_reservation_before_transition(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    adapter = MockTrainAdapter()
+    registry = ProviderRegistry([adapter])
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    running_mission = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            ProviderResolver(registry),
+        )
+    )
+
+    updated_mission = asyncio.run(
+        cancel_mission(running_mission.id, mission_repository, registry)
+    )
+    event_types = [event.type for event in updated_mission.execution_log]
+
+    assert updated_mission.status is MissionStatus.cancelled
+    assert event_types[-3:] == [
+        "cancellation_started",
+        "cancellation_succeeded",
+        "mission_cancelled",
+    ]
+
+
+def test_cancel_mission_marks_failed_when_provider_cancellation_fails(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    class FailingCancellationAdapter(MockTrainAdapter):
+        async def cancel_reservation(
+            self,
+            reservation_id: str,
+            mission: Mission,
+            *,
+            idempotency_key: str,
+        ) -> CancellationResult:
+            raise ProviderOperationError(
+                provider_id=self.provider_id,
+                operation="cancellation",
+            )
+
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    adapter = FailingCancellationAdapter()
+    registry = ProviderRegistry([adapter])
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    running_mission = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            ProviderResolver(registry),
+        )
+    )
+
+    updated_mission = asyncio.run(
+        cancel_mission(running_mission.id, mission_repository, registry)
+    )
+
+    assert updated_mission.status is MissionStatus.failed
+    assert updated_mission.execution_log[-1].type == "provider_operation_failed"
+    assert updated_mission.execution_log[-1].metadata == {
+        "provider_id": adapter.provider_id,
+        "operation": "cancellation",
+    }
+
+
+def test_cancel_processing_mission_is_rejected(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    _identity_repository, mission_repository = repositories
+    mission = create_mission(mission_repository, [uuid4()])
+    mission.status = MissionStatus.processing
+    mission.claimed_at = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
+    asyncio.run(mission_repository.update(mission))
+
+    with pytest.raises(InvalidMissionCancellationError, match="processing"):
+        asyncio.run(cancel_mission(mission.id, mission_repository))
 
 
 def test_confirm_created_mission_raises_invalid_confirmation_error(

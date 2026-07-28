@@ -36,6 +36,10 @@ class InvalidMissionConfirmationError(Exception):
     pass
 
 
+class InvalidMissionCancellationError(Exception):
+    pass
+
+
 class InvalidMissionRunError(Exception):
     pass
 
@@ -306,6 +310,39 @@ async def confirm_mission(
     return await mission_repository.update(mission)
 
 
+async def cancel_mission(
+    mission_id: UUID,
+    mission_repository: MissionRepository,
+    registry: ProviderRegistry | None = None,
+) -> Mission:
+    mission = await mission_repository.get(mission_id)
+    if mission is None:
+        raise MissionNotFoundError
+
+    if mission.status not in {
+        MissionStatus.created,
+        MissionStatus.waiting,
+        MissionStatus.requires_confirmation,
+    }:
+        raise InvalidMissionCancellationError(
+            "Mission cannot be cancelled from status "
+            f"'{mission.status.value}'"
+        )
+
+    if mission.status is MissionStatus.requires_confirmation:
+        cancellation_succeeded = await _cancel_provider_reservation(
+            mission,
+            mission_repository,
+            registry or provider_registry,
+        )
+        if not cancellation_succeeded:
+            return mission
+
+    MissionStateMachine().transition(mission, MissionStatus.cancelled)
+    _add_event(mission, "mission_cancelled", "Mission cancelled.")
+    return await mission_repository.update(mission)
+
+
 async def _get_participants(
     mission: Mission,
     identity_repository: IdentityRepository,
@@ -339,6 +376,67 @@ async def _fail_provider_operation(
     return await mission_repository.update(mission)
 
 
+async def _cancel_provider_reservation(
+    mission: Mission,
+    mission_repository: MissionRepository,
+    registry: ProviderRegistry,
+) -> bool:
+    try:
+        requires_provider_confirmation = _requires_provider_confirmation(mission)
+    except InvalidMissionConfirmationError as exc:
+        raise InvalidMissionCancellationError(str(exc)) from exc
+    if not requires_provider_confirmation:
+        return True
+    assert mission.resolved_provider_id is not None
+    assert mission.reservation_id is not None
+    try:
+        adapter = registry.get(mission.resolved_provider_id)
+    except UnknownProviderError as exc:
+        raise InvalidMissionCancellationError(
+            "The provider for this reservation is unavailable"
+        ) from exc
+
+    _add_event(
+        mission,
+        "cancellation_started",
+        "Reservation cancellation started.",
+    )
+    try:
+        cancellation_result = await adapter.cancel_reservation(
+            mission.reservation_id,
+            mission,
+            idempotency_key=_cancellation_idempotency_key(mission),
+        )
+    except ProviderOperationError:
+        await _fail_provider_operation(
+            mission,
+            mission_repository,
+            MissionStateMachine(),
+            provider_id=adapter.provider_id,
+            operation="cancellation",
+        )
+        return False
+
+    if not cancellation_result.success:
+        MissionStateMachine().transition(mission, MissionStatus.failed)
+        _add_event(
+            mission,
+            "cancellation_failed",
+            "Reservation cancellation failed.",
+            {"provider_id": adapter.provider_id},
+        )
+        await mission_repository.update(mission)
+        return False
+
+    _add_event(
+        mission,
+        "cancellation_succeeded",
+        "Reservation cancelled.",
+        {"provider_id": adapter.provider_id},
+    )
+    return True
+
+
 def _add_event(
     mission: Mission,
     event_type: str,
@@ -369,6 +467,10 @@ def _reservation_idempotency_key(mission: Mission) -> str:
 
 def _confirmation_idempotency_key(mission: Mission) -> str:
     return f"mission:{mission.id}:confirmation"
+
+
+def _cancellation_idempotency_key(mission: Mission) -> str:
+    return f"mission:{mission.id}:cancellation"
 
 
 def _requires_provider_confirmation(mission: Mission) -> bool:

@@ -719,6 +719,48 @@ def test_post_mission_confirm_twice_returns_409() -> None:
     assert response.status_code == 409
 
 
+def test_post_mission_cancel_returns_cancelled_and_replays_idempotently() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+    mission_id = client.post("/missions", json=payload).json()["id"]
+    headers = {"Idempotency-Key": "cancel-created-key"}
+
+    first_response = client.post(
+        f"/missions/{mission_id}/cancel",
+        headers=headers,
+    )
+    second_response = client.post(
+        f"/missions/{mission_id}/cancel",
+        headers=headers,
+    )
+
+    assert first_response.status_code == 200
+    assert first_response.json()["status"] == "cancelled"
+    assert second_response.status_code == 200
+    assert second_response.json() == first_response.json()
+
+
+def test_post_mission_cancel_cancels_provider_reservation() -> None:
+    client = TestClient(app)
+    mission_id = create_requires_confirmation_mission(client)
+
+    response = client.post(
+        f"/missions/{mission_id}/cancel",
+        headers={"Idempotency-Key": "cancel-reservation-key"},
+    )
+    event_types = [event["type"] for event in response.json()["execution_log"]]
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert event_types[-3:] == [
+        "cancellation_started",
+        "cancellation_succeeded",
+        "mission_cancelled",
+    ]
+
+
 def test_post_completed_mission_run_returns_409() -> None:
     client = TestClient(app)
     mission_id = create_requires_confirmation_mission(client)

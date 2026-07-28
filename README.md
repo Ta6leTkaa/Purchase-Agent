@@ -923,3 +923,17 @@ a stable confirmation idempotency key. The Mission records
 Legacy Mission records that predate reservation metadata remain confirmable with
 the previous local-only transition. New reservation flows always use the
 provider confirmation boundary.
+
+## Mission cancellation
+
+`POST /missions/{id}/cancel` performs one idempotent cancellation command and
+requires an `Idempotency-Key` header. Missions in `created` or `waiting` move
+directly to `cancelled`; no provider is contacted. A Mission awaiting user
+confirmation first cancels its persisted reservation through the provider named
+by `resolved_provider_id`, using a stable provider cancellation idempotency key,
+then moves to `cancelled`.
+
+Cancellation is intentionally unavailable while a Mission is `processing` or
+in any terminal state. Provider cancellation events are retained in the audit
+log. An expected provider cancellation failure is recorded safely and marks the
+Mission `failed`, following the existing provider-operation failure policy.

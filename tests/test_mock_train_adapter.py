@@ -150,6 +150,47 @@ def test_confirm_reservation_is_idempotent_for_same_key() -> None:
     assert second == first
 
 
+def test_cancel_reservation_is_idempotent_and_prevents_confirmation() -> None:
+    adapter = MockTrainAdapter()
+    mission = make_mission()
+    option = asyncio.run(adapter.search_options(mission, []))[0]
+    reservation = asyncio.run(
+        adapter.reserve_option(
+            option,
+            mission,
+            idempotency_key=f"mission:{mission.id}",
+        )
+    )
+    assert reservation.reservation_id is not None
+    cancellation_key = f"mission:{mission.id}:cancellation"
+
+    first = asyncio.run(
+        adapter.cancel_reservation(
+            reservation.reservation_id,
+            mission,
+            idempotency_key=cancellation_key,
+        )
+    )
+    second = asyncio.run(
+        adapter.cancel_reservation(
+            reservation.reservation_id,
+            mission,
+            idempotency_key=cancellation_key,
+        )
+    )
+    confirmation = asyncio.run(
+        adapter.confirm_reservation(
+            reservation.reservation_id,
+            mission,
+            idempotency_key=f"mission:{mission.id}:confirmation",
+        )
+    )
+
+    assert first.success is True
+    assert second == first
+    assert confirmation.success is False
+
+
 def test_unknown_provider_raises_unknown_provider_error() -> None:
     with pytest.raises(UnknownProviderError):
         get_adapter("unknown")

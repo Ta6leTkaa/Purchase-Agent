@@ -64,3 +64,8 @@ class ReservationResult(BaseModel):
 class ConfirmationResult(BaseModel):
     success: bool
     message: str
+
+
+class CancellationResult(BaseModel):
+    success: bool
+    message: str

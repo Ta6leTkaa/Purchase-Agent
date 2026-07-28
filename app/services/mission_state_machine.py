@@ -12,10 +12,12 @@ class MissionStateMachine:
         MissionStatus.created: {
             MissionStatus.waiting,
             MissionStatus.running,
+            MissionStatus.cancelled,
         },
         MissionStatus.waiting: {
             MissionStatus.processing,
             MissionStatus.running,
+            MissionStatus.cancelled,
         },
         MissionStatus.processing: {
             MissionStatus.requires_confirmation,
@@ -42,9 +44,11 @@ class MissionStateMachine:
         MissionStatus.requires_confirmation: {
             MissionStatus.completed,
             MissionStatus.failed,
+            MissionStatus.cancelled,
         },
         MissionStatus.completed: set(),
         MissionStatus.failed: set(),
+        MissionStatus.cancelled: set(),
     }
 
     def transition(

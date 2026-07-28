@@ -241,6 +241,51 @@ async def test_mission_confirmation_persists_completed_status(
     ]
 
 
+async def test_mission_cancellation_persists_provider_cancellation(
+    mission_execution_client: tuple[AsyncClient, list[str]],
+    test_session: AsyncSession,
+    test_engine: AsyncEngine,
+) -> None:
+    client, transaction_events = mission_execution_client
+    identities = [make_identity() for _ in range(4)]
+    mission = make_mission(
+        participant_ids=[identity.id for identity in identities],
+    )
+    await create_execution_data(test_session, identities, mission)
+
+    run_response = await client.post(
+        f"/missions/{mission.id}/run",
+        headers={"Idempotency-Key": "postgres-run-cancel-key"},
+    )
+    cancel_response = await client.post(
+        f"/missions/{mission.id}/cancel",
+        headers={"Idempotency-Key": "postgres-cancel-key"},
+    )
+
+    assert run_response.status_code == 200
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "cancelled"
+    assert_event_types_contain(
+        cancel_response.json()["execution_log"],
+        [
+            "cancellation_started",
+            "cancellation_succeeded",
+            "mission_cancelled",
+        ],
+    )
+    assert "mission_commit" in transaction_events
+
+    persisted_mission = await load_mission(test_engine, mission.id)
+
+    assert persisted_mission is not None
+    assert persisted_mission.status is MissionStatus.cancelled
+    assert [event.type for event in persisted_mission.execution_log][-3:] == [
+        "cancellation_started",
+        "cancellation_succeeded",
+        "mission_cancelled",
+    ]
+
+
 async def test_mission_rerun_is_rejected_without_persistence_changes(
     mission_execution_client: tuple[AsyncClient, list[str]],
     test_session: AsyncSession,

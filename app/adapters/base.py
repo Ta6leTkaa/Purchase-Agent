@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionType
 from app.domain.provider import (
+    CancellationResult,
     ConfirmationResult,
     ProviderOption,
     ReservationResult,
@@ -61,5 +62,16 @@ class ProviderAdapter(ABC):
         idempotency_key: str,
     ) -> ConfirmationResult:
         """Confirm a reservation or raise ProviderOperationError."""
+
+        raise NotImplementedError
+
+    async def cancel_reservation(
+        self,
+        reservation_id: str,
+        mission: Mission,
+        *,
+        idempotency_key: str,
+    ) -> CancellationResult:
+        """Cancel a reservation or raise ProviderOperationError."""
 
         raise NotImplementedError

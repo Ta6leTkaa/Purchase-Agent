@@ -6,6 +6,7 @@ from uuid import UUID
 class MissionCommandType(StrEnum):
     RUN = "run"
     CONFIRM = "confirm"
+    CANCEL = "cancel"
 
 
 class MissionCommandIdempotencyConflictError(Exception):

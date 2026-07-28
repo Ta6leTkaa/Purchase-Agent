@@ -35,9 +35,11 @@ from app.services.mission_command_idempotency import (
     MissionCommandType,
 )
 from app.services.mission_engine import (
+    InvalidMissionCancellationError,
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
     MissionNotReadyError,
+    cancel_mission,
     confirm_mission,
     run_mission,
 )
@@ -458,6 +460,46 @@ async def confirm_mission_endpoint(
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except InvalidMissionConfirmationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MissionCommandIdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail="Idempotency key conflict") from exc
+    except MissionCommandInProgressError as exc:
+        raise HTTPException(status_code=409, detail="Command is in progress") from exc
+
+
+@router.post(
+    "/{mission_id}/cancel",
+    summary="Cancel mission",
+    description=(
+        "Cancels a Mission and requires an Idempotency-Key header. "
+        "Reserved Missions are cancelled with their resolved provider first."
+    ),
+)
+async def cancel_mission_endpoint(
+    mission_id: UUID,
+    mission_repository: MissionRepositoryDep,
+    provider_registry: ProviderRegistryDep,
+    idempotency_store: MissionCommandIdempotencyStoreDep,
+    idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1)
+    ],
+) -> Mission:
+    try:
+        return await _execute_idempotent_mission_command(
+            mission_id=mission_id,
+            command=MissionCommandType.CANCEL,
+            idempotency_key=idempotency_key,
+            idempotency_store=idempotency_store,
+            mission_repository=mission_repository,
+            execute=lambda: cancel_mission(
+                mission_id,
+                mission_repository,
+                provider_registry,
+            ),
+        )
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    except InvalidMissionCancellationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except MissionCommandIdempotencyConflictError as exc:
         raise HTTPException(status_code=409, detail="Idempotency key conflict") from exc

@@ -37,6 +37,7 @@ class MissionStatus(StrEnum):
     requires_confirmation = "requires_confirmation"
     completed = "completed"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 class TrainConstraints(BaseModel):
