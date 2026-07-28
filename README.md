@@ -890,4 +890,6 @@ interrupted attempt; it does not add automatic retry or fallback behavior.
 
 When a provider succeeds, its external `reservation_id` is persisted on the
 Mission and on the completed execution attempt. It is read-only execution
-metadata: Mission creation requests cannot set it.
+metadata: Mission creation requests cannot set it. The execution log also
+records a `reservation_succeeded` event with the reservation ID and whether
+user confirmation is required.

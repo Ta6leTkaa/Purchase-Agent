@@ -188,6 +188,15 @@ async def run_mission(
         return await mission_repository.update(mission)
 
     mission.reservation_id = reservation_result.reservation_id
+    _add_event(
+        mission,
+        "reservation_succeeded",
+        "Reservation succeeded.",
+        {
+            "reservation_id": reservation_result.reservation_id,
+            "requires_confirmation": reservation_result.requires_confirmation,
+        },
+    )
 
     if reservation_result.requires_confirmation:
         state_machine.transition(mission, MissionStatus.requires_confirmation)

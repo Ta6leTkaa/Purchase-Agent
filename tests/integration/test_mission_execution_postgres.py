@@ -118,6 +118,7 @@ async def test_mission_execution_flow_persists_result_to_postgres(
             "options_found",
             "best_option_selected",
             "reservation_started",
+            "reservation_succeeded",
             "waiting_for_user_confirmation",
         ],
     )
@@ -156,6 +157,7 @@ async def test_mission_execution_flow_persists_result_to_postgres(
             "options_found",
             "best_option_selected",
             "reservation_started",
+            "reservation_succeeded",
             "waiting_for_user_confirmation",
         ],
     )

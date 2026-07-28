@@ -97,6 +97,15 @@ def test_run_mission_sets_requires_confirmation_and_selects_best_option(
     assert updated_mission.best_option.train_number == "001A"
     assert updated_mission.resolved_provider_id == "mock_train"
     assert updated_mission.reservation_id == f"mock-reservation-mission:{mission.id}"
+    reservation_event = next(
+        event
+        for event in updated_mission.execution_log
+        if event.type == "reservation_succeeded"
+    )
+    assert reservation_event.metadata == {
+        "reservation_id": f"mock-reservation-mission:{mission.id}",
+        "requires_confirmation": True,
+    }
     resolution_event = updated_mission.execution_log[0]
     assert resolution_event.type == "provider_resolved"
     assert resolution_event.metadata == {
@@ -346,6 +355,7 @@ def test_run_mission_adds_execution_events(
     assert "options_found" in event_types
     assert "best_option_selected" in event_types
     assert "reservation_started" in event_types
+    assert "reservation_succeeded" in event_types
     assert "waiting_for_user_confirmation" in event_types
 
 

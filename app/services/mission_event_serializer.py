@@ -89,6 +89,7 @@ class PydanticMissionEventSerializer:
             "participant_missing",
             "reservation_failed",
             "reservation_started",
+            "reservation_succeeded",
             "search_started",
             "waiting_for_user_confirmation",
         }
