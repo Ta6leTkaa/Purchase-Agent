@@ -12,6 +12,10 @@ from app.domain.mission import (
     TrainTicketMissionPayload,
     TrainConstraints,
 )
+from app.domain.execution_attempt import (
+    MissionExecutionAttempt,
+    MissionExecutionAttemptStatus,
+)
 from app.domain.provider_id import normalize_provider_id
 from app.domain.provider_resolution import (
     ProviderResolutionFailedEventPayload,
@@ -139,6 +143,48 @@ class MissionProviderResolutionIncrementResponse(BaseModel):
                     payload=item.payload,
                 )
                 for item in increment.items
+            ),
+        )
+
+
+class MissionExecutionAttemptResponse(BaseModel):
+    id: UUID
+    attempt_number: int
+    status: MissionExecutionAttemptStatus
+    claimed_at: datetime
+    finished_at: datetime | None
+    resolved_provider_id: str | None
+
+    @classmethod
+    def from_domain(
+        cls,
+        attempt: MissionExecutionAttempt,
+    ) -> "MissionExecutionAttemptResponse":
+        return cls(
+            id=attempt.id,
+            attempt_number=attempt.attempt_number,
+            status=attempt.status,
+            claimed_at=attempt.claimed_at,
+            finished_at=attempt.finished_at,
+            resolved_provider_id=attempt.resolved_provider_id,
+        )
+
+
+class MissionExecutionAttemptHistoryResponse(BaseModel):
+    mission_id: UUID
+    items: tuple[MissionExecutionAttemptResponse, ...]
+
+    @classmethod
+    def from_domain(
+        cls,
+        mission_id: UUID,
+        attempts: list[MissionExecutionAttempt],
+    ) -> "MissionExecutionAttemptHistoryResponse":
+        return cls(
+            mission_id=mission_id,
+            items=tuple(
+                MissionExecutionAttemptResponse.from_domain(attempt)
+                for attempt in attempts
             ),
         )
 

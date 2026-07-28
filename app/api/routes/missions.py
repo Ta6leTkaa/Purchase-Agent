@@ -19,6 +19,7 @@ from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.schemas.mission import (
     MissionCreate,
+    MissionExecutionAttemptHistoryResponse,
     MissionProviderResolutionHistoryResponse,
     MissionProviderResolutionIncrementResponse,
     MissionProviderResolutionPreviewResponse,
@@ -134,6 +135,33 @@ async def get_mission(
     if mission is None:
         raise HTTPException(status_code=404, detail="Mission not found")
     return mission
+
+
+@router.get(
+    "/{mission_id}/execution-attempts",
+    response_model=MissionExecutionAttemptHistoryResponse,
+    summary="Get mission execution attempts",
+    description=(
+        "Returns the immutable audit records created by successful due-mission "
+        "claims. This read-only endpoint does not execute, recover, or modify "
+        "the mission."
+    ),
+    responses={
+        404: {"description": "Mission not found"},
+    },
+)
+async def get_mission_execution_attempts_endpoint(
+    mission_id: UUID,
+    repository: MissionRepositoryDep,
+) -> MissionExecutionAttemptHistoryResponse:
+    mission = await repository.get(mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    attempts = await repository.list_execution_attempts(mission_id)
+    return MissionExecutionAttemptHistoryResponse.from_domain(
+        mission_id,
+        attempts,
+    )
 
 
 @router.get(

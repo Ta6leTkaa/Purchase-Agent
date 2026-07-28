@@ -16,6 +16,7 @@ from app.adapters.mock_train import MockTrainAdapter
 from app.adapters.registry import ProviderRegistry
 from app.db.base import Base
 from app.domain.execution import ExecutionEvent
+from app.domain.execution_attempt import MissionExecutionAttemptStatus
 from app.domain.mission import (
     FallbackRules,
     Mission,
@@ -337,6 +338,17 @@ def test_claim_due_commits_processing_status() -> None:
     asyncio.run(scenario())
 
 
+def test_claim_due_creates_execution_attempt_audit_record() -> None:
+    async def scenario() -> None:
+        await with_repository(
+            lambda repository, session: _claim_creates_execution_attempt(
+                repository
+            )
+        )
+
+    asyncio.run(scenario())
+
+
 async def with_repository(
     callback: Callable[
         [SqlAlchemyMissionRepository, AsyncSession],
@@ -561,6 +573,27 @@ async def _claim_due_filters_orders_limits(
     assert loaded_future_mission.claimed_at is None
     assert loaded_created_mission is not None
     assert loaded_created_mission.claimed_at is None
+
+
+async def _claim_creates_execution_attempt(
+    repository: SqlAlchemyMissionRepository,
+) -> None:
+    current_time = aware_datetime()
+    mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=current_time,
+    )
+    await repository.create(mission)
+
+    claimed = await repository.claim_due(current_time)
+    attempts = await repository.list_execution_attempts(mission.id)
+
+    assert [attempt.attempt_number for attempt in attempts] == [1]
+    assert attempts[0].status is MissionExecutionAttemptStatus.processing
+    assert attempts[0].claimed_at == current_time
+    assert attempts[0].finished_at is None
+    assert attempts[0].resolved_provider_id is None
+    assert claimed[0].execution_attempts == 1
 
 
 async def _claim_due_does_not_claim_twice(

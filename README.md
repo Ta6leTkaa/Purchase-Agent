@@ -863,6 +863,15 @@ stale claim. The audit record preserves the attempt number, claim time, final
 outcome, and resolved provider when one was selected.
 
 This history is diagnostic metadata only. It does not add a retry policy,
-backoff, automatic scheduling, or a new public API. Existing Missions are not
-backfilled with invented attempt records; auditing starts with claims made
-after the migration.
+backoff, or automatic scheduling. Existing Missions are not backfilled with
+invented attempt records; auditing starts with claims made after the migration.
+
+Attempt records are available through the read-only API:
+
+```bash
+curl http://127.0.0.1:8000/missions/{mission_id}/execution-attempts
+```
+
+The response is ordered by attempt number and contains claim time, terminal
+outcome when available, and the resolved provider. Reading it never executes
+or changes a Mission.
