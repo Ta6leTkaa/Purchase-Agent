@@ -7,7 +7,44 @@ from pydantic import ValidationError
 from app.domain.execution import ExecutionEvent
 from app.domain.identity import Document, DocumentType, Identity
 from app.domain.mission import Mission, MissionStatus, MissionType, TrainConstraints
-from app.domain.provider import ProviderOption, ProviderOptionType, Seat, SeatBerth
+from app.domain.provider import (
+    ProviderOption,
+    ProviderOptionType,
+    ReservationResult,
+    Seat,
+    SeatBerth,
+)
+
+
+def test_successful_reservation_requires_normalized_identifier() -> None:
+    result = ReservationResult(
+        success=True,
+        reservation_id="  provider-reservation-123  ",
+        message="Reservation created.",
+    )
+
+    assert result.reservation_id == "provider-reservation-123"
+
+
+@pytest.mark.parametrize("reservation_id", [None, "", "   "])
+def test_successful_reservation_rejects_missing_or_blank_identifier(
+    reservation_id: str | None,
+) -> None:
+    with pytest.raises(ValidationError):
+        ReservationResult(
+            success=True,
+            reservation_id=reservation_id,
+            message="Reservation created.",
+        )
+
+
+def test_failed_reservation_cannot_include_identifier() -> None:
+    with pytest.raises(ValidationError, match="failed reservation"):
+        ReservationResult(
+            success=False,
+            reservation_id="provider-reservation-123",
+            message="Reservation declined.",
+        )
 
 
 def test_create_identity_with_document() -> None:

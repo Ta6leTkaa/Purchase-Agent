@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class SeatBerth(str, Enum):
@@ -41,3 +41,21 @@ class ReservationResult(BaseModel):
     reservation_id: str | None = None
     requires_confirmation: bool = True
     message: str
+
+    @field_validator("reservation_id")
+    @classmethod
+    def normalize_reservation_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("reservation_id must be a non-empty string")
+        return normalized_value
+
+    @model_validator(mode="after")
+    def validate_reservation_outcome(self) -> "ReservationResult":
+        if self.success and self.reservation_id is None:
+            raise ValueError("successful reservation requires reservation_id")
+        if not self.success and self.reservation_id is not None:
+            raise ValueError("failed reservation must not include reservation_id")
+        return self

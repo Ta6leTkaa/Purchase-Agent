@@ -888,11 +888,11 @@ repeated reserve calls with that key as the same logical reservation. This
 protects the external reservation boundary when execution is retried after an
 interrupted attempt; it does not add automatic retry or fallback behavior.
 
-When a provider succeeds, its external `reservation_id` is persisted on the
-Mission and on the completed execution attempt. It is read-only execution
-metadata: Mission creation requests cannot set it. The execution log also
-records a `reservation_succeeded` event with the reservation ID and whether
-user confirmation is required.
+Every successful provider reservation must include a non-empty external
+`reservation_id`. It is persisted on the Mission and on the completed execution
+attempt as read-only execution metadata; Mission creation requests cannot set
+it. The execution log also records a `reservation_succeeded` event with the
+reservation ID and whether user confirmation is required.
 
 Adapters report expected search and reservation failures with
 `ProviderOperationError`. Mission Engine records a safe
