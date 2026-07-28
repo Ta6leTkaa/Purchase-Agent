@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Iterator
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -259,7 +259,7 @@ def test_run_waiting_mission_before_scheduled_time_is_rejected(
 ) -> None:
     identity_repository, mission_repository = repositories
     identities = [create_identity(identity_repository) for _ in range(4)]
-    current_time = datetime(2026, 7, 16, 10, 0, tzinfo=timezone.utc)
+    current_time = datetime(2026, 7, 16, 10, 0, tzinfo=UTC)
     mission = create_mission(
         mission_repository,
         [identity.id for identity in identities],
@@ -289,7 +289,7 @@ def test_run_waiting_mission_after_scheduled_time_is_allowed(
 ) -> None:
     identity_repository, mission_repository = repositories
     identities = [create_identity(identity_repository) for _ in range(4)]
-    current_time = datetime(2026, 7, 16, 10, 0, tzinfo=timezone.utc)
+    current_time = datetime(2026, 7, 16, 10, 0, tzinfo=UTC)
     mission = create_mission(
         mission_repository,
         [identity.id for identity in identities],
@@ -320,7 +320,7 @@ def test_run_processing_mission_is_allowed_for_processor(
         [identity.id for identity in identities],
     )
     mission.status = MissionStatus.processing
-    mission.claimed_at = datetime.now(timezone.utc)
+    mission.claimed_at = datetime.now(UTC)
     asyncio.run(mission_repository.update(mission))
 
     updated_mission = asyncio.run(

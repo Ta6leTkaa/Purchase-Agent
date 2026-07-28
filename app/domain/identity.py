@@ -1,11 +1,11 @@
 from datetime import date
-from enum import Enum
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel
 
 
-class DocumentType(str, Enum):
+class DocumentType(StrEnum):
     internal_passport = "internal_passport"
     international_passport = "international_passport"
     birth_certificate = "birth_certificate"

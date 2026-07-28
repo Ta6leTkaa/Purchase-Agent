@@ -1,7 +1,6 @@
+from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
-
-from enum import StrEnum
 
 
 class MissionCommandType(StrEnum):

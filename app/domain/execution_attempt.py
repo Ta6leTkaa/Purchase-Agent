@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.domain.provider_id import normalize_provider_id
 
 
-class MissionExecutionAttemptStatus(str, Enum):
+class MissionExecutionAttemptStatus(StrEnum):
     processing = "processing"
     requires_confirmation = "requires_confirmation"
     completed = "completed"

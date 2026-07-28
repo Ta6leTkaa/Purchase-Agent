@@ -1,12 +1,12 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator, model_validator
 
 
-class SeatBerth(str, Enum):
+class SeatBerth(StrEnum):
     lower = "lower"  # type: ignore[assignment]
     upper = "upper"  # type: ignore[assignment]
 
@@ -19,7 +19,7 @@ class Seat(BaseModel):
     near_toilet: bool = False
 
 
-class ProviderOptionType(str, Enum):
+class ProviderOptionType(StrEnum):
     train_option = "train_option"
 
 

@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -342,4 +342,4 @@ def make_mission(
 
 
 def aware_datetime() -> datetime:
-    return datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    return datetime(2026, 8, 1, 10, 0, tzinfo=UTC)

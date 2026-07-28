@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -8,19 +8,19 @@ from app.domain.mission import Mission, MissionType
 from app.domain.provider_id import normalize_provider_id
 
 
-class ProviderSelectionMode(str, Enum):
+class ProviderSelectionMode(StrEnum):
     explicit = "explicit"
     automatic = "automatic"
 
 
-class ProviderResolutionFailureReason(str, Enum):
+class ProviderResolutionFailureReason(StrEnum):
     unknown_provider = "unknown_provider"
     unsupported_mission_type = "unsupported_mission_type"
     no_supporting_provider = "no_supporting_provider"
     ambiguous_provider = "ambiguous_provider"
 
 
-class ProviderResolutionPreviewOutcome(str, Enum):
+class ProviderResolutionPreviewOutcome(StrEnum):
     resolved = "resolved"
     unknown_provider = "unknown_provider"
     unsupported_mission_type = "unsupported_mission_type"

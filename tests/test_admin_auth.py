@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +14,7 @@ from app.dependencies import (
 )
 from app.main import app
 
-CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
 ADMIN_ENDPOINTS = [
     "/admin/missions/process-due",
     "/admin/missions/recover-stale",

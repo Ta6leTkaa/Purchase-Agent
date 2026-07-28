@@ -1,17 +1,17 @@
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Annotated, TypeAlias
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response
 
 from app.dependencies import (
     get_identity_repository,
-    get_mission_repository,
     get_mission_command_idempotency_store,
     get_mission_provider_resolution_history,
     get_mission_provider_resolution_increment,
     get_mission_provider_resolution_preview,
+    get_mission_repository,
     get_provider_resolver,
     get_set_mission_provider,
 )
@@ -47,12 +47,12 @@ from app.services.mission_provider_selection import (
 from app.services.provider_resolution_history import (
     DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT,
     DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
-    GetMissionProviderResolutionHistory,
-    GetMissionProviderResolutionIncrement,
-    InvalidProviderHistoryCursorError,
     MAX_PROVIDER_HISTORY_INCREMENT_LIMIT,
     MAX_PROVIDER_HISTORY_PAGE_SIZE,
     MAX_PROVIDER_HISTORY_WAIT_SECONDS,
+    GetMissionProviderResolutionHistory,
+    GetMissionProviderResolutionIncrement,
+    InvalidProviderHistoryCursorError,
     ProviderHistoryCursorCodec,
     ProviderResolutionHistoryPageRequest,
     ProviderResolutionIncrementRequest,
@@ -63,35 +63,35 @@ from app.services.provider_resolution_preview import (
 from app.services.provider_resolver import ProviderResolver
 
 router = APIRouter(prefix="/missions", tags=["missions"])
-MissionRepositoryDep: TypeAlias = Annotated[
+type MissionRepositoryDep = Annotated[
     MissionRepository,
     Depends(get_mission_repository),
 ]
-IdentityRepositoryDep: TypeAlias = Annotated[
+type IdentityRepositoryDep = Annotated[
     IdentityRepository,
     Depends(get_identity_repository),
 ]
-ProviderResolverDep: TypeAlias = Annotated[
+type ProviderResolverDep = Annotated[
     ProviderResolver,
     Depends(get_provider_resolver),
 ]
-SetMissionProviderDep: TypeAlias = Annotated[
+type SetMissionProviderDep = Annotated[
     SetMissionProvider,
     Depends(get_set_mission_provider),
 ]
-ProviderResolutionPreviewDep: TypeAlias = Annotated[
+type ProviderResolutionPreviewDep = Annotated[
     PreviewMissionProviderResolution,
     Depends(get_mission_provider_resolution_preview),
 ]
-ProviderResolutionHistoryDep: TypeAlias = Annotated[
+type ProviderResolutionHistoryDep = Annotated[
     GetMissionProviderResolutionHistory,
     Depends(get_mission_provider_resolution_history),
 ]
-ProviderResolutionIncrementDep: TypeAlias = Annotated[
+type ProviderResolutionIncrementDep = Annotated[
     GetMissionProviderResolutionIncrement,
     Depends(get_mission_provider_resolution_increment),
 ]
-MissionCommandIdempotencyStoreDep: TypeAlias = Annotated[
+type MissionCommandIdempotencyStoreDep = Annotated[
     MissionCommandIdempotencyStore,
     Depends(get_mission_command_idempotency_store),
 ]

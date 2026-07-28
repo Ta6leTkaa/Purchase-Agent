@@ -1,6 +1,6 @@
 import io
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,7 +20,7 @@ from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
-CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
 
 
 async def test_cli_process_due_persists_postgres_updates(

@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.db.base import Base
 from app.db import models as _models  # noqa: F401
+from app.db.base import Base
 
 
 @pytest.fixture(scope="session")

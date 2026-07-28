@@ -5,7 +5,7 @@ import json
 from collections.abc import AsyncIterator, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
@@ -33,7 +33,7 @@ PROVIDER_HISTORY_POLL_INTERVAL = timedelta(milliseconds=500)
 _CURSOR_VERSION = 1
 
 
-class ProviderHistoryEventType(str, Enum):
+class ProviderHistoryEventType(StrEnum):
     provider_selection_changed = "provider_selection_changed"
     provider_resolved = "provider_resolved"
     provider_resolution_failed = "provider_resolution_failed"

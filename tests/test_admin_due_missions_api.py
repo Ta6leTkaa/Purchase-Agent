@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Iterator
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,7 +19,7 @@ from app.domain.mission import (
 )
 from app.main import app
 
-CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
 ADMIN_HEADERS = {"X-Admin-API-Key": "test-admin-key"}
 
 

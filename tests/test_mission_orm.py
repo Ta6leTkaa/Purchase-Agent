@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from app.db.base import Base
@@ -112,7 +112,7 @@ def test_best_option_survives_round_trip() -> None:
 
 
 def test_scheduled_at_survives_round_trip() -> None:
-    scheduled_at = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+    scheduled_at = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
     mission = make_mission(scheduled_at=scheduled_at)
     model = mission_to_model(mission)
 
@@ -123,7 +123,7 @@ def test_scheduled_at_survives_round_trip() -> None:
 
 
 def test_claimed_at_survives_round_trip() -> None:
-    claimed_at = datetime(2026, 8, 1, 12, 30, tzinfo=timezone.utc)
+    claimed_at = datetime(2026, 8, 1, 12, 30, tzinfo=UTC)
     mission = make_mission(
         status=MissionStatus.processing,
         claimed_at=claimed_at,

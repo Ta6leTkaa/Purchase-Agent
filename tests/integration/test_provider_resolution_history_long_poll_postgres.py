@@ -1,7 +1,6 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta, timezone
-from typing import Awaitable, Callable
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -22,7 +21,7 @@ from app.services.provider_resolution_history import (
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
-CURRENT_TIME = datetime(2026, 7, 24, 10, 0, tzinfo=timezone.utc)
+CURRENT_TIME = datetime(2026, 7, 24, 10, 0, tzinfo=UTC)
 
 
 class FreshPostgresMissionReadFactory:

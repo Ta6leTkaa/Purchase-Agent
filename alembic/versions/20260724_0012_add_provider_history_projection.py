@@ -5,16 +5,17 @@ Revises: 20260723_0011
 Create Date: 2026-07-24
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 revision: str = "20260724_0012"
-down_revision: Union[str, Sequence[str], None] = "20260723_0011"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "20260723_0011"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _PROVIDER_EVENT_TYPES = (
     "'provider_selection_changed', "
@@ -59,9 +60,11 @@ def upgrade() -> None:
     if bind.dialect.name == "postgresql":
         op.execute(
             "INSERT INTO mission_provider_history_events "
-            "(mission_id, sequence, event_type, occurred_at, payload, legacy_event_index) "
+            "(mission_id, sequence, event_type, occurred_at, payload, "
+            "legacy_event_index) "
             "SELECT missions.id, (event->>'sequence')::integer, event->>'type', "
-            "(event->>'timestamp')::timestamptz, COALESCE(event->'metadata', '{}'::jsonb), "
+            "(event->>'timestamp')::timestamptz, "
+            "COALESCE(event->'metadata', '{}'::jsonb), "
             "ordinal - 1 "
             "FROM missions CROSS JOIN LATERAL "
             "jsonb_array_elements(COALESCE(missions.execution_log, '[]'::jsonb)) "
@@ -71,7 +74,8 @@ def upgrade() -> None:
     else:
         op.execute(
             "INSERT INTO mission_provider_history_events "
-            "(mission_id, sequence, event_type, occurred_at, payload, legacy_event_index) "
+            "(mission_id, sequence, event_type, occurred_at, payload, "
+            "legacy_event_index) "
             "SELECT missions.id, CAST(json_extract(value, '$.sequence') AS INTEGER), "
             "json_extract(value, '$.type'), json_extract(value, '$.timestamp'), "
             "COALESCE(json_extract(value, '$.metadata'), '{}'), CAST(key AS INTEGER) "

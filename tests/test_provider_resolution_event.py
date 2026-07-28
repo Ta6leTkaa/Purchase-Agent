@@ -1,20 +1,20 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
+from app.domain.mission import Mission, MissionType, TrainConstraints
 from app.domain.provider_resolution import (
-    ProviderResolutionSnapshot,
-    ProviderSelectionChangedEventPayload,
     ProviderResolutionFailedEventPayload,
     ProviderResolutionFailureReason,
+    ProviderResolutionSnapshot,
     ProviderResolvedEventPayload,
+    ProviderSelectionChangedEventPayload,
     ProviderSelectionMode,
     create_provider_resolution_snapshot,
     create_provider_selection_changed_event,
 )
-from app.domain.mission import Mission, MissionType, TrainConstraints
 
 
 def test_provider_resolved_payload_is_immutable_and_serializable() -> None:
@@ -274,7 +274,7 @@ def test_provider_selection_changed_payload_rejects_invalid_values(
 
 
 def test_provider_selection_changed_event_factory_uses_typed_payload() -> None:
-    occurred_at = datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc)
+    occurred_at = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
     mission = make_mission()
 
     event = create_provider_selection_changed_event(

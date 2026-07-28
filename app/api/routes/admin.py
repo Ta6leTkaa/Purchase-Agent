@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Annotated, TypeAlias
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,8 +11,8 @@ from app.dependencies import (
     get_current_time,
     get_identity_repository,
     get_mission_repository,
-    get_provider_resolver,
     get_provider_history_projection_verifier,
+    get_provider_resolver,
 )
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
@@ -21,28 +21,28 @@ from app.services.due_mission_processor import (
     process_due_missions,
 )
 from app.services.mission_errors import MissionNotFoundError
-from app.services.provider_resolver import ProviderResolver
 from app.services.provider_history_verification import (
     MissionProviderHistoryProjectionVerification,
     VerifyMissionProviderHistoryProjection,
 )
+from app.services.provider_resolver import ProviderResolver
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-MissionRepositoryDep: TypeAlias = Annotated[
+type MissionRepositoryDep = Annotated[
     MissionRepository,
     Depends(get_mission_repository),
 ]
-IdentityRepositoryDep: TypeAlias = Annotated[
+type IdentityRepositoryDep = Annotated[
     IdentityRepository,
     Depends(get_identity_repository),
 ]
-ProviderResolverDep: TypeAlias = Annotated[
+type ProviderResolverDep = Annotated[
     ProviderResolver,
     Depends(get_provider_resolver),
 ]
-CurrentTimeDep: TypeAlias = Annotated[datetime, Depends(get_current_time)]
-AdminApiKeyDep: TypeAlias = Annotated[None, Depends(require_admin_api_key)]
-ProviderHistoryVerifierDep: TypeAlias = Annotated[
+type CurrentTimeDep = Annotated[datetime, Depends(get_current_time)]
+type AdminApiKeyDep = Annotated[None, Depends(require_admin_api_key)]
+type ProviderHistoryVerifierDep = Annotated[
     VerifyMissionProviderHistoryProjection,
     Depends(get_provider_history_projection_verifier),
 ]

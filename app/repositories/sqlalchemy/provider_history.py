@@ -110,7 +110,11 @@ def projection_from_model(
 ) -> ProviderHistoryProjectionEvent:
     event_type = ProviderHistoryEventType(model.event_type)
     if event_type is ProviderHistoryEventType.provider_selection_changed:
-        payload_model: ProviderSelectionChangedEventPayload | ProviderResolvedEventPayload | ProviderResolutionFailedEventPayload = (
+        payload_model: (
+            ProviderSelectionChangedEventPayload
+            | ProviderResolvedEventPayload
+            | ProviderResolutionFailedEventPayload
+        ) = (
             ProviderSelectionChangedEventPayload.model_validate(model.payload)
         )
     elif event_type is ProviderHistoryEventType.provider_resolved:

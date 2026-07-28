@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -194,7 +194,7 @@ async def test_provider_id_survives_postgres_round_trip_and_claim(
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     mission = make_mission(
         status=MissionStatus.waiting,
         scheduled_at=current_time,
@@ -231,8 +231,8 @@ async def test_execution_attempt_audit_survives_claim_and_stale_recovery(
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    claimed_at = datetime(2026, 8, 1, 9, 30, tzinfo=timezone.utc)
-    recovered_at = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    claimed_at = datetime(2026, 8, 1, 9, 30, tzinfo=UTC)
+    recovered_at = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     mission = make_mission(
         status=MissionStatus.waiting,
         scheduled_at=claimed_at,
@@ -306,7 +306,7 @@ async def test_claim_due_uses_skip_locked_for_concurrent_claims(
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     due_missions = [
         make_mission(
             status=MissionStatus.waiting,
@@ -414,7 +414,7 @@ async def test_list_stale_processing_is_read_only_and_filters_in_database(
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     oldest_mission = make_mission(
         status=MissionStatus.processing,
         claimed_at=current_time - timedelta(minutes=30),
@@ -514,7 +514,7 @@ async def test_recover_stale_processing_persists_recovery_event(
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     stale_mission = make_mission(
         status=MissionStatus.processing,
         scheduled_at=current_time - timedelta(hours=1),
@@ -605,7 +605,7 @@ async def test_recover_stale_processing_uses_skip_locked_concurrently(
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     missions = [
         make_mission(
             status=MissionStatus.processing,

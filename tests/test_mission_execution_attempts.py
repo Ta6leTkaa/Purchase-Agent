@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -19,7 +19,7 @@ from app.storage.memory import InMemoryMissionRepository
 
 
 def test_execution_attempt_is_immutable_and_requires_a_terminal_time() -> None:
-    claimed_at = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
+    claimed_at = datetime(2026, 7, 27, 12, 0, tzinfo=UTC)
     attempt = MissionExecutionAttempt(
         mission_id=uuid4(),
         attempt_number=1,
@@ -42,7 +42,7 @@ def test_execution_attempt_is_immutable_and_requires_a_terminal_time() -> None:
 def test_claim_creates_and_completion_closes_execution_attempt() -> None:
     async def scenario() -> None:
         repository = InMemoryMissionRepository()
-        current_time = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
+        current_time = datetime(2026, 7, 27, 12, 0, tzinfo=UTC)
         mission = make_due_mission(current_time)
         await repository.create(mission)
 
@@ -79,7 +79,7 @@ def test_claim_creates_and_completion_closes_execution_attempt() -> None:
 def test_stale_recovery_closes_attempt_without_changing_attempt_number() -> None:
     async def scenario() -> None:
         repository = InMemoryMissionRepository()
-        current_time = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
+        current_time = datetime(2026, 7, 27, 12, 0, tzinfo=UTC)
         mission = make_due_mission(current_time)
         await repository.create(mission)
         await repository.claim_due(current_time)

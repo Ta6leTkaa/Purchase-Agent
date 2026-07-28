@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Iterator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
@@ -27,7 +27,7 @@ from app.services.mission_provider_selection import (
 from app.services.provider_errors import UnsupportedMissionTypeError
 from app.storage.memory import InMemoryMissionRepository
 
-CURRENT_TIME = datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc)
+CURRENT_TIME = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
 
 
 class SelectionAdapter(ProviderAdapter):
@@ -181,7 +181,7 @@ def test_mission_provider_selection_state_policy(
         mission = make_mission().model_copy(
             update={
                 "status": status,
-                "claimed_at": datetime.now(timezone.utc),
+                "claimed_at": datetime.now(UTC),
             }
         )
     else:

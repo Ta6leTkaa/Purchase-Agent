@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -23,7 +23,7 @@ async def test_due_mission_processor_persists_postgres_updates(
     test_session: AsyncSession,
     test_engine: AsyncEngine,
 ) -> None:
-    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
     identity_repository = SqlAlchemyIdentityRepository(test_session)
     mission_repository = SqlAlchemyMissionRepository(test_session)
     identities = [make_identity() for _ in range(4)]

@@ -2,7 +2,7 @@ import asyncio
 import builtins
 import io
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -22,7 +22,7 @@ from app.domain.mission import (
 from app.repositories.mission import MissionRepository
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
-CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
 
 
 def test_process_due_command_uses_default_limit(

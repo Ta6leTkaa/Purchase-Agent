@@ -1,4 +1,4 @@
-from typing import Annotated, TypeAlias
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +9,7 @@ from app.repositories.identity import IdentityRepository
 from app.schemas.identity import IdentityCreate
 
 router = APIRouter(prefix="/identities", tags=["identities"])
-IdentityRepositoryDep: TypeAlias = Annotated[
+type IdentityRepositoryDep = Annotated[
     IdentityRepository,
     Depends(get_identity_repository),
 ]

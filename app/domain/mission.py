@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import (
@@ -17,16 +17,16 @@ from app.domain.execution import (
     new_mission_event_id,
     validate_event_sequence,
 )
-from app.domain.provider_id import normalize_provider_id
 from app.domain.provider import ProviderOption
+from app.domain.provider_id import normalize_provider_id
 
 
-class MissionType(str, Enum):
+class MissionType(StrEnum):
     TRAIN_TICKET = "train_ticket"
     train_trip = "train_ticket"
 
 
-class MissionStatus(str, Enum):
+class MissionStatus(StrEnum):
     created = "created"
     waiting = "waiting"
     processing = "processing"

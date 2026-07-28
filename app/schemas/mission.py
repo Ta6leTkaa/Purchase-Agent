@@ -4,17 +4,17 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.domain.execution_attempt import (
+    MissionExecutionAttempt,
+    MissionExecutionAttemptStatus,
+)
 from app.domain.mission import (
     FallbackRules,
     Mission,
     MissionStatus,
     MissionType,
-    TrainTicketMissionPayload,
     TrainConstraints,
-)
-from app.domain.execution_attempt import (
-    MissionExecutionAttempt,
-    MissionExecutionAttemptStatus,
+    TrainTicketMissionPayload,
 )
 from app.domain.provider_id import normalize_provider_id
 from app.domain.provider_resolution import (

@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+from pydantic import ValidationError
 
 from app.domain.mission import TrainTicketMissionPayload
 
@@ -14,8 +15,8 @@ def test_train_ticket_payload_normalizes_and_is_immutable() -> None:
 
     assert payload.origin == "Amsterdam"
     assert payload.destination == "Berlin"
-    with pytest.raises(Exception):
-        setattr(payload, "origin", "Paris")
+    with pytest.raises(ValidationError):
+        payload.origin = "Paris"
 
 
 @pytest.mark.parametrize(

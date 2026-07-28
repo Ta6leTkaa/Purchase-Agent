@@ -70,11 +70,16 @@ class VerifyMissionProviderHistoryProjection:
         self._mission_repository = mission_repository
         self._projection_reader = projection_reader
 
-    async def execute(self, mission_id: UUID) -> MissionProviderHistoryProjectionVerification:
+    async def execute(
+        self,
+        mission_id: UUID,
+    ) -> MissionProviderHistoryProjectionVerification:
         mission = await self._mission_repository.get(mission_id)
         if mission is None:
             raise MissionNotFoundError
-        projection_events = await self._projection_reader.list_all_for_mission(mission_id)
+        projection_events = await self._projection_reader.list_all_for_mission(
+            mission_id
+        )
         return compare_provider_history_projection(
             mission_id=mission_id,
             canonical_events=mission.execution_log,
@@ -121,18 +126,33 @@ def compare_provider_history_projection(
         fields: list[ProviderHistoryProjectionMismatchField] = []
         if expected.event_type != actual.event_type:
             fields.append(ProviderHistoryProjectionMismatchField.EVENT_TYPE)
-        if _normalize_datetime(expected.occurred_at) != _normalize_datetime(actual.occurred_at):
+        if _normalize_datetime(expected.occurred_at) != _normalize_datetime(
+            actual.occurred_at
+        ):
             fields.append(ProviderHistoryProjectionMismatchField.OCCURRED_AT)
-        if expected.payload.model_dump(mode="json") != actual.payload.model_dump(mode="json"):
+        if expected.payload.model_dump(mode="json") != actual.payload.model_dump(
+            mode="json"
+        ):
             fields.append(ProviderHistoryProjectionMismatchField.PAYLOAD)
         if fields:
-            mismatches.append(ProviderHistoryProjectionMismatch(sequence=sequence, fields=tuple(fields)))
+            mismatches.append(
+                ProviderHistoryProjectionMismatch(
+                    sequence=sequence,
+                    fields=tuple(fields),
+                )
+            )
     inconsistent = bool(missing or unexpected or mismatches)
     return MissionProviderHistoryProjectionVerification(
         mission_id=mission_id,
-        status=(ProviderHistoryProjectionVerificationStatus.INCONSISTENT if inconsistent else ProviderHistoryProjectionVerificationStatus.CONSISTENT),
-        canonical_event_count=len(canonical), projection_event_count=len(projected),
-        missing_projection_sequences=missing, unexpected_projection_sequences=unexpected,
+        status=(
+            ProviderHistoryProjectionVerificationStatus.INCONSISTENT
+            if inconsistent
+            else ProviderHistoryProjectionVerificationStatus.CONSISTENT
+        ),
+        canonical_event_count=len(canonical),
+        projection_event_count=len(projected),
+        missing_projection_sequences=missing,
+        unexpected_projection_sequences=unexpected,
         mismatches=tuple(mismatches),
     )
 

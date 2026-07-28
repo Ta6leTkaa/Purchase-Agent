@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Iterator
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -25,7 +25,7 @@ def clear_missions() -> Iterator[None]:
 
 def test_execution_attempt_history_returns_claim_audit_records() -> None:
     async def scenario() -> Mission:
-        current_time = datetime(2026, 7, 28, 12, 0, tzinfo=timezone.utc)
+        current_time = datetime(2026, 7, 28, 12, 0, tzinfo=UTC)
         mission = make_due_mission(current_time)
         await mission_repository.create(mission)
         claimed = (await mission_repository.claim_due(current_time))[0]
@@ -52,7 +52,7 @@ def test_execution_attempt_history_returns_claim_audit_records() -> None:
 
 def test_execution_attempt_history_is_read_only_and_returns_404() -> None:
     async def scenario() -> Mission:
-        current_time = datetime(2026, 7, 28, 12, 0, tzinfo=timezone.utc)
+        current_time = datetime(2026, 7, 28, 12, 0, tzinfo=UTC)
         mission = make_due_mission(current_time)
         await mission_repository.create(mission)
         return (await mission_repository.claim_due(current_time))[0]
@@ -77,7 +77,7 @@ def test_execution_attempt_history_is_read_only_and_returns_404() -> None:
 
 def test_execution_attempt_history_is_empty_before_first_claim() -> None:
     async def scenario() -> Mission:
-        current_time = datetime(2026, 7, 28, 12, 0, tzinfo=timezone.utc)
+        current_time = datetime(2026, 7, 28, 12, 0, tzinfo=UTC)
         mission = make_due_mission(current_time)
         await mission_repository.create(mission)
         return mission
@@ -96,7 +96,7 @@ def test_execution_attempt_history_is_empty_before_first_claim() -> None:
 
 def test_execution_attempt_history_preserves_attempt_order_and_outcome() -> None:
     async def scenario() -> Mission:
-        current_time = datetime(2026, 7, 28, 12, 0, tzinfo=timezone.utc)
+        current_time = datetime(2026, 7, 28, 12, 0, tzinfo=UTC)
         mission = make_due_mission(current_time)
         await mission_repository.create(mission)
         await mission_repository.claim_due(current_time)

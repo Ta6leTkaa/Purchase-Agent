@@ -64,7 +64,7 @@ def test_database_repositories_receive_passed_session(
     session = AsyncSession()
 
     try:
-        resolved_identity_repository = get_identity_repository(session)
-        resolved_mission_repository = get_mission_repository(session)
+        get_identity_repository(session)
+        get_mission_repository(session)
     finally:
         asyncio.run(session.close())

@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -121,7 +121,7 @@ async def test_mission_api_persists_scheduled_at_to_postgres(
     test_engine: AsyncEngine,
 ) -> None:
     client, _transaction_events = mission_api_client
-    scheduled_at = datetime.now(timezone.utc) + timedelta(days=1)
+    scheduled_at = datetime.now(UTC) + timedelta(days=1)
     participant_ids = [
         await create_identity(client)
         for _ in range(4)

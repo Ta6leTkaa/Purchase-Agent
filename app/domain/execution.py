@@ -59,7 +59,9 @@ def validate_event_sequence(
             raise InvalidMissionEventIdError("Mission correlation ID must not be nil")
         if event.causation_id is not None:
             if event.causation_id.int == 0 or event.causation_id == event.event_id:
-                raise InvalidMissionEventIdError("Mission event causation ID is invalid")
+                raise InvalidMissionEventIdError(
+                    "Mission event causation ID is invalid"
+                )
     if last_event_sequence != previous_sequence:
         raise InvalidMissionEventSequenceError(
             "last_event_sequence must match the final event sequence"
