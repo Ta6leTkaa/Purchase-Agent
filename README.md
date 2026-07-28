@@ -1,9 +1,9 @@
 # Purchase Agent
 
-Backend API skeleton for Purchase Agent.
-
-This repository currently contains only the minimal FastAPI foundation: app
-startup, configuration defaults, a health endpoint, tests, and Python tooling.
+Purchase Agent is a FastAPI backend for scheduled purchase missions. It ships
+with typed train-ticket missions, provider resolution, a deterministic mock
+provider, durable Mission events, PostgreSQL persistence, and read-only audit
+APIs for provider resolution history.
 
 ## Domain models
 
@@ -51,10 +51,15 @@ Example:
 curl -X POST http://127.0.0.1:8000/missions \
   -H "Content-Type: application/json" \
   -d '{
-    "type": "train_trip",
+    "mission_type": "train_ticket",
     "title": "Moscow to Saint Petersburg",
     "participant_ids": ["00000000-0000-4000-8000-000000000001"],
-    "provider": "rzd",
+    "provider": "mock_train",
+    "payload": {
+      "origin": "Moscow",
+      "destination": "Saint Petersburg",
+      "departure_date": "2026-08-01"
+    },
     "constraints": {
       "from_city": "Moscow",
       "to_city": "Saint Petersburg",
@@ -102,8 +107,8 @@ automatic `run_mission` call exists yet.
 ## Due mission processor
 
 The due mission processor performs one pass over missions whose scheduled time
-has arrived and runs them sequentially. It is only a programmatic service for
-now; a persistent background scheduler will be added separately.
+has arrived and runs them sequentially. It is exposed through protected admin
+and CLI commands, but no background scheduler or polling loop is included.
 
 ## Mission claiming
 
@@ -114,8 +119,8 @@ cycles can run without selecting the same mission at the same time.
 
 This prevents concurrent processing of one mission, but it is not a full
 exactly-once guarantee. After normal completion, `claimed_at` is cleared. A
-mission left in `processing` with `claimed_at` may be stuck; automatic detection
-and recovery for that case will be added separately.
+mission left in `processing` with `claimed_at` can be inspected and explicitly
+recovered through repository, CLI, or protected admin recovery operations.
 
 ## Execution attempts
 
@@ -195,7 +200,7 @@ stale_missions = await mission_repository.list_stale_processing(
 ```
 
 Missions with `claimed_at=None` are not returned or recovered automatically.
-Recovery and retry behavior will be added in a separate step.
+Recovery is an explicit operation and does not retry or execute a Mission.
 
 ## Stale mission recovery
 
