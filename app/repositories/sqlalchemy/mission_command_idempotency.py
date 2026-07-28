@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,4 +44,20 @@ class SqlAlchemyMissionCommandIdempotencyStore:
             update(MissionCommandReceiptModel)
             .where(MissionCommandReceiptModel.idempotency_key == key)
             .values(result_mission_id=mission_id)
+        )
+
+    async def abort(
+        self,
+        *,
+        key: str,
+        mission_id: UUID,
+        command: MissionCommandType,
+    ) -> None:
+        await self._session.execute(
+            delete(MissionCommandReceiptModel).where(
+                MissionCommandReceiptModel.idempotency_key == key,
+                MissionCommandReceiptModel.mission_id == mission_id,
+                MissionCommandReceiptModel.command == command.value,
+                MissionCommandReceiptModel.result_mission_id.is_(None),
+            )
         )

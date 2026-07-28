@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Annotated, TypeAlias
 from uuid import UUID
@@ -25,6 +26,12 @@ from app.schemas.mission import (
     MissionProviderResolutionPreviewResponse,
     SetMissionProviderRequest,
 )
+from app.services.mission_command_idempotency import (
+    MissionCommandIdempotencyConflictError,
+    MissionCommandIdempotencyStore,
+    MissionCommandInProgressError,
+    MissionCommandType,
+)
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
@@ -33,12 +40,6 @@ from app.services.mission_engine import (
     run_mission,
 )
 from app.services.mission_errors import MissionNotFoundError
-from app.services.mission_command_idempotency import (
-    MissionCommandIdempotencyConflictError,
-    MissionCommandInProgressError,
-    MissionCommandType,
-)
-from app.services.provider_resolver import ProviderResolver
 from app.services.mission_provider_selection import (
     MissionProviderSelectionNotAllowedError,
     SetMissionProvider,
@@ -59,6 +60,7 @@ from app.services.provider_resolution_history import (
 from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
 )
+from app.services.provider_resolver import ProviderResolver
 
 router = APIRouter(prefix="/missions", tags=["missions"])
 MissionRepositoryDep: TypeAlias = Annotated[
@@ -90,7 +92,8 @@ ProviderResolutionIncrementDep: TypeAlias = Annotated[
     Depends(get_mission_provider_resolution_increment),
 ]
 MissionCommandIdempotencyStoreDep: TypeAlias = Annotated[
-    object, Depends(get_mission_command_idempotency_store)
+    MissionCommandIdempotencyStore,
+    Depends(get_mission_command_idempotency_store),
 ]
 
 
@@ -388,29 +391,19 @@ async def run_mission_endpoint(
     ] = None,
 ) -> Mission:
     try:
-        previous = None
-        if idempotency_key is not None:
-            previous = await idempotency_store.begin(
-                key=idempotency_key,
-                mission_id=mission_id,
-                command=MissionCommandType.RUN,
-            )
-        if previous is not None:
-            result = await mission_repository.get(previous)
-            assert result is not None
-            return result
-        result = await run_mission(
-            mission_id,
-            mission_repository,
-            identity_repository,
-            provider_resolver,
+        return await _execute_idempotent_mission_command(
+            mission_id=mission_id,
+            command=MissionCommandType.RUN,
+            idempotency_key=idempotency_key,
+            idempotency_store=idempotency_store,
+            mission_repository=mission_repository,
+            execute=lambda: run_mission(
+                mission_id,
+                mission_repository,
+                identity_repository,
+                provider_resolver,
+            ),
         )
-        if idempotency_key is not None:
-            await idempotency_store.complete(
-                key=idempotency_key,
-                mission_id=result.id,
-            )
-        return result
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except InvalidMissionRunError as exc:
@@ -433,24 +426,14 @@ async def confirm_mission_endpoint(
     ] = None,
 ) -> Mission:
     try:
-        previous = None
-        if idempotency_key is not None:
-            previous = await idempotency_store.begin(
-                key=idempotency_key,
-                mission_id=mission_id,
-                command=MissionCommandType.CONFIRM,
-            )
-        if previous is not None:
-            result = await mission_repository.get(previous)
-            assert result is not None
-            return result
-        result = await confirm_mission(mission_id, mission_repository)
-        if idempotency_key is not None:
-            await idempotency_store.complete(
-                key=idempotency_key,
-                mission_id=result.id,
-            )
-        return result
+        return await _execute_idempotent_mission_command(
+            mission_id=mission_id,
+            command=MissionCommandType.CONFIRM,
+            idempotency_key=idempotency_key,
+            idempotency_store=idempotency_store,
+            mission_repository=mission_repository,
+            execute=lambda: confirm_mission(mission_id, mission_repository),
+        )
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except InvalidMissionConfirmationError as exc:
@@ -459,3 +442,41 @@ async def confirm_mission_endpoint(
         raise HTTPException(status_code=409, detail="Idempotency key conflict") from exc
     except MissionCommandInProgressError as exc:
         raise HTTPException(status_code=409, detail="Command is in progress") from exc
+
+
+async def _execute_idempotent_mission_command(
+    *,
+    mission_id: UUID,
+    command: MissionCommandType,
+    idempotency_key: str | None,
+    idempotency_store: MissionCommandIdempotencyStore,
+    mission_repository: MissionRepository,
+    execute: Callable[[], Awaitable[Mission]],
+) -> Mission:
+    if idempotency_key is None:
+        return await execute()
+
+    previous = await idempotency_store.begin(
+        key=idempotency_key,
+        mission_id=mission_id,
+        command=command,
+    )
+    if previous is not None:
+        result = await mission_repository.get(previous)
+        assert result is not None
+        return result
+
+    try:
+        result = await execute()
+        await idempotency_store.complete(
+            key=idempotency_key,
+            mission_id=result.id,
+        )
+        return result
+    except BaseException:
+        await idempotency_store.abort(
+            key=idempotency_key,
+            mission_id=mission_id,
+            command=command,
+        )
+        raise

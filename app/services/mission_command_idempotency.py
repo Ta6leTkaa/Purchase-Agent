@@ -29,3 +29,12 @@ class MissionCommandIdempotencyStore(Protocol):
 
     async def complete(self, *, key: str, mission_id: UUID) -> None:
         ...
+
+    async def abort(
+        self,
+        *,
+        key: str,
+        mission_id: UUID,
+        command: MissionCommandType,
+    ) -> None:
+        ...

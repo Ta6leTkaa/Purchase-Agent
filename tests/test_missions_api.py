@@ -622,6 +622,37 @@ def test_post_mission_confirm_before_run_returns_409() -> None:
     assert response.status_code == 409
 
 
+def test_failed_confirmation_releases_idempotency_key_for_retry() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+    create_response = client.post("/missions", json=payload)
+    mission_id = create_response.json()["id"]
+    headers = {"Idempotency-Key": "confirm-retry-key"}
+
+    first_confirmation = client.post(
+        f"/missions/{mission_id}/confirm",
+        headers=headers,
+    )
+    run_response = client.post(f"/missions/{mission_id}/run")
+    retry_confirmation = client.post(
+        f"/missions/{mission_id}/confirm",
+        headers=headers,
+    )
+    replay_confirmation = client.post(
+        f"/missions/{mission_id}/confirm",
+        headers=headers,
+    )
+
+    assert first_confirmation.status_code == 409
+    assert run_response.status_code == 200
+    assert retry_confirmation.status_code == 200
+    assert retry_confirmation.json()["status"] == "completed"
+    assert replay_confirmation.status_code == 200
+    assert replay_confirmation.json()["status"] == "completed"
+
+
 def test_post_unknown_mission_confirm_returns_404() -> None:
     client = TestClient(app)
 

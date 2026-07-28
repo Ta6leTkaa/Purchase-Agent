@@ -733,8 +733,10 @@ Manual `run` and `confirm` commands require an `Idempotency-Key` header. The
 key is reserved before provider work begins and the completed Mission result is
 stored with it in PostgreSQL. Repeating the same key for the same Mission and
 command returns that result without repeating provider side effects; using it
-for another Mission or command returns a conflict. Scheduled processing and
-recovery do not use this HTTP command boundary.
+for another Mission or command returns a conflict. A command that raises before
+completion releases its pending receipt, so the same key can be retried instead
+of remaining permanently in progress. Scheduled processing and recovery do not
+use this HTTP command boundary.
 
 ## Explicit provider selection
 

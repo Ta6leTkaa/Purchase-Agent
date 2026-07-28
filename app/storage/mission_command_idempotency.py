@@ -36,3 +36,15 @@ class InMemoryMissionCommandIdempotencyStore:
         async with self._lock:
             stored_mission, command, _ = self._records[key]
             self._records[key] = (stored_mission, command, mission_id)
+
+    async def abort(
+        self,
+        *,
+        key: str,
+        mission_id: UUID,
+        command: MissionCommandType,
+    ) -> None:
+        async with self._lock:
+            receipt = self._records.get(key)
+            if receipt == (mission_id, command, None):
+                del self._records[key]

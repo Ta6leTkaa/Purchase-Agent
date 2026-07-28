@@ -58,3 +58,54 @@ def test_in_progress_command_is_not_executed_twice() -> None:
             )
 
     asyncio.run(scenario())
+
+
+def test_aborted_command_releases_idempotency_key_for_retry() -> None:
+    async def scenario() -> None:
+        store = InMemoryMissionCommandIdempotencyStore()
+        mission_id = uuid4()
+
+        assert await store.begin(
+            key="run-1",
+            mission_id=mission_id,
+            command=MissionCommandType.RUN,
+        ) is None
+        await store.abort(
+            key="run-1",
+            mission_id=mission_id,
+            command=MissionCommandType.RUN,
+        )
+
+        assert await store.begin(
+            key="run-1",
+            mission_id=mission_id,
+            command=MissionCommandType.RUN,
+        ) is None
+
+    asyncio.run(scenario())
+
+
+def test_abort_does_not_remove_completed_command() -> None:
+    async def scenario() -> None:
+        store = InMemoryMissionCommandIdempotencyStore()
+        mission_id = uuid4()
+
+        assert await store.begin(
+            key="run-1",
+            mission_id=mission_id,
+            command=MissionCommandType.RUN,
+        ) is None
+        await store.complete(key="run-1", mission_id=mission_id)
+        await store.abort(
+            key="run-1",
+            mission_id=mission_id,
+            command=MissionCommandType.RUN,
+        )
+
+        assert await store.begin(
+            key="run-1",
+            mission_id=mission_id,
+            command=MissionCommandType.RUN,
+        ) == mission_id
+
+    asyncio.run(scenario())
