@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.domain.execution import ExecutionEvent
+from app.domain.execution_attempt import MissionExecutionAttemptStatus
 from app.domain.mission import (
     FallbackRules,
     Mission,
@@ -219,6 +220,59 @@ async def test_provider_id_survives_postgres_round_trip_and_claim(
     assert claimed_missions[0].provider_id == "mock_train"
     assert loaded_mission is not None
     assert loaded_mission.provider_id == "mock_train"
+
+
+async def test_execution_attempt_audit_survives_claim_and_stale_recovery(
+    test_engine: AsyncEngine,
+    clean_database: None,
+) -> None:
+    session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    claimed_at = datetime(2026, 8, 1, 9, 30, tzinfo=timezone.utc)
+    recovered_at = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    mission = make_mission(
+        status=MissionStatus.waiting,
+        scheduled_at=claimed_at,
+    )
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        await repository.create(mission)
+        await session.commit()
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        claimed = await repository.claim_due(claimed_at)
+
+    assert [claimed_mission.id for claimed_mission in claimed] == [mission.id]
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        recovered = await repository.recover_stale_processing(
+            recovered_at,
+            timedelta(minutes=15),
+        )
+
+    assert [recovered_mission.id for recovered_mission in recovered] == [
+        mission.id
+    ]
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        attempts = await repository.list_execution_attempts(mission.id)
+        persisted_mission = await repository.get(mission.id)
+
+    assert len(attempts) == 1
+    assert attempts[0].attempt_number == 1
+    assert attempts[0].status is MissionExecutionAttemptStatus.recovered
+    assert attempts[0].claimed_at == claimed_at
+    assert attempts[0].finished_at == recovered_at
+    assert persisted_mission is not None
+    assert persisted_mission.status is MissionStatus.waiting
+    assert persisted_mission.claimed_at is None
 
 
 async def test_repository_does_not_commit_without_external_commit(
