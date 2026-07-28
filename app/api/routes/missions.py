@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response
 
+from app.adapters import ProviderRegistry
 from app.dependencies import (
     get_identity_repository,
     get_mission_command_idempotency_store,
@@ -12,6 +13,7 @@ from app.dependencies import (
     get_mission_provider_resolution_increment,
     get_mission_provider_resolution_preview,
     get_mission_repository,
+    get_provider_registry,
     get_provider_resolver,
     get_set_mission_provider,
 )
@@ -74,6 +76,10 @@ type IdentityRepositoryDep = Annotated[
 type ProviderResolverDep = Annotated[
     ProviderResolver,
     Depends(get_provider_resolver),
+]
+type ProviderRegistryDep = Annotated[
+    ProviderRegistry,
+    Depends(get_provider_registry),
 ]
 type SetMissionProviderDep = Annotated[
     SetMissionProvider,
@@ -430,6 +436,7 @@ async def run_mission_endpoint(
 async def confirm_mission_endpoint(
     mission_id: UUID,
     mission_repository: MissionRepositoryDep,
+    provider_registry: ProviderRegistryDep,
     idempotency_store: MissionCommandIdempotencyStoreDep,
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1)
@@ -442,7 +449,11 @@ async def confirm_mission_endpoint(
             idempotency_key=idempotency_key,
             idempotency_store=idempotency_store,
             mission_repository=mission_repository,
-            execute=lambda: confirm_mission(mission_id, mission_repository),
+            execute=lambda: confirm_mission(
+                mission_id,
+                mission_repository,
+                provider_registry,
+            ),
         )
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc

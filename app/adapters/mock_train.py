@@ -6,6 +6,7 @@ from app.adapters.base import ProviderAdapter
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionType
 from app.domain.provider import (
+    ConfirmationResult,
     ProviderOption,
     ProviderOptionType,
     ReservationResult,
@@ -27,6 +28,7 @@ class MockTrainAdapter(ProviderAdapter):
 
     def __init__(self) -> None:
         self._reservations_by_key: dict[str, ReservationResult] = {}
+        self._confirmations_by_key: dict[str, ConfirmationResult] = {}
 
     @property
     def provider_id(self) -> str:
@@ -118,6 +120,32 @@ class MockTrainAdapter(ProviderAdapter):
             message="Mock reservation created. User confirmation required.",
         )
         self._reservations_by_key[idempotency_key] = result
+        return result
+
+    async def confirm_reservation(
+        self,
+        reservation_id: str,
+        mission: Mission,
+        *,
+        idempotency_key: str,
+    ) -> ConfirmationResult:
+        existing = self._confirmations_by_key.get(idempotency_key)
+        if existing is not None:
+            return existing
+
+        reserved_ids = {
+            result.reservation_id
+            for result in self._reservations_by_key.values()
+        }
+        result = ConfirmationResult(
+            success=reservation_id in reserved_ids,
+            message=(
+                "Mock reservation confirmed."
+                if reservation_id in reserved_ids
+                else "Mock reservation was not found."
+            ),
+        )
+        self._confirmations_by_key[idempotency_key] = result
         return result
 
     def _build_option(

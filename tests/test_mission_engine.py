@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.adapters.mock_train import MockTrainAdapter
+from app.adapters.registry import ProviderRegistry
 from app.domain.identity import Identity
 from app.domain.mission import (
     FallbackRules,
@@ -14,7 +15,11 @@ from app.domain.mission import (
     MissionType,
     TrainConstraints,
 )
-from app.domain.provider import ProviderOption, ReservationResult
+from app.domain.provider import (
+    ConfirmationResult,
+    ProviderOption,
+    ReservationResult,
+)
 from app.services.mission_engine import (
     InvalidMissionConfirmationError,
     InvalidMissionRunError,
@@ -25,6 +30,7 @@ from app.services.mission_engine import (
 )
 from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_errors import ProviderOperationError
+from app.services.provider_resolver import ProviderResolver
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 
@@ -592,6 +598,86 @@ def test_confirm_mission_sets_completed_and_adds_events(
     assert updated_mission.status is MissionStatus.completed
     assert "mission_confirmed" in event_types
     assert "mission_completed" in event_types
+
+
+def test_confirm_mission_confirms_provider_reservation_before_completion(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    adapter = MockTrainAdapter()
+    registry = ProviderRegistry([adapter])
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    running_mission = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            ProviderResolver(registry),
+        )
+    )
+
+    updated_mission = asyncio.run(
+        confirm_mission(running_mission.id, mission_repository, registry)
+    )
+    event_types = [event.type for event in updated_mission.execution_log]
+
+    assert updated_mission.status is MissionStatus.completed
+    assert updated_mission.resolved_provider_id == adapter.provider_id
+    assert event_types[-4:] == [
+        "confirmation_started",
+        "confirmation_succeeded",
+        "mission_confirmed",
+        "mission_completed",
+    ]
+
+
+def test_confirm_mission_marks_failed_when_provider_confirmation_fails(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    class FailingConfirmationAdapter(MockTrainAdapter):
+        async def confirm_reservation(
+            self,
+            reservation_id: str,
+            mission: Mission,
+            *,
+            idempotency_key: str,
+        ) -> ConfirmationResult:
+            raise ProviderOperationError(
+                provider_id=self.provider_id,
+                operation="confirmation",
+            )
+
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    adapter = FailingConfirmationAdapter()
+    registry = ProviderRegistry([adapter])
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+    )
+    running_mission = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            ProviderResolver(registry),
+        )
+    )
+
+    updated_mission = asyncio.run(
+        confirm_mission(running_mission.id, mission_repository, registry)
+    )
+
+    assert updated_mission.status is MissionStatus.failed
+    assert updated_mission.execution_log[-1].type == "provider_operation_failed"
+    assert updated_mission.execution_log[-1].metadata == {
+        "provider_id": adapter.provider_id,
+        "operation": "confirmation",
+    }
 
 
 def test_confirm_created_mission_raises_invalid_confirmation_error(

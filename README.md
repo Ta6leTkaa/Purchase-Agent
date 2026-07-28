@@ -909,3 +909,17 @@ Adapters report expected search and reservation failures with
 claimed execution attempt. Provider-supplied error text is not persisted in the
 Mission audit log. Unexpected exceptions remain visible as infrastructure or
 programming failures rather than being silently classified as provider errors.
+
+## Provider reservation confirmation
+
+When a reservation requires user confirmation, `POST /missions/{id}/confirm`
+uses the provider that created the reservation, identified by
+`resolved_provider_id`. The adapter receives the persisted `reservation_id` and
+a stable confirmation idempotency key. The Mission records
+`confirmation_started` before this provider operation and records either
+`confirmation_succeeded` followed by completion, or a safe
+`provider_operation_failed` event and `failed` status.
+
+Legacy Mission records that predate reservation metadata remain confirmable with
+the previous local-only transition. New reservation flows always use the
+provider confirmation boundary.

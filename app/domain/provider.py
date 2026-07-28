@@ -59,3 +59,8 @@ class ReservationResult(BaseModel):
         if not self.success and self.reservation_id is not None:
             raise ValueError("failed reservation must not include reservation_id")
         return self
+
+
+class ConfirmationResult(BaseModel):
+    success: bool
+    message: str

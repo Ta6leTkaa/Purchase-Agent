@@ -68,6 +68,9 @@ class PydanticMissionEventSerializer:
         {
             "best_option_selected",
             "claim_recovered",
+            "confirmation_failed",
+            "confirmation_started",
+            "confirmation_succeeded",
             "mission.completed",
             "mission.created",
             "mission_completed",

@@ -3,7 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from app.adapters import provider_registry
-from app.adapters.registry import UnknownProviderError
+from app.adapters.registry import ProviderRegistry, UnknownProviderError
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionStatus
 from app.domain.provider_resolution import (
@@ -236,6 +236,7 @@ async def run_mission(
 async def confirm_mission(
     mission_id: UUID,
     mission_repository: MissionRepository,
+    registry: ProviderRegistry | None = None,
 ) -> Mission:
     mission = await mission_repository.get(mission_id)
     if mission is None:
@@ -247,6 +248,55 @@ async def confirm_mission(
             f"{mission.status.value}"
         )
         raise InvalidMissionConfirmationError(message)
+
+    if _requires_provider_confirmation(mission):
+        assert mission.resolved_provider_id is not None
+        assert mission.reservation_id is not None
+        confirmation_registry = registry or provider_registry
+        try:
+            adapter = confirmation_registry.get(mission.resolved_provider_id)
+        except UnknownProviderError as exc:
+            raise InvalidMissionConfirmationError(
+                "The provider for this reservation is unavailable"
+            ) from exc
+
+        _add_event(
+            mission,
+            "confirmation_started",
+            "Reservation confirmation started.",
+        )
+        try:
+            confirmation_result = await adapter.confirm_reservation(
+                mission.reservation_id,
+                mission,
+                idempotency_key=_confirmation_idempotency_key(mission),
+            )
+        except ProviderOperationError:
+            return await _fail_provider_operation(
+                mission,
+                mission_repository,
+                MissionStateMachine(),
+                provider_id=adapter.provider_id,
+                operation="confirmation",
+            )
+
+        if not confirmation_result.success:
+            state_machine = MissionStateMachine()
+            state_machine.transition(mission, MissionStatus.failed)
+            _add_event(
+                mission,
+                "confirmation_failed",
+                "Reservation confirmation failed.",
+                {"provider_id": adapter.provider_id},
+            )
+            return await mission_repository.update(mission)
+
+        _add_event(
+            mission,
+            "confirmation_succeeded",
+            "Reservation confirmed.",
+            {"provider_id": adapter.provider_id},
+        )
 
     state_machine = MissionStateMachine()
     state_machine.transition(mission, MissionStatus.completed)
@@ -315,6 +365,20 @@ def _is_scheduled_for_future(
 
 def _reservation_idempotency_key(mission: Mission) -> str:
     return f"mission:{mission.id}"
+
+
+def _confirmation_idempotency_key(mission: Mission) -> str:
+    return f"mission:{mission.id}:confirmation"
+
+
+def _requires_provider_confirmation(mission: Mission) -> bool:
+    if mission.resolved_provider_id is None and mission.reservation_id is None:
+        return False
+    if mission.resolved_provider_id is None or mission.reservation_id is None:
+        raise InvalidMissionConfirmationError(
+            "Mission reservation metadata is incomplete"
+        )
+    return True
 
 
 def _provider_resolution_failure_payload(
