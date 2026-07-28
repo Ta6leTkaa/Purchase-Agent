@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Mapping
-from types import MappingProxyType
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Protocol
 from uuid import UUID, uuid5
 
@@ -114,7 +114,7 @@ class MissionEventUpcasterV0ToV1:
 
 class MissionEventUpcasterV1ToV2:
     source_version = 1
-    target_version = CURRENT_MISSION_EVENT_SCHEMA_VERSION
+    target_version = 2
 
     def upcast(
         self,
@@ -155,14 +155,16 @@ class MissionEventUpcasterV2ToV3:
         event_id = UUID(str(raw_event["event_id"]))
         upcasted_event = dict(raw_event)
         upcasted_event["schema_version"] = self.target_version
-        upcasted_event["correlation_id"] = str(
-            context.previous_correlation_id or event_id
-        )
-        upcasted_event["causation_id"] = (
-            str(context.previous_event_id)
-            if context.previous_event_id is not None
-            else None
-        )
+        if "correlation_id" not in upcasted_event:
+            upcasted_event["correlation_id"] = str(
+                context.previous_correlation_id or event_id
+            )
+        if "causation_id" not in upcasted_event:
+            upcasted_event["causation_id"] = (
+                str(context.previous_event_id)
+                if context.previous_event_id is not None
+                else None
+            )
         return upcasted_event
 
 

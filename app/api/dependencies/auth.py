@@ -5,11 +5,9 @@ from fastapi import Header, HTTPException
 
 from app.core.config import settings
 
-
 AdminApiKeyHeader = Annotated[
     str | None,
     Header(
-        default=None,
         alias="X-Admin-API-Key",
         description="API key for local administrative endpoints.",
     ),
@@ -17,7 +15,7 @@ AdminApiKeyHeader = Annotated[
 
 
 async def require_admin_api_key(
-    provided_key: AdminApiKeyHeader,
+    provided_key: AdminApiKeyHeader = None,
 ) -> None:
     expected_key = settings.admin_api_key
     if expected_key is None:

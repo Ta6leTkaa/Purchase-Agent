@@ -1,22 +1,21 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import DateTime, Integer, String, func, text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
 from app.db.base import Base
 from app.db.models.identity import GUID, preferences_type
-from app.domain.execution import ExecutionEvent, validate_event_sequence
+from app.domain.execution import validate_event_sequence
 from app.domain.mission import (
     FallbackRules,
     Mission,
     MissionStatus,
     MissionType,
-    TrainTicketMissionPayload,
     TrainConstraints,
+    TrainTicketMissionPayload,
 )
 from app.domain.provider import ProviderOption
 from app.services.mission_event_store import mission_json_event_store
@@ -34,7 +33,7 @@ class AwareDateTime(TypeDecorator[datetime]):
         if value is None:
             return None
         if value.tzinfo is None or value.utcoffset() is None:
-            return value.replace(tzinfo=timezone.utc)
+            return value.replace(tzinfo=UTC)
         return value
 
 
@@ -50,7 +49,7 @@ class MissionModel(Base):
         server_default=text("'train_ticket'"),
     )
     payload: Mapped[dict[str, Any]] = mapped_column(
-        JSONB().with_variant(preferences_type, "sqlite"),
+        preferences_type,
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
@@ -113,7 +112,7 @@ class MissionModel(Base):
         server_default=text("'[]'"),
     )
     best_option: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB().with_variant(preferences_type, "sqlite"),
+        preferences_type,
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(

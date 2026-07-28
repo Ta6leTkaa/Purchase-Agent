@@ -48,3 +48,7 @@ class InMemoryMissionCommandIdempotencyStore:
             receipt = self._records.get(key)
             if receipt == (mission_id, command, None):
                 del self._records[key]
+
+    async def clear(self) -> None:
+        async with self._lock:
+            self._records.clear()

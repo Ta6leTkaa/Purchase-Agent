@@ -11,7 +11,6 @@ from sqlalchemy import (
     String,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -49,7 +48,7 @@ class MissionProviderHistoryEventModel(Base):
         nullable=False,
     )
     payload: Mapped[dict[str, Any]] = mapped_column(
-        JSONB().with_variant(preferences_type, "sqlite"),
+        preferences_type,
         nullable=False,
     )
     legacy_event_index: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -8,8 +8,8 @@ from app.domain.mission import MissionType
 from app.domain.provider_resolution import (
     ProviderResolutionFailedEventPayload,
     ProviderResolutionFailureReason,
-    ProviderResolvedEventPayload,
     ProviderResolutionSnapshot,
+    ProviderResolvedEventPayload,
     ProviderSelectionChangedEventPayload,
     ProviderSelectionMode,
 )
@@ -20,16 +20,17 @@ from app.services.mission_event_serializer import (
 from app.services.mission_event_store import MissionJsonEventStore
 from app.services.mission_event_upcaster import (
     CURRENT_MISSION_EVENT_SCHEMA_VERSION,
-    InvalidMissionEventUpcastResultError,
     InvalidMissionEventUpcasterRegistryError,
+    InvalidMissionEventUpcastResultError,
+    MissionEventDeserializationContext,
     MissionEventSchemaVersionError,
     MissionEventUpcasterV0ToV1,
     MissionEventUpcasterV1ToV2,
-    MissionEventDeserializationContext,
+    MissionEventUpcasterV2ToV3,
     UnsupportedMissionEventSchemaVersionError,
 )
 
-CURRENT_TIME = datetime(2026, 7, 24, 12, 0, tzinfo=timezone.utc)
+CURRENT_TIME = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
 CONTEXT = MissionEventDeserializationContext(
     mission_id=UUID("14dbe878-d3eb-4f66-a28a-b7904393f0c0")
 )
@@ -205,24 +206,23 @@ def test_serializer_rejects_malformed_persisted_event(
 
 def test_serializer_preserves_existing_extra_field_policy() -> None:
     serializer = PydanticMissionEventSerializer()
-    raw = {
-        "sequence": 1,
-        "timestamp": "2026-07-24T12:00:00Z",
-        "type": "mission_started",
-        "message": "Mission started.",
-        "metadata": {"source": "legacy"},
-        "legacy_field": "ignored-by-existing-schema",
-    }
+    raw = serializer.serialize(
+        ExecutionEvent(
+            sequence=1,
+            timestamp=CURRENT_TIME,
+            type="mission_started",
+            message="Mission started.",
+            metadata={"source": "legacy"},
+        )
+    )
+    raw["legacy_field"] = "ignored-by-existing-schema"
 
     event = serializer.deserialize(raw)
 
     assert serializer.serialize(event) == {
-        "sequence": 1,
-        "timestamp": "2026-07-24T12:00:00Z",
-        "type": "mission_started",
-        "message": "Mission started.",
-        "metadata": {"source": "legacy"},
-        "schema_version": CURRENT_MISSION_EVENT_SCHEMA_VERSION,
+        key: value
+        for key, value in raw.items()
+        if key != "legacy_field"
     }
 
 
@@ -237,7 +237,8 @@ def test_serializer_writes_current_schema_version() -> None:
 
 def test_serializer_upcasts_legacy_event_without_mutating_it() -> None:
     serializer = PydanticMissionEventSerializer()
-    legacy_event = serializer.serialize(_provider_events()[0])
+    source_event = _provider_events()[0]
+    legacy_event = serializer.serialize(source_event)
     legacy_event.pop("schema_version")
     legacy_event["unknown_top_level"] = {"preserved": True}
     original_nested_payload = dict(legacy_event["metadata"])
@@ -245,7 +246,7 @@ def test_serializer_upcasts_legacy_event_without_mutating_it() -> None:
     restored = serializer.deserialize(legacy_event, context=CONTEXT)
     current_event = serializer.serialize(restored)
 
-    assert restored == _provider_events()[0]
+    assert restored == source_event
     assert "schema_version" not in legacy_event
     assert legacy_event["metadata"] == original_nested_payload
     assert current_event["schema_version"] == CURRENT_MISSION_EVENT_SCHEMA_VERSION
@@ -265,13 +266,16 @@ def test_serializer_upcasts_all_legacy_provider_events(
 def test_current_schema_event_bypasses_legacy_upcaster() -> None:
     upcaster = _CountingUpcaster()
     serializer = PydanticMissionEventSerializer(
-        upcasters=(upcaster, MissionEventUpcasterV1ToV2()),
+        upcasters=(
+            upcaster,
+            MissionEventUpcasterV1ToV2(),
+            MissionEventUpcasterV2ToV3(),
+        ),
     )
-    current_event = PydanticMissionEventSerializer().serialize(
-        _provider_events()[0]
-    )
+    source_event = _provider_events()[0]
+    current_event = PydanticMissionEventSerializer().serialize(source_event)
 
-    assert serializer.deserialize(current_event) == _provider_events()[0]
+    assert serializer.deserialize(current_event) == source_event
     assert upcaster.calls == 0
 
 
@@ -332,6 +336,7 @@ def test_serializer_rejects_invalid_upcaster_result(result: object) -> None:
         upcasters=(
             _InvalidResultUpcaster(result),
             MissionEventUpcasterV1ToV2(),
+            MissionEventUpcasterV2ToV3(),
         ),
     )
     legacy_event = PydanticMissionEventSerializer().serialize(
@@ -349,6 +354,21 @@ def test_serializer_rejects_incomplete_upcaster_registry() -> None:
             current_schema_version=2,
             upcasters=(MissionEventUpcasterV0ToV1(),),
         )
+
+
+class _NoopUpcaster:
+    def __init__(self, source_version: int, target_version: int) -> None:
+        self.source_version = source_version
+        self.target_version = target_version
+
+    def upcast(
+        self,
+        raw_event: dict[str, object],
+        **_: object,
+    ) -> dict[str, object]:
+        upcasted_event = dict(raw_event)
+        upcasted_event["schema_version"] = self.target_version
+        return upcasted_event
 
 
 @pytest.mark.parametrize(
@@ -393,18 +413,3 @@ class _InvalidResultUpcaster:
 
     def upcast(self, raw_event: dict[str, object], **_: object) -> object:
         return self._result
-
-
-class _NoopUpcaster:
-    def __init__(self, source_version: int, target_version: int) -> None:
-        self.source_version = source_version
-        self.target_version = target_version
-
-    def upcast(
-        self,
-        raw_event: dict[str, object],
-        **_: object,
-    ) -> dict[str, object]:
-        upcasted_event = dict(raw_event)
-        upcasted_event["schema_version"] = self.target_version
-        return upcasted_event

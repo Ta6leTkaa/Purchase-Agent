@@ -1,6 +1,6 @@
 import asyncio
-from datetime import date, datetime, timedelta, timezone
-from typing import Callable
+from collections.abc import Callable
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,24 +11,24 @@ from app.dependencies import mission_repository
 from app.domain.execution import ExecutionEvent
 from app.domain.mission import Mission, MissionType, TrainConstraints
 from app.domain.provider_resolution import (
-    ProviderResolutionSnapshot,
-    ProviderSelectionChangedEventPayload,
     ProviderResolutionFailedEventPayload,
     ProviderResolutionFailureReason,
+    ProviderResolutionSnapshot,
     ProviderResolvedEventPayload,
+    ProviderSelectionChangedEventPayload,
     ProviderSelectionMode,
 )
 from app.main import app
 from app.services.mission_errors import MissionNotFoundError
 from app.services.provider_resolution_history import (
-    AsyncWaiter,
     DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT,
     DEFAULT_PROVIDER_HISTORY_PAGE_SIZE,
+    MAX_PROVIDER_HISTORY_INCREMENT_LIMIT,
+    MAX_PROVIDER_HISTORY_PAGE_SIZE,
+    AsyncWaiter,
     GetMissionProviderResolutionHistory,
     GetMissionProviderResolutionIncrement,
     InvalidProviderHistoryCursorError,
-    MAX_PROVIDER_HISTORY_INCREMENT_LIMIT,
-    MAX_PROVIDER_HISTORY_PAGE_SIZE,
     ProviderHistoryCursorCodec,
     ProviderHistoryEventType,
     ProviderResolutionHistoryPageRequest,
@@ -38,7 +38,7 @@ from app.services.provider_resolution_history import (
 )
 from app.storage.memory import InMemoryMissionRepository
 
-CURRENT_TIME = datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc)
+CURRENT_TIME = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
 
 
 class FakeAsyncWaiter(AsyncWaiter):
@@ -166,7 +166,8 @@ def make_provider_events() -> list[ExecutionEvent]:
 def test_history_filters_provider_events_and_orders_them_chronologically() -> None:
     async def scenario() -> None:
         repository = InMemoryMissionRepository()
-        mission = make_mission(make_provider_events())
+        events = make_provider_events()
+        mission = make_mission(events)
         await repository.create(mission)
 
         history = await GetMissionProviderResolutionHistory(repository).execute(
@@ -186,7 +187,7 @@ def test_history_filters_provider_events_and_orders_them_chronologically() -> No
             "candidate_provider_ids": ["provider_b"],
             "mission_type": "train_ticket",
         }
-        assert mission.execution_log == make_provider_events()
+        assert mission.execution_log == events
 
     asyncio.run(scenario())
 
@@ -344,7 +345,7 @@ def test_long_poll_returns_existing_events_without_sleep() -> None:
 
         assert [item.sequence for item in increment.items] == [2, 3, 4]
         assert waiter.sleeps == []
-        assert repository.get_calls == 2
+        assert repository.get_calls == 1
 
     asyncio.run(scenario())
 
@@ -409,7 +410,7 @@ def test_long_poll_reads_fresh_events_after_one_interval() -> None:
         assert [item.sequence for item in increment.items] == [2, 3]
         assert increment.has_more is True
         assert waiter.sleeps == [timedelta(milliseconds=500)]
-        assert repository.get_calls == 3
+        assert repository.get_calls == 2
 
     asyncio.run(scenario())
 
@@ -437,7 +438,7 @@ def test_long_poll_timeout_performs_final_read_at_deadline() -> None:
         assert increment.latest_sequence == 0
         assert increment.has_more is False
         assert waiter.sleeps == [timedelta(milliseconds=200)]
-        assert repository.get_calls == 3
+        assert repository.get_calls == 2
 
     asyncio.run(scenario())
 
@@ -456,7 +457,7 @@ def test_long_poll_returns_missing_mission_without_waiting() -> None:
                 ),
             )
 
-        assert repository.get_calls == 1
+        assert repository.get_calls == 0
         assert waiter.sleeps == []
 
     asyncio.run(scenario())

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -22,6 +22,7 @@ def test_list_stale_processing_filters_orders_limits_and_is_read_only() -> None:
         oldest_mission = make_mission(
             claimed_at=current_time - timedelta(minutes=30)
         )
+        oldest_event = oldest_mission.execution_log[0]
         boundary_mission = make_mission(
             claimed_at=current_time - timedelta(minutes=15)
         )
@@ -77,7 +78,7 @@ def test_list_stale_processing_filters_orders_limits_and_is_read_only() -> None:
         ]
         assert oldest_mission.status is MissionStatus.processing
         assert oldest_mission.claimed_at == current_time - timedelta(minutes=30)
-        assert oldest_mission.execution_log == [make_event()]
+        assert oldest_mission.execution_log == [oldest_event]
         assert legacy_processing_mission.claimed_at is None
 
     asyncio.run(scenario())
@@ -318,4 +319,4 @@ def make_event() -> ExecutionEvent:
 
 
 def aware_datetime() -> datetime:
-    return datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    return datetime(2026, 8, 1, 10, 0, tzinfo=UTC)

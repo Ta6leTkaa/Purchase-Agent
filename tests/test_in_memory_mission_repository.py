@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -275,16 +275,18 @@ def test_claim_after_recovery_increments_execution_attempts_again() -> None:
         await repository.create(mission)
 
         first_claim = await repository.claim_due(current_time)
+        first_claim_attempts = first_claim[0].execution_attempts
         recovered_missions = await repository.recover_stale_processing(
             current_time + timedelta(minutes=16),
             timedelta(minutes=15),
         )
+        recovered_attempts = recovered_missions[0].execution_attempts
         second_claim = await repository.claim_due(
             current_time + timedelta(minutes=16)
         )
 
-        assert first_claim[0].execution_attempts == 1
-        assert recovered_missions[0].execution_attempts == 1
+        assert first_claim_attempts == 1
+        assert recovered_attempts == 1
         assert second_claim[0].execution_attempts == 2
 
     asyncio.run(scenario())
@@ -323,6 +325,7 @@ def test_claim_due_skips_missions_with_exhausted_attempts() -> None:
 def make_mission(
     status: MissionStatus,
     scheduled_at: datetime | None = None,
+    last_event_sequence: int | None = None,
     execution_log: list[ExecutionEvent] | None = None,
 ) -> Mission:
     return Mission(
@@ -339,9 +342,14 @@ def make_mission(
             passengers_count=1,
         ),
         scheduled_at=scheduled_at,
+        last_event_sequence=(
+            last_event_sequence
+            if last_event_sequence is not None
+            else execution_log[-1].sequence if execution_log else 0
+        ),
         execution_log=execution_log or [],
     )
 
 
 def aware_datetime() -> datetime:
-    return datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    return datetime(2026, 8, 1, 10, 0, tzinfo=UTC)

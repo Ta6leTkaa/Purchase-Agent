@@ -20,7 +20,14 @@ from app.repositories.sqlalchemy.provider_history import (
     SqlAlchemyProviderHistoryProjectionRepository,
 )
 from app.services.clock import utc_now
+from app.services.mission_event_store import (
+    MissionJsonEventStore,
+    mission_json_event_store,
+)
 from app.services.mission_provider_selection import SetMissionProvider
+from app.services.provider_history_verification import (
+    VerifyMissionProviderHistoryProjection,
+)
 from app.services.provider_resolution_history import (
     AsyncioWaiter,
     AsyncWaiter,
@@ -32,10 +39,6 @@ from app.services.provider_resolution_history import (
 from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
 )
-from app.services.provider_history_verification import (
-    VerifyMissionProviderHistoryProjection,
-)
-from app.services.mission_event_store import MissionJsonEventStore, mission_json_event_store
 from app.services.provider_resolver import ProviderResolver
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 from app.storage.mission_command_idempotency import (
@@ -47,7 +50,21 @@ mission_repository = InMemoryMissionRepository()
 provider_resolver = ProviderResolver(provider_registry)
 provider_history_waiter = AsyncioWaiter()
 mission_command_idempotency_store = InMemoryMissionCommandIdempotencyStore()
-DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
+
+
+async def get_storage_session() -> AsyncIterator[AsyncSession | None]:
+    if settings.storage_backend == "memory":
+        yield None
+        return
+
+    async for session in get_db_session():
+        yield session
+
+
+StorageSessionDep = Annotated[
+    AsyncSession | None,
+    Depends(get_storage_session),
+]
 
 
 class SqlAlchemyMissionReadRepositoryFactory:
@@ -84,20 +101,23 @@ class SqlAlchemyProviderHistoryProjectionReaderFactory:
                 await session.rollback()
 
 
-def get_identity_repository(session: DbSessionDep) -> IdentityRepository:
+def get_identity_repository(session: StorageSessionDep) -> IdentityRepository:
     if settings.storage_backend == "database":
+        assert session is not None
         return SqlAlchemyIdentityRepository(session)
     return identity_repository
 
 
-def get_mission_repository(session: DbSessionDep) -> MissionRepository:
+def get_mission_repository(session: StorageSessionDep) -> MissionRepository:
     if settings.storage_backend == "database":
+        assert session is not None
         return SqlAlchemyMissionRepository(session)
     return mission_repository
 
 
-def get_mission_command_idempotency_store(session: DbSessionDep) -> object:
+def get_mission_command_idempotency_store(session: StorageSessionDep) -> object:
     if settings.storage_backend == "database":
+        assert session is not None
         return SqlAlchemyMissionCommandIdempotencyStore(session)
     return mission_command_idempotency_store
 
@@ -113,9 +133,10 @@ def get_provider_history_waiter() -> AsyncWaiter:
 
 
 def get_provider_history_projection_reader(
-    session: DbSessionDep,
+    session: StorageSessionDep,
 ) -> SqlAlchemyProviderHistoryProjectionRepository | None:
     if settings.storage_backend == "database":
+        assert session is not None
         return SqlAlchemyProviderHistoryProjectionRepository(session)
     return None
 

@@ -1,8 +1,6 @@
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
-
-import pytest
 
 from app.adapters.mock_train import MockTrainAdapter
 from app.adapters.registry import ProviderRegistry
@@ -191,7 +189,7 @@ def test_exception_for_one_mission_does_not_stop_next_due_mission() -> None:
         broken_mission = make_mission(
             [identity.id for identity in identities],
             scheduled_at=current_time - timedelta(minutes=2),
-            provider="unknown_provider",
+            provider_id="unknown_provider",
         )
         successful_mission = make_mission(
             [identity.id for identity in identities],
@@ -340,7 +338,7 @@ def make_identity() -> Identity:
 def make_mission(
     participant_ids: list[UUID],
     scheduled_at: datetime,
-    provider: str = "mock_train",
+    provider_id: str | None = None,
 ) -> Mission:
     return Mission(
         id=uuid4(),
@@ -348,7 +346,8 @@ def make_mission(
         title="Moscow to Saint Petersburg",
         status=MissionStatus.waiting,
         participant_ids=participant_ids,
-        provider=provider,
+        provider="mock_train",
+        provider_id=provider_id,
         constraints=TrainConstraints(
             from_city="Moscow",
             to_city="Saint Petersburg",
@@ -365,7 +364,7 @@ def make_mission(
 
 
 def aware_datetime() -> datetime:
-    return datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    return datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
 
 
 class CapturingMockTrainAdapter(MockTrainAdapter):

@@ -1,12 +1,16 @@
 import asyncio
 from collections.abc import Iterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.dependencies import identity_repository, mission_repository
+from app.dependencies import (
+    identity_repository,
+    mission_command_idempotency_store,
+    mission_repository,
+)
 from app.main import app
 
 
@@ -14,9 +18,11 @@ from app.main import app
 def clear_repositories() -> Iterator[None]:
     asyncio.run(identity_repository.clear())
     asyncio.run(mission_repository.clear())
+    asyncio.run(mission_command_idempotency_store.clear())
     yield
     asyncio.run(identity_repository.clear())
     asyncio.run(mission_repository.clear())
+    asyncio.run(mission_command_idempotency_store.clear())
 
 
 def make_mission_payload(
@@ -215,7 +221,7 @@ def test_post_missions_accepts_custom_max_execution_attempts() -> None:
 
 def test_post_missions_with_scheduled_at_returns_waiting() -> None:
     client = TestClient(app)
-    scheduled_at = datetime.now(timezone.utc) + timedelta(days=1)
+    scheduled_at = datetime.now(UTC) + timedelta(days=1)
     payload = {
         **make_mission_payload(
             participant_ids=make_existing_participant_ids(client)
@@ -246,7 +252,7 @@ def test_post_missions_with_naive_scheduled_at_returns_422() -> None:
 
 def test_post_missions_with_past_scheduled_at_returns_422() -> None:
     client = TestClient(app)
-    scheduled_at = datetime.now(timezone.utc) - timedelta(days=1)
+    scheduled_at = datetime.now(UTC) - timedelta(days=1)
     payload = {
         **make_mission_payload(
             participant_ids=make_existing_participant_ids(client)
@@ -395,7 +401,7 @@ def test_post_missions_with_passenger_count_mismatch_returns_422() -> None:
         ("status", "completed"),
         ("execution_log", []),
         ("best_option", None),
-        ("claimed_at", datetime.now(timezone.utc).isoformat()),
+        ("claimed_at", datetime.now(UTC).isoformat()),
         ("execution_attempts", 1),
         ("resolved_provider_id", "mock_train"),
         ("reservation_id", "provider-reservation-123"),
@@ -537,7 +543,7 @@ def create_requires_confirmation_mission_with_key(
 def test_post_scheduled_mission_run_before_time_returns_409() -> None:
     client = TestClient(app)
     identity_ids = make_existing_participant_ids(client, count=4)
-    scheduled_at = datetime.now(timezone.utc) + timedelta(days=1)
+    scheduled_at = datetime.now(UTC) + timedelta(days=1)
     mission_payload = make_mission_payload(
         participant_ids=identity_ids,
         passengers_count=4,

@@ -179,11 +179,17 @@ class InMemoryMissionRepository:
             MissionStatus.completed,
             MissionStatus.failed,
         }:
-            self._close_execution_attempt(
-                mission,
-                finished_at=_mission_event_time(mission),
-                status=MissionExecutionAttemptStatus(mission.status.value),
-            )
+            attempts = self._execution_attempts.get(mission.id, [])
+            if (
+                attempts
+                and attempts[-1].status
+                is MissionExecutionAttemptStatus.processing
+            ):
+                self._close_execution_attempt(
+                    mission,
+                    finished_at=_mission_event_time(mission),
+                    status=MissionExecutionAttemptStatus(mission.status.value),
+                )
         self._missions[mission.id] = mission
         return mission
 
