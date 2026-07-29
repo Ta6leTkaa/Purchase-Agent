@@ -918,6 +918,20 @@ The endpoint returns only events whose sequence is strictly greater than
 position; `has_more` indicates that another bounded page is available. Reading
 history never executes, schedules, resolves a provider, or changes the Mission.
 
+Clients that need a lightweight live audit view can use bounded long-polling on
+the same endpoint:
+
+```bash
+curl "http://127.0.0.1:8000/missions/{mission_id}/events?after_sequence=42&wait_seconds=30"
+```
+
+The API reads immediately, then waits for newly committed canonical events for
+at most 30 seconds. A timeout is still a successful `200` with an empty page
+and `latest_sequence` equal to `after_sequence`. Each polling read opens and
+releases its own database session before sleeping, so no transaction or pooled
+connection is held during the wait. The batch remains bounded by `limit` and
+uses the same strict sequence ordering as ordinary event-history reads.
+
 PostgreSQL keeps a relational `mission_events` projection keyed by
 `(mission_id, sequence)`. New events are appended in the same transaction as
 their Mission update, and the history endpoint uses that projection for bounded

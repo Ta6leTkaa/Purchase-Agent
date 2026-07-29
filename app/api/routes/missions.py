@@ -17,6 +17,7 @@ from app.dependencies import (
     get_provider_registry,
     get_provider_resolver,
     get_set_mission_provider,
+    get_wait_for_mission_event_history,
 )
 from app.domain.mission import Mission
 from app.repositories.identity import IdentityRepository
@@ -52,9 +53,12 @@ from app.services.mission_engine import (
 from app.services.mission_errors import MissionNotFoundError
 from app.services.mission_event_history import (
     DEFAULT_MISSION_EVENT_PAGE_SIZE,
+    DEFAULT_MISSION_EVENT_WAIT_SECONDS,
     MAX_MISSION_EVENT_PAGE_SIZE,
+    MAX_MISSION_EVENT_WAIT_SECONDS,
     GetMissionEventHistory,
     MissionEventHistoryPageRequest,
+    WaitForMissionEventHistory,
 )
 from app.services.mission_provider_selection import (
     MissionProviderSelectionNotAllowedError,
@@ -123,6 +127,10 @@ type MissionCommandIdempotencyStoreDep = Annotated[
 type MissionEventProjectionReaderDep = Annotated[
     SqlAlchemyMissionEventProjectionRepository | None,
     Depends(get_mission_event_projection_reader),
+]
+type WaitForMissionEventHistoryDep = Annotated[
+    WaitForMissionEventHistory,
+    Depends(get_wait_for_mission_event_history),
 ]
 
 
@@ -211,22 +219,37 @@ async def get_mission_event_history_endpoint(
     mission_id: UUID,
     repository: MissionRepositoryDep,
     projection_reader: MissionEventProjectionReaderDep,
+    wait_for_event_history: WaitForMissionEventHistoryDep,
     after_sequence: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[
         int,
         Query(ge=1, le=MAX_MISSION_EVENT_PAGE_SIZE),
     ] = DEFAULT_MISSION_EVENT_PAGE_SIZE,
+    wait_seconds: Annotated[
+        int,
+        Query(
+            ge=0,
+            le=MAX_MISSION_EVENT_WAIT_SECONDS,
+            description="Maximum seconds to wait for newly committed events.",
+        ),
+    ] = DEFAULT_MISSION_EVENT_WAIT_SECONDS,
 ) -> MissionEventHistoryResponse:
     try:
-        page = await GetMissionEventHistory(
-            repository,
-            projection_reader,
-        ).execute(
-            mission_id,
-            MissionEventHistoryPageRequest(
-                after_sequence=after_sequence,
-                limit=limit,
-            ),
+        request = MissionEventHistoryPageRequest(
+            after_sequence=after_sequence,
+            limit=limit,
+        )
+        page = (
+            await wait_for_event_history.execute(
+                mission_id,
+                request,
+                timedelta(seconds=wait_seconds),
+            )
+            if wait_seconds
+            else await GetMissionEventHistory(repository, projection_reader).execute(
+                mission_id,
+                request,
+            )
         )
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
