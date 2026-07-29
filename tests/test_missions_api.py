@@ -801,6 +801,50 @@ def test_put_mission_schedule_null_unschedules_waiting_mission() -> None:
     assert response.json()["execution_log"][-1]["type"] == "mission_unscheduled"
 
 
+def test_mission_mutation_rejects_stale_if_match_version() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+    mission_id = client.post("/missions", json=payload).json()["id"]
+    client.put(
+        f"/missions/{mission_id}/schedule",
+        json={"scheduled_at": "2030-08-01T10:00:00Z"},
+    )
+
+    response = client.put(
+        f"/missions/{mission_id}/schedule",
+        json={"scheduled_at": "2030-08-02T10:00:00Z"},
+        headers={"If-Match": '"0"'},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "mission_version_conflict",
+        "message": (
+            "Mission changed since the requested version. Reload it and try again."
+        ),
+        "details": {"current_version": 1, "expected_version": 0},
+    }
+
+
+def test_mission_mutation_rejects_invalid_if_match_version() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+    mission_id = client.post("/missions", json=payload).json()["id"]
+
+    response = client.put(
+        f"/missions/{mission_id}/schedule",
+        json={"scheduled_at": "2030-08-01T10:00:00Z"},
+        headers={"If-Match": "not-a-version"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_mission_version"
+
+
 def test_get_mission_events_returns_bounded_canonical_history() -> None:
     client = TestClient(app)
     payload = make_mission_payload(

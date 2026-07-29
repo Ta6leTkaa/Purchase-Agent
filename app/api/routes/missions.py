@@ -445,9 +445,12 @@ async def get_mission_provider_resolution_history_endpoint(
 async def set_mission_provider_endpoint(
     mission_id: UUID,
     request: SetMissionProviderRequest,
+    mission_repository: MissionRepositoryDep,
     set_mission_provider: SetMissionProviderDep,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> Mission:
     try:
+        await _ensure_mission_version(mission_repository, mission_id, if_match)
         return await set_mission_provider.execute(
             mission_id,
             request.provider_id,
@@ -484,8 +487,10 @@ async def schedule_mission_endpoint(
     mission_id: UUID,
     request: ScheduleMissionRequest,
     mission_repository: MissionRepositoryDep,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> Mission:
     try:
+        await _ensure_mission_version(mission_repository, mission_id, if_match)
         return await schedule_mission(
             mission_id,
             request.scheduled_at,
@@ -520,8 +525,10 @@ async def run_mission_endpoint(
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1)
     ],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> Mission:
     try:
+        await _ensure_mission_version(mission_repository, mission_id, if_match)
         return await _execute_idempotent_mission_command(
             mission_id=mission_id,
             command=MissionCommandType.RUN,
@@ -562,8 +569,10 @@ async def confirm_mission_endpoint(
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1)
     ],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> Mission:
     try:
+        await _ensure_mission_version(mission_repository, mission_id, if_match)
         return await _execute_idempotent_mission_command(
             mission_id=mission_id,
             command=MissionCommandType.CONFIRM,
@@ -602,8 +611,10 @@ async def cancel_mission_endpoint(
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1)
     ],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> Mission:
     try:
+        await _ensure_mission_version(mission_repository, mission_id, if_match)
         return await _execute_idempotent_mission_command(
             mission_id=mission_id,
             command=MissionCommandType.CANCEL,
@@ -659,3 +670,48 @@ async def _execute_idempotent_mission_command(
             command=command,
         )
         raise
+
+
+async def _ensure_mission_version(
+    repository: MissionRepository,
+    mission_id: UUID,
+    if_match: str | None,
+) -> None:
+    if if_match is None:
+        return
+    try:
+        expected_sequence = int(if_match.strip().strip('"'))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_mission_version",
+                "message": "If-Match must contain a non-negative Mission version.",
+            },
+        ) from exc
+    if expected_sequence < 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_mission_version",
+                "message": "If-Match must contain a non-negative Mission version.",
+            },
+        )
+    mission = await repository.get(mission_id)
+    if mission is None:
+        raise MissionNotFoundError
+    if mission.last_event_sequence != expected_sequence:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "mission_version_conflict",
+                "message": (
+                    "Mission changed since the requested version. "
+                    "Reload it and try again."
+                ),
+                "details": {
+                    "current_version": mission.last_event_sequence,
+                    "expected_version": expected_sequence,
+                },
+            },
+        )
