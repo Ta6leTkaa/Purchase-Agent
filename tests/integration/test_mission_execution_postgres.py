@@ -286,6 +286,40 @@ async def test_mission_cancellation_persists_provider_cancellation(
     ]
 
 
+async def test_mission_event_history_reads_persisted_events_in_sequence(
+    mission_execution_client: tuple[AsyncClient, list[str]],
+    test_session: AsyncSession,
+    test_engine: AsyncEngine,
+) -> None:
+    client, transaction_events = mission_execution_client
+    mission = make_mission(participant_ids=[uuid4()])
+    await SqlAlchemyMissionRepository(test_session).create(mission)
+    await test_session.commit()
+
+    schedule_response = await client.put(
+        f"/missions/{mission.id}/schedule",
+        json={"scheduled_at": "2030-08-01T10:00:00Z"},
+    )
+    history_response = await client.get(
+        f"/missions/{mission.id}/events",
+        params={"after_sequence": 0, "limit": 1},
+    )
+
+    assert schedule_response.status_code == 200
+    assert history_response.status_code == 200
+    assert history_response.json()["latest_sequence"] == 1
+    assert [event["type"] for event in history_response.json()["items"]] == [
+        "mission_scheduled"
+    ]
+    assert "mission_commit" in transaction_events
+
+    persisted_mission = await load_mission(test_engine, mission.id)
+
+    assert persisted_mission is not None
+    assert [event.sequence for event in persisted_mission.execution_log] == [1]
+    assert persisted_mission.execution_log[0].type == "mission_scheduled"
+
+
 async def test_mission_rerun_is_rejected_without_persistence_changes(
     mission_execution_client: tuple[AsyncClient, list[str]],
     test_session: AsyncSession,
