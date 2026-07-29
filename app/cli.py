@@ -22,6 +22,10 @@ from app.services.due_mission_processor import (
     DueMissionProcessingResult,
     process_due_missions,
 )
+from app.services.mission_event_projection import (
+    MissionEventProjectionRebuildResult,
+    RebuildMissionEventProjection,
+)
 from app.services.provider_history_rebuild import (
     ProviderHistoryProjectionRebuildResult,
     RebuildProviderHistoryProjection,
@@ -144,6 +148,18 @@ def main(argv: Sequence[str] | None = None) -> None:
                 f"Inserted rows: {rebuild_result.inserted_rows}\n"
             )
         raise SystemExit(exit_code)
+    if args.command == "rebuild-mission-events":
+        exit_code, mission_event_rebuild_result = asyncio.run(
+            rebuild_mission_event_projection_command()
+        )
+        if exit_code == 0:
+            sys.stdout.write(
+                "Processed missions: "
+                f"{mission_event_rebuild_result.processed_missions}\n"
+                "Inserted events: "
+                f"{mission_event_rebuild_result.inserted_events}\n"
+            )
+        raise SystemExit(exit_code)
 
     exit_code, recovery_result = asyncio.run(
         recover_stale_command(
@@ -213,6 +229,23 @@ async def rebuild_provider_history_command(
         return 1, ProviderHistoryProjectionRebuildResult(0, 0, 0)
 
 
+async def rebuild_mission_event_projection_command(
+    *,
+    dependencies: CliDependencies | None = None,
+    stderr: TextIO | None = None,
+) -> tuple[int, MissionEventProjectionRebuildResult]:
+    error_output = stderr or sys.stderr
+    resolved_dependencies = dependencies or get_cli_dependencies()
+    try:
+        async with resolved_dependencies.session_maker() as session:
+            result = await RebuildMissionEventProjection().execute(session)
+            await session.commit()
+            return 0, result
+    except Exception:
+        error_output.write("Infrastructure error while rebuilding mission events.\n")
+        return 1, MissionEventProjectionRebuildResult(0, 0)
+
+
 def _resolve_dependencies(
     dependencies: CliDependencies | None,
     session_maker: async_sessionmaker[AsyncSession] | None,
@@ -255,6 +288,10 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "rebuild-provider-history",
         help="Rebuild the provider history projection from Mission events.",
+    )
+    subparsers.add_parser(
+        "rebuild-mission-events",
+        help="Rebuild the Mission event projection from canonical Mission logs.",
     )
     recover_stale_parser.add_argument(
         "--limit",

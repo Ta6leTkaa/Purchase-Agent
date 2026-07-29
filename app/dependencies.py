@@ -23,6 +23,7 @@ from app.repositories.sqlalchemy.provider_history import (
     SqlAlchemyProviderHistoryProjectionRepository,
 )
 from app.services.clock import utc_now
+from app.services.mission_event_projection import VerifyMissionEventProjection
 from app.services.mission_event_store import (
     MissionJsonEventStore,
     mission_json_event_store,
@@ -168,6 +169,18 @@ def get_mission_event_projection_reader(
         assert session is not None
         return SqlAlchemyMissionEventProjectionRepository(session)
     return None
+
+
+def get_mission_event_projection_verifier(
+    mission_repository: Annotated[MissionRepository, Depends(get_mission_repository)],
+    projection_reader: Annotated[
+        SqlAlchemyMissionEventProjectionRepository | None,
+        Depends(get_mission_event_projection_reader),
+    ],
+) -> VerifyMissionEventProjection:
+    if projection_reader is None:
+        raise RuntimeError("Mission event projection is unavailable")
+    return VerifyMissionEventProjection(mission_repository, projection_reader)
 
 
 def get_provider_registry() -> ProviderRegistry:

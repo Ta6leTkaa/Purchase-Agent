@@ -925,6 +925,27 @@ SQL reads. The existing JSON execution log remains the canonical compatible
 event representation; the projection is a read model, not a second execution
 engine.
 
+The projection is also operationally verifiable and rebuildable. Administrators
+can compare one Mission's canonical log with its relational rows without
+changing either representation:
+
+```text
+GET /admin/missions/{mission_id}/event-projection/verification
+```
+
+The diagnostic reports counts plus missing, unexpected, or mismatched event
+sequences. A mismatch returns a normal `200` response with status
+`inconsistent`; it never repairs Mission data. Rebuild the full disposable
+projection in one transaction when maintenance is required:
+
+```bash
+python -m app.cli rebuild-mission-events
+```
+
+Avoid normal Mission writes while the rebuild is running. The command replaces
+only relational `mission_events` rows from canonical JSON; it does not execute,
+schedule, recover, or otherwise mutate Missions.
+
 ## Provider reservation idempotency
 
 Before reserving an option, Mission Engine supplies the selected provider with

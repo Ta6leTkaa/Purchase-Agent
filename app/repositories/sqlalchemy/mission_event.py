@@ -52,3 +52,6 @@ class SqlAlchemyMissionEventProjectionRepository:
             )[0]
             for model in result.scalars().all()
         ]
+
+    async def list_all(self, mission_id: UUID) -> list[ExecutionEvent]:
+        return await self.list_after(mission_id, 0, 2**31 - 1)

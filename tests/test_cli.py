@@ -20,6 +20,9 @@ from app.domain.mission import (
     TrainConstraints,
 )
 from app.repositories.mission import MissionRepository
+from app.services.mission_event_projection import (
+    MissionEventProjectionRebuildResult,
+)
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
@@ -355,6 +358,52 @@ def test_recover_stale_command_writes_safe_stderr_on_infrastructure_error() -> N
     asyncio.run(scenario())
 
 
+def test_rebuild_mission_events_command_writes_projection_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def fake_rebuild_command() -> tuple[
+        int, MissionEventProjectionRebuildResult
+    ]:
+        return 0, MissionEventProjectionRebuildResult(3, 7)
+
+    monkeypatch.setattr(
+        cli,
+        "rebuild_mission_event_projection_command",
+        fake_rebuild_command,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["rebuild-mission-events"])
+
+    assert exc_info.value.code == 0
+    assert capsys.readouterr().out == "Processed missions: 3\nInserted events: 7\n"
+
+
+def test_rebuild_mission_events_command_writes_safe_error_on_failure() -> None:
+    async def scenario() -> None:
+        stderr = io.StringIO()
+        secret = "purchase_agent:purchase_agent@localhost"
+        dependencies = cli.CliDependencies(
+            session_maker=cast(
+                async_sessionmaker[AsyncSession],
+                BrokenCommitSessionMaker(secret),
+            )
+        )
+
+        exit_code, result = await cli.rebuild_mission_event_projection_command(
+            dependencies=dependencies,
+            stderr=stderr,
+        )
+
+        assert exit_code == 1
+        assert result == MissionEventProjectionRebuildResult(0, 0)
+        assert "Infrastructure error" in stderr.getvalue()
+        assert secret not in stderr.getvalue()
+
+    asyncio.run(scenario())
+
+
 class BrokenMissionRepository:
     def __init__(self, message: str) -> None:
         self._message = message
@@ -447,6 +496,22 @@ class FakeSession:
 
     async def rollback(self) -> None:
         return None
+
+
+class BrokenCommitSession(FakeSession):
+    async def execute(self, *args: object, **kwargs: object) -> object:
+        raise RuntimeError(self._message)
+
+    def __init__(self, message: str) -> None:
+        self._message = message
+
+
+class BrokenCommitSessionMaker:
+    def __init__(self, message: str) -> None:
+        self._message = message
+
+    def __call__(self) -> BrokenCommitSession:
+        return BrokenCommitSession(self._message)
 
 
 class FakeSessionMaker:

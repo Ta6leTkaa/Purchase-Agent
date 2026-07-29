@@ -10,6 +10,7 @@ from app.cli import StaleMissionRecoveryResult
 from app.dependencies import (
     get_current_time,
     get_identity_repository,
+    get_mission_event_projection_verifier,
     get_mission_repository,
     get_provider_history_projection_verifier,
     get_provider_resolver,
@@ -21,6 +22,10 @@ from app.services.due_mission_processor import (
     process_due_missions,
 )
 from app.services.mission_errors import MissionNotFoundError
+from app.services.mission_event_projection import (
+    MissionEventProjectionVerification,
+    VerifyMissionEventProjection,
+)
 from app.services.provider_history_verification import (
     MissionProviderHistoryProjectionVerification,
     VerifyMissionProviderHistoryProjection,
@@ -45,6 +50,10 @@ type AdminApiKeyDep = Annotated[None, Depends(require_admin_api_key)]
 type ProviderHistoryVerifierDep = Annotated[
     VerifyMissionProviderHistoryProjection,
     Depends(get_provider_history_projection_verifier),
+]
+type MissionEventProjectionVerifierDep = Annotated[
+    VerifyMissionEventProjection,
+    Depends(get_mission_event_projection_verifier),
 ]
 
 
@@ -123,6 +132,23 @@ async def verify_provider_history_projection_endpoint(
     _admin_api_key: AdminApiKeyDep,
     verifier: ProviderHistoryVerifierDep,
 ) -> MissionProviderHistoryProjectionVerification:
+    try:
+        return await verifier.execute(mission_id)
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+
+
+@router.get(
+    "/missions/{mission_id}/event-projection/verification",
+    response_model=MissionEventProjectionVerification,
+    summary="Verify Mission event projection consistency",
+)
+async def verify_mission_event_projection_endpoint(
+    mission_id: UUID,
+    _admin_api_key: AdminApiKeyDep,
+    verifier: MissionEventProjectionVerifierDep,
+) -> MissionEventProjectionVerification:
+    """Compare the canonical event log with its relational read projection."""
     try:
         return await verifier.execute(mission_id)
     except MissionNotFoundError as exc:
