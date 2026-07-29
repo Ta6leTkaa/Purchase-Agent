@@ -918,6 +918,11 @@ The endpoint returns only events whose sequence is strictly greater than
 position; `has_more` indicates that another bounded page is available. Reading
 history never executes, schedules, resolves a provider, or changes the Mission.
 
+Individual Mission responses include an `ETag` containing the current event
+sequence. Mutating endpoints accept an optional `If-Match` value such as `"12"`.
+When supplied, a stale version returns `409 mission_version_conflict`; this
+allows clients to avoid applying an action based on an outdated Mission view.
+
 Clients that need a lightweight live audit view can use bounded long-polling on
 the same endpoint:
 

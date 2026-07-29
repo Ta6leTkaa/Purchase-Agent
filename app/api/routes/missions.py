@@ -139,6 +139,7 @@ async def create_mission(
     mission: MissionCreate,
     mission_repository: MissionRepositoryDep,
     identity_repository: IdentityRepositoryDep,
+    response: Response,
 ) -> Mission:
     unknown_participant_ids: list[str] = []
     for participant_id in mission.participant_ids:
@@ -156,7 +157,9 @@ async def create_mission(
             },
         )
 
-    return await mission_repository.create(mission.to_domain())
+    created = await mission_repository.create(mission.to_domain())
+    _set_mission_etag(response, created)
+    return created
 
 
 @router.get("")
@@ -170,10 +173,12 @@ async def list_missions(
 async def get_mission(
     mission_id: UUID,
     repository: MissionRepositoryDep,
+    response: Response,
 ) -> Mission:
     mission = await repository.get(mission_id)
     if mission is None:
         raise HTTPException(status_code=404, detail="Mission not found")
+    _set_mission_etag(response, mission)
     return mission
 
 
@@ -715,3 +720,7 @@ async def _ensure_mission_version(
                 },
             },
         )
+
+
+def _set_mission_etag(response: Response, mission: Mission) -> None:
+    response.headers["ETag"] = f'"{mission.last_event_sequence}"'

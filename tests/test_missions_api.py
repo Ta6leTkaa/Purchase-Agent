@@ -845,6 +845,20 @@ def test_mission_mutation_rejects_invalid_if_match_version() -> None:
     assert response.json()["detail"]["code"] == "invalid_mission_version"
 
 
+def test_mission_response_exposes_event_sequence_as_etag() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+
+    created = client.post("/missions", json=payload)
+    mission_id = created.json()["id"]
+    fetched = client.get(f"/missions/{mission_id}")
+
+    assert created.headers["etag"] == '"0"'
+    assert fetched.headers["etag"] == '"0"'
+
+
 def test_get_mission_events_returns_bounded_canonical_history() -> None:
     client = TestClient(app)
     payload = make_mission_payload(
