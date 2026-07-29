@@ -56,6 +56,19 @@ class SetMissionProviderRequest(BaseModel):
         return normalize_provider_id(value)
 
 
+class ScheduleMissionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scheduled_at: datetime
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def validate_scheduled_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("scheduled_at must be timezone-aware")
+        return value
+
+
 class MissionProviderResolutionPreviewResponse(BaseModel):
     mission_id: UUID
     mission_type: MissionType

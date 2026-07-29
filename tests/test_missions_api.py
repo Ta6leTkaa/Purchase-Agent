@@ -761,6 +761,24 @@ def test_post_mission_cancel_cancels_provider_reservation() -> None:
     ]
 
 
+def test_put_mission_schedule_moves_created_mission_to_waiting() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+    mission_id = client.post("/missions", json=payload).json()["id"]
+
+    response = client.put(
+        f"/missions/{mission_id}/schedule",
+        json={"scheduled_at": "2030-08-01T10:00:00Z"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "waiting"
+    assert response.json()["scheduled_at"] == "2030-08-01T10:00:00Z"
+    assert response.json()["execution_log"][-1]["type"] == "mission_scheduled"
+
+
 def test_post_completed_mission_run_returns_409() -> None:
     client = TestClient(app)
     mission_id = create_requires_confirmation_mission(client)

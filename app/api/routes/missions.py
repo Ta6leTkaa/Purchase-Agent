@@ -26,6 +26,7 @@ from app.schemas.mission import (
     MissionProviderResolutionHistoryResponse,
     MissionProviderResolutionIncrementResponse,
     MissionProviderResolutionPreviewResponse,
+    ScheduleMissionRequest,
     SetMissionProviderRequest,
 )
 from app.services.mission_command_idempotency import (
@@ -47,6 +48,11 @@ from app.services.mission_errors import MissionNotFoundError
 from app.services.mission_provider_selection import (
     MissionProviderSelectionNotAllowedError,
     SetMissionProvider,
+)
+from app.services.mission_scheduling import (
+    InvalidMissionScheduleError,
+    MissionSchedulingNotAllowedError,
+    schedule_mission,
 )
 from app.services.provider_resolution_history import (
     DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT,
@@ -385,6 +391,44 @@ async def set_mission_provider_endpoint(
                 "details": {"status": exc.status.value},
             },
         ) from exc
+
+
+@router.put(
+    "/{mission_id}/schedule",
+    summary="Schedule mission",
+    description=(
+        "Schedules or reschedules a created or waiting Mission. This endpoint "
+        "does not execute the mission."
+    ),
+    responses={
+        404: {"description": "Mission not found"},
+        409: {"description": "Mission state does not allow scheduling"},
+    },
+)
+async def schedule_mission_endpoint(
+    mission_id: UUID,
+    request: ScheduleMissionRequest,
+    mission_repository: MissionRepositoryDep,
+) -> Mission:
+    try:
+        return await schedule_mission(
+            mission_id,
+            request.scheduled_at,
+            mission_repository,
+        )
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    except MissionSchedulingNotAllowedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "mission_scheduling_not_allowed",
+                "message": "Mission scheduling cannot be changed in this state.",
+                "details": {"status": exc.status.value},
+            },
+        ) from exc
+    except InvalidMissionScheduleError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post(

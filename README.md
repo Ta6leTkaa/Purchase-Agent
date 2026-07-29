@@ -100,6 +100,19 @@ There is no automatic scheduler yet. A scheduled mission is stored in
 `waiting` status and still has to be started through the run API after
 `scheduled_at`.
 
+An unstarted Mission can be scheduled or rescheduled without executing it:
+
+```bash
+curl -X PUT http://127.0.0.1:8000/missions/{mission_id}/schedule \
+  -H "Content-Type: application/json" \
+  -d '{"scheduled_at":"2030-08-01T10:00:00Z"}'
+```
+
+Only `created` and `waiting` Missions accept schedule changes. Scheduling a
+created Mission moves it to `waiting`; the operation records a
+`mission_scheduled` audit event. It does not create a worker or trigger an
+immediate run.
+
 Repositories can query missions that are due for scheduled execution. This is
 only preparation for a future background worker; no scheduler, polling loop, or
 automatic `run_mission` call exists yet.
