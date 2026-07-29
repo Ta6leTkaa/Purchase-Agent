@@ -109,8 +109,9 @@ curl -X PUT http://127.0.0.1:8000/missions/{mission_id}/schedule \
 ```
 
 Only `created` and `waiting` Missions accept schedule changes. Scheduling a
-created Mission moves it to `waiting`; the operation records a
-`mission_scheduled` audit event. It does not create a worker or trigger an
+created Mission moves it to `waiting`; sending `{"scheduled_at": null}` for a
+waiting Mission removes its schedule and returns it to `created`. Both changes
+record an audit event. This endpoint does not create a worker or trigger an
 immediate run.
 
 Repositories can query missions that are due for scheduled execution. This is

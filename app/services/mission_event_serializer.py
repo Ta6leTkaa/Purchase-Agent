@@ -82,6 +82,7 @@ class PydanticMissionEventSerializer:
             "mission_created",
             "mission_processing_failed",
             "mission_scheduled",
+            "mission_unscheduled",
             "mission_started",
             "no_valid_option_found",
             "options_found",

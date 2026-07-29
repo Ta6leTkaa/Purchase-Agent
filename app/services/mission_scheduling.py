@@ -23,13 +23,12 @@ class InvalidMissionScheduleError(ValueError):
 
 async def schedule_mission(
     mission_id: UUID,
-    scheduled_at: datetime,
+    scheduled_at: datetime | None,
     mission_repository: MissionRepository,
     *,
     current_time: datetime | None = None,
 ) -> Mission:
     now = current_time or utc_now()
-    _validate_schedule_time(scheduled_at, now)
     mission = await mission_repository.get(mission_id)
     if mission is None:
         raise MissionNotFoundError
@@ -39,6 +38,26 @@ async def schedule_mission(
         return mission
 
     previous_scheduled_at = mission.scheduled_at
+    if scheduled_at is None:
+        if mission.status is MissionStatus.created:
+            return mission
+        MissionStateMachine().transition(mission, MissionStatus.created)
+        mission.scheduled_at = None
+        mission.record_event(
+            timestamp=now,
+            event_type="mission_unscheduled",
+            message="Mission schedule removed.",
+            metadata={
+                "previous_scheduled_at": (
+                    previous_scheduled_at.isoformat()
+                    if previous_scheduled_at is not None
+                    else None
+                )
+            },
+        )
+        return await mission_repository.update(mission)
+
+    _validate_schedule_time(scheduled_at, now)
     mission.scheduled_at = scheduled_at
     if mission.status is MissionStatus.created:
         MissionStateMachine().transition(mission, MissionStatus.waiting)

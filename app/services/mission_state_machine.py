@@ -15,6 +15,7 @@ class MissionStateMachine:
             MissionStatus.cancelled,
         },
         MissionStatus.waiting: {
+            MissionStatus.created,
             MissionStatus.processing,
             MissionStatus.running,
             MissionStatus.cancelled,

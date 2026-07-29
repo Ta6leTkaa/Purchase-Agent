@@ -59,11 +59,13 @@ class SetMissionProviderRequest(BaseModel):
 class ScheduleMissionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    scheduled_at: datetime
+    scheduled_at: datetime | None
 
     @field_validator("scheduled_at")
     @classmethod
-    def validate_scheduled_at(cls, value: datetime) -> datetime:
+    def validate_scheduled_at(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("scheduled_at must be timezone-aware")
         return value

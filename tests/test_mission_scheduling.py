@@ -71,6 +71,46 @@ def test_reschedule_waiting_mission_is_idempotent_for_same_time() -> None:
     assert result.execution_log == []
 
 
+def test_unschedule_waiting_mission_moves_it_to_created_and_records_event() -> None:
+    repository = InMemoryMissionRepository()
+    now = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
+    mission = make_mission(MissionStatus.waiting)
+    mission.scheduled_at = now + timedelta(hours=1)
+    asyncio.run(repository.create(mission))
+
+    unscheduled = asyncio.run(
+        schedule_mission(
+            mission.id,
+            None,
+            repository,
+            current_time=now,
+        )
+    )
+
+    assert unscheduled.status is MissionStatus.created
+    assert unscheduled.scheduled_at is None
+    assert unscheduled.execution_log[-1].type == "mission_unscheduled"
+
+
+def test_unschedule_created_mission_is_a_noop() -> None:
+    repository = InMemoryMissionRepository()
+    mission = make_mission()
+    asyncio.run(repository.create(mission))
+    now = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
+
+    result = asyncio.run(
+        schedule_mission(
+            mission.id,
+            None,
+            repository,
+            current_time=now,
+        )
+    )
+
+    assert result.status is MissionStatus.created
+    assert result.execution_log == []
+
+
 def test_schedule_terminal_mission_is_rejected() -> None:
     repository = InMemoryMissionRepository()
     mission = make_mission(MissionStatus.completed)
