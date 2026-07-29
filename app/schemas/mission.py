@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.domain.execution import ExecutionEvent
 from app.domain.execution_attempt import (
     MissionExecutionAttempt,
     MissionExecutionAttemptStatus,
@@ -26,6 +27,7 @@ from app.domain.provider_resolution import (
     ProviderSelectionMode,
 )
 from app.services.clock import utc_now
+from app.services.mission_event_history import MissionEventHistoryPage
 from app.services.provider_resolution_history import (
     MissionProviderResolutionHistoryPage,
     MissionProviderResolutionIncrement,
@@ -184,6 +186,27 @@ class MissionExecutionAttemptResponse(BaseModel):
             finished_at=attempt.finished_at,
             resolved_provider_id=attempt.resolved_provider_id,
             reservation_id=attempt.reservation_id,
+        )
+
+
+class MissionEventHistoryResponse(BaseModel):
+    mission_id: UUID
+    after_sequence: int
+    latest_sequence: int
+    has_more: bool
+    items: tuple[ExecutionEvent, ...]
+
+    @classmethod
+    def from_application(
+        cls,
+        page: MissionEventHistoryPage,
+    ) -> "MissionEventHistoryResponse":
+        return cls(
+            mission_id=page.mission_id,
+            after_sequence=page.after_sequence,
+            latest_sequence=page.latest_sequence,
+            has_more=page.has_more,
+            items=page.items,
         )
 
 

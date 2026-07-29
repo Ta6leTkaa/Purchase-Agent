@@ -22,6 +22,7 @@ from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.schemas.mission import (
     MissionCreate,
+    MissionEventHistoryResponse,
     MissionExecutionAttemptHistoryResponse,
     MissionProviderResolutionHistoryResponse,
     MissionProviderResolutionIncrementResponse,
@@ -45,6 +46,12 @@ from app.services.mission_engine import (
     run_mission,
 )
 from app.services.mission_errors import MissionNotFoundError
+from app.services.mission_event_history import (
+    DEFAULT_MISSION_EVENT_PAGE_SIZE,
+    MAX_MISSION_EVENT_PAGE_SIZE,
+    GetMissionEventHistory,
+    MissionEventHistoryPageRequest,
+)
 from app.services.mission_provider_selection import (
     MissionProviderSelectionNotAllowedError,
     SetMissionProvider,
@@ -179,6 +186,39 @@ async def get_mission_execution_attempts_endpoint(
         mission_id,
         attempts,
     )
+
+
+@router.get(
+    "/{mission_id}/events",
+    response_model=MissionEventHistoryResponse,
+    summary="Get mission event history",
+    description=(
+        "Returns a bounded, read-only page of canonical Mission events after "
+        "a sequence position. This endpoint does not execute or modify the "
+        "mission."
+    ),
+    responses={404: {"description": "Mission not found"}},
+)
+async def get_mission_event_history_endpoint(
+    mission_id: UUID,
+    repository: MissionRepositoryDep,
+    after_sequence: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=MAX_MISSION_EVENT_PAGE_SIZE),
+    ] = DEFAULT_MISSION_EVENT_PAGE_SIZE,
+) -> MissionEventHistoryResponse:
+    try:
+        page = await GetMissionEventHistory(repository).execute(
+            mission_id,
+            MissionEventHistoryPageRequest(
+                after_sequence=after_sequence,
+                limit=limit,
+            ),
+        )
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    return MissionEventHistoryResponse.from_application(page)
 
 
 @router.get(

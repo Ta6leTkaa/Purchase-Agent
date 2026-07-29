@@ -903,6 +903,21 @@ The response is ordered by attempt number and contains claim time, terminal
 outcome when available, and the resolved provider. Reading it never executes
 or changes a Mission.
 
+## Mission event history
+
+Canonical Mission events are also available as a bounded read-only sequence
+page. This is useful for audit views and incremental UI refresh without loading
+the full Mission response:
+
+```bash
+curl "http://127.0.0.1:8000/missions/{mission_id}/events?after_sequence=0&limit=50"
+```
+
+The endpoint returns only events whose sequence is strictly greater than
+`after_sequence`, in ascending order. `latest_sequence` can be used as the next
+position; `has_more` indicates that another bounded page is available. Reading
+history never executes, schedules, resolves a provider, or changes the Mission.
+
 ## Provider reservation idempotency
 
 Before reserving an option, Mission Engine supplies the selected provider with

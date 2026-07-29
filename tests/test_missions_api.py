@@ -801,6 +801,31 @@ def test_put_mission_schedule_null_unschedules_waiting_mission() -> None:
     assert response.json()["execution_log"][-1]["type"] == "mission_unscheduled"
 
 
+def test_get_mission_events_returns_bounded_canonical_history() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+    mission_id = client.post("/missions", json=payload).json()["id"]
+    client.put(
+        f"/missions/{mission_id}/schedule",
+        json={"scheduled_at": "2030-08-01T10:00:00Z"},
+    )
+
+    response = client.get(
+        f"/missions/{mission_id}/events",
+        params={"after_sequence": 0, "limit": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["after_sequence"] == 0
+    assert response.json()["latest_sequence"] == 1
+    assert response.json()["has_more"] is False
+    assert [event["type"] for event in response.json()["items"]] == [
+        "mission_scheduled"
+    ]
+
+
 def test_post_completed_mission_run_returns_409() -> None:
     client = TestClient(app)
     mission_id = create_requires_confirmation_mission(client)
