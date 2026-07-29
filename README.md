@@ -918,6 +918,13 @@ The endpoint returns only events whose sequence is strictly greater than
 position; `has_more` indicates that another bounded page is available. Reading
 history never executes, schedules, resolves a provider, or changes the Mission.
 
+PostgreSQL keeps a relational `mission_events` projection keyed by
+`(mission_id, sequence)`. New events are appended in the same transaction as
+their Mission update, and the history endpoint uses that projection for bounded
+SQL reads. The existing JSON execution log remains the canonical compatible
+event representation; the projection is a read model, not a second execution
+engine.
+
 ## Provider reservation idempotency
 
 Before reserving an option, Mission Engine supplies the selected provider with

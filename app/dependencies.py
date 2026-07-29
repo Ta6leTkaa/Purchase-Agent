@@ -16,6 +16,9 @@ from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 from app.repositories.sqlalchemy.mission_command_idempotency import (
     SqlAlchemyMissionCommandIdempotencyStore,
 )
+from app.repositories.sqlalchemy.mission_event import (
+    SqlAlchemyMissionEventProjectionRepository,
+)
 from app.repositories.sqlalchemy.provider_history import (
     SqlAlchemyProviderHistoryProjectionRepository,
 )
@@ -156,6 +159,15 @@ def get_current_time() -> datetime:
 
 def get_mission_event_store() -> MissionJsonEventStore:
     return mission_json_event_store
+
+
+def get_mission_event_projection_reader(
+    session: StorageSessionDep,
+) -> SqlAlchemyMissionEventProjectionRepository | None:
+    if settings.storage_backend == "database":
+        assert session is not None
+        return SqlAlchemyMissionEventProjectionRepository(session)
+    return None
 
 
 def get_provider_registry() -> ProviderRegistry:

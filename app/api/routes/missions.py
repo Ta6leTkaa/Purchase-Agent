@@ -9,6 +9,7 @@ from app.adapters import ProviderRegistry
 from app.dependencies import (
     get_identity_repository,
     get_mission_command_idempotency_store,
+    get_mission_event_projection_reader,
     get_mission_provider_resolution_history,
     get_mission_provider_resolution_increment,
     get_mission_provider_resolution_preview,
@@ -20,6 +21,9 @@ from app.dependencies import (
 from app.domain.mission import Mission
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
+from app.repositories.sqlalchemy.mission_event import (
+    SqlAlchemyMissionEventProjectionRepository,
+)
 from app.schemas.mission import (
     MissionCreate,
     MissionEventHistoryResponse,
@@ -116,6 +120,10 @@ type MissionCommandIdempotencyStoreDep = Annotated[
     MissionCommandIdempotencyStore,
     Depends(get_mission_command_idempotency_store),
 ]
+type MissionEventProjectionReaderDep = Annotated[
+    SqlAlchemyMissionEventProjectionRepository | None,
+    Depends(get_mission_event_projection_reader),
+]
 
 
 @router.post("")
@@ -202,6 +210,7 @@ async def get_mission_execution_attempts_endpoint(
 async def get_mission_event_history_endpoint(
     mission_id: UUID,
     repository: MissionRepositoryDep,
+    projection_reader: MissionEventProjectionReaderDep,
     after_sequence: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[
         int,
@@ -209,7 +218,10 @@ async def get_mission_event_history_endpoint(
     ] = DEFAULT_MISSION_EVENT_PAGE_SIZE,
 ) -> MissionEventHistoryResponse:
     try:
-        page = await GetMissionEventHistory(repository).execute(
+        page = await GetMissionEventHistory(
+            repository,
+            projection_reader,
+        ).execute(
             mission_id,
             MissionEventHistoryPageRequest(
                 after_sequence=after_sequence,

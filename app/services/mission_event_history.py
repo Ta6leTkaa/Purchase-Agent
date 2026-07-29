@@ -1,3 +1,4 @@
+from typing import Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,9 +32,24 @@ class MissionEventHistoryPage(BaseModel):
     items: tuple[ExecutionEvent, ...]
 
 
+class MissionEventProjectionReader(Protocol):
+    async def list_after(
+        self,
+        mission_id: UUID,
+        after_sequence: int,
+        fetch_limit: int,
+    ) -> list[ExecutionEvent]:
+        ...
+
+
 class GetMissionEventHistory:
-    def __init__(self, mission_repository: MissionRepository) -> None:
+    def __init__(
+        self,
+        mission_repository: MissionRepository,
+        projection_reader: MissionEventProjectionReader | None = None,
+    ) -> None:
         self._mission_repository = mission_repository
+        self._projection_reader = projection_reader
 
     async def execute(
         self,
@@ -44,12 +60,18 @@ class GetMissionEventHistory:
         if mission is None:
             raise MissionNotFoundError
 
-        matching_events = [
-            event
-            for event in mission.execution_log
-            if event.sequence > request.after_sequence
-        ]
-        fetched_events = matching_events[: request.limit + 1]
+        if self._projection_reader is None:
+            fetched_events = [
+                event
+                for event in mission.execution_log
+                if event.sequence > request.after_sequence
+            ][: request.limit + 1]
+        else:
+            fetched_events = await self._projection_reader.list_after(
+                mission_id,
+                request.after_sequence,
+                request.limit + 1,
+            )
         items = tuple(fetched_events[: request.limit])
         has_more = len(fetched_events) > request.limit
         latest_sequence = (
