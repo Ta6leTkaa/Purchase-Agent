@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.adapters.registry import UnknownProviderError
+from app.repositories.sqlalchemy.mission import MissionEventSequenceConflictError
 from app.services.provider_errors import UnsupportedMissionTypeError
 from app.services.provider_resolver import (
     AmbiguousProviderError,
@@ -109,4 +110,27 @@ def register_provider_resolution_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         AmbiguousProviderError,
         handle_provider_resolution_error,
+    )
+
+    async def handle_mission_sequence_conflict(
+        request: Request,
+        error: Exception,
+    ) -> JSONResponse:
+        del request, error
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "mission_version_conflict",
+                    "message": (
+                        "Mission changed while this command was being processed. "
+                        "Reload it and try again."
+                    ),
+                }
+            },
+        )
+
+    app.add_exception_handler(
+        MissionEventSequenceConflictError,
+        handle_mission_sequence_conflict,
     )
