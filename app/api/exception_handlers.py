@@ -6,7 +6,10 @@ from fastapi.responses import JSONResponse
 
 from app.adapters.registry import UnknownProviderError
 from app.repositories.sqlalchemy.mission import MissionEventSequenceConflictError
-from app.services.provider_errors import UnsupportedMissionTypeError
+from app.services.provider_errors import (
+    UnsupportedExecutionModeError,
+    UnsupportedMissionTypeError,
+)
 from app.services.provider_resolver import (
     AmbiguousProviderError,
     NoSupportingProviderError,
@@ -25,6 +28,7 @@ def map_provider_resolution_error(
     error: (
         UnknownProviderError
         | UnsupportedMissionTypeError
+        | UnsupportedExecutionModeError
         | NoSupportingProviderError
         | AmbiguousProviderError
     ),
@@ -44,6 +48,20 @@ def map_provider_resolution_error(
             details={
                 "provider_id": error.provider_id,
                 "mission_type": error.mission_type.value,
+            },
+        )
+    if isinstance(error, UnsupportedExecutionModeError):
+        return ProviderResolutionHttpError(
+            status_code=422 if error.provider_id is not None else 409,
+            code="unsupported_execution_mode",
+            message=(
+                "The selected provider does not support this execution mode."
+                if error.provider_id is not None
+                else "No configured provider supports this execution mode."
+            ),
+            details={
+                "provider_id": error.provider_id,
+                "execution_mode": error.execution_mode.value,
             },
         )
     if isinstance(error, NoSupportingProviderError):
@@ -78,6 +96,7 @@ def register_provider_resolution_exception_handlers(app: FastAPI) -> None:
             (
                 UnknownProviderError,
                 UnsupportedMissionTypeError,
+                UnsupportedExecutionModeError,
                 NoSupportingProviderError,
                 AmbiguousProviderError,
             ),
@@ -101,6 +120,10 @@ def register_provider_resolution_exception_handlers(app: FastAPI) -> None:
     )
     app.add_exception_handler(
         UnsupportedMissionTypeError,
+        handle_provider_resolution_error,
+    )
+    app.add_exception_handler(
+        UnsupportedExecutionModeError,
         handle_provider_resolution_error,
     )
     app.add_exception_handler(

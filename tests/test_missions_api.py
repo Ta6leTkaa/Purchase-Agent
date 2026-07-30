@@ -104,11 +104,273 @@ def test_post_missions_initializes_internal_fields() -> None:
     assert response.json()["best_option"] is None
     assert response.json()["execution_attempts"] == 0
     assert response.json()["max_execution_attempts"] == 3
+    assert response.json()["execution_mode"] == "require_confirmation"
     assert response.json()["mission_type"] == "train_ticket"
     assert response.json()["payload"] == payload["payload"]
     assert response.json()["provider_id"] is None
     assert response.json()["resolved_provider_id"] is None
     assert response.json()["reservation_id"] is None
+
+
+@pytest.mark.parametrize(
+    "execution_mode",
+    ["search_only", "require_confirmation", "auto_purchase"],
+)
+def test_post_missions_accepts_execution_mode(
+    execution_mode: str,
+) -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "execution_mode": execution_mode,
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["execution_mode"] == execution_mode
+
+
+def test_post_missions_rejects_unknown_execution_mode() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "execution_mode": "buy_without_limits",
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_post_missions_accepts_expiry_deadline() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "expires_at": "2030-08-01T12:00:00Z",
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["expires_at"] == "2030-08-01T12:00:00Z"
+
+
+def test_post_missions_rejects_expiry_before_schedule() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "scheduled_at": "2030-08-01T12:00:00Z",
+        "expires_at": "2030-08-01T11:00:00Z",
+    }
+
+    response = client.post("/missions", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_patch_mission_updates_safe_configuration_with_etag() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+    mission_id = created.json()["id"]
+
+    response = client.patch(
+        f"/missions/{mission_id}",
+        headers={"If-Match": created.headers["etag"]},
+        json={
+            "title": "  Updated journey  ",
+            "fallback_rules": {"allow_any_coupe_seats": True},
+            "execution_mode": "search_only",
+            "max_execution_attempts": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["etag"] == '"1"'
+    assert response.json()["title"] == "Updated journey"
+    assert response.json()["execution_mode"] == "search_only"
+    assert response.json()["max_execution_attempts"] == 5
+    assert response.json()["fallback_rules"]["allow_any_coupe_seats"] is True
+    assert response.json()["execution_log"][-1]["type"] == "mission_updated"
+
+
+def test_patch_mission_rejects_stale_version() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+    mission_id = created.json()["id"]
+    first = client.patch(
+        f"/missions/{mission_id}",
+        headers={"If-Match": '"0"'},
+        json={"title": "First update"},
+    )
+
+    response = client.patch(
+        f"/missions/{mission_id}",
+        headers={"If-Match": '"0"'},
+        json={"title": "Stale update"},
+    )
+
+    assert first.status_code == 200
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "mission_version_conflict"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{}, {"title": None}, {"title": "   "}, {"status": "cancelled"}],
+)
+def test_patch_mission_rejects_invalid_payload(
+    payload: dict[str, object],
+) -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+
+    response = client.patch(
+        f"/missions/{created.json()['id']}",
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+def test_pause_and_resume_scheduled_mission() -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "scheduled_at": "2030-08-01T10:00:00Z",
+    }
+    created = client.post("/missions", json=payload)
+    mission_id = created.json()["id"]
+
+    paused = client.post(
+        f"/missions/{mission_id}/pause",
+        headers={
+            "Idempotency-Key": "pause-scheduled-mission",
+            "If-Match": created.headers["etag"],
+        },
+    )
+    resumed = client.post(
+        f"/missions/{mission_id}/resume",
+        headers={
+            "Idempotency-Key": "resume-scheduled-mission",
+            "If-Match": paused.headers["etag"],
+        },
+    )
+
+    assert paused.status_code == 200
+    assert paused.json()["status"] == "paused"
+    assert paused.json()["execution_log"][-1]["type"] == "mission_paused"
+    assert paused.headers["etag"] == '"1"'
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "waiting"
+    assert resumed.json()["execution_log"][-1]["type"] == "mission_resumed"
+    assert resumed.headers["etag"] == '"2"'
+
+
+def test_pause_command_is_idempotent() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+    url = f"/missions/{created.json()['id']}/pause"
+    headers = {"Idempotency-Key": "same-pause-command"}
+
+    first = client.post(url, headers=headers)
+    replay = client.post(url, headers=headers)
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    assert len(replay.json()["execution_log"]) == 1
+
+
+def test_paused_mission_cannot_run_and_is_not_due() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/missions",
+        json={
+            **make_mission_payload(
+                participant_ids=make_existing_participant_ids(client)
+            ),
+            "scheduled_at": "2030-07-29T00:00:00Z",
+        },
+    )
+    mission_id = created.json()["id"]
+    paused = client.post(
+        f"/missions/{mission_id}/pause",
+        headers={"Idempotency-Key": "pause-due-mission"},
+    )
+
+    run = client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": "run-paused-mission"},
+    )
+    due = asyncio.run(
+        mission_repository.list_due(
+            datetime(2030, 7, 30, tzinfo=UTC),
+        )
+    )
+
+    assert paused.status_code == 200
+    assert run.status_code == 409
+    assert UUID(mission_id) not in {mission.id for mission in due}
+
+
+def test_pause_and_resume_reject_invalid_states() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+    mission_id = created.json()["id"]
+
+    resume = client.post(
+        f"/missions/{mission_id}/resume",
+        headers={"Idempotency-Key": "resume-created"},
+    )
+    client.post(
+        f"/missions/{mission_id}/run",
+        headers={"Idempotency-Key": "run-created"},
+    )
+    pause = client.post(
+        f"/missions/{mission_id}/pause",
+        headers={"Idempotency-Key": "pause-finished"},
+    )
+
+    assert resume.status_code == 409
+    assert resume.json()["detail"]["code"] == "mission_resume_not_allowed"
+    assert pause.status_code == 409
+    assert pause.json()["detail"]["code"] == "mission_pause_not_allowed"
 
 
 def test_post_missions_rejects_client_supplied_reservation_id() -> None:
@@ -481,6 +743,37 @@ def test_post_mission_run_returns_requires_confirmation() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "requires_confirmation"
+
+
+@pytest.mark.parametrize(
+    ("execution_mode", "expected_status", "has_reservation"),
+    [
+        ("search_only", "completed", False),
+        ("auto_purchase", "completed", True),
+    ],
+)
+def test_post_mission_run_honors_execution_mode(
+    execution_mode: str,
+    expected_status: str,
+    has_reservation: bool,
+) -> None:
+    client = TestClient(app)
+    payload = {
+        **make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+        "execution_mode": execution_mode,
+    }
+    created = client.post("/missions", json=payload)
+
+    response = client.post(
+        f"/missions/{created.json()['id']}/run",
+        headers={"Idempotency-Key": f"run-{execution_mode}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == expected_status
+    assert (response.json()["reservation_id"] is not None) is has_reservation
     assert response.json()["best_option"]["train_number"] == "001A"
     assert response.json()["execution_attempts"] == 0
 
@@ -845,7 +1138,7 @@ def test_mission_mutation_rejects_invalid_if_match_version() -> None:
     assert response.json()["detail"]["code"] == "invalid_mission_version"
 
 
-def test_mission_response_exposes_event_sequence_as_etag() -> None:
+def test_mission_resource_mutations_expose_current_version_as_etag() -> None:
     client = TestClient(app)
     payload = make_mission_payload(
         participant_ids=make_existing_participant_ids(client)
@@ -854,9 +1147,76 @@ def test_mission_response_exposes_event_sequence_as_etag() -> None:
     created = client.post("/missions", json=payload)
     mission_id = created.json()["id"]
     fetched = client.get(f"/missions/{mission_id}")
+    scheduled = client.put(
+        f"/missions/{mission_id}/schedule",
+        json={"scheduled_at": "2030-08-01T10:00:00Z"},
+        headers={"If-Match": created.headers["etag"]},
+    )
+    unchanged = client.put(
+        f"/missions/{mission_id}/schedule",
+        json={"scheduled_at": "2030-08-01T10:00:00Z"},
+        headers={"If-Match": scheduled.headers["etag"]},
+    )
+    cancelled = client.post(
+        f"/missions/{mission_id}/cancel",
+        headers={
+            "Idempotency-Key": "etag-cancel-key",
+            "If-Match": unchanged.headers["etag"],
+        },
+    )
+    replayed = client.post(
+        f"/missions/{mission_id}/cancel",
+        headers={
+            "Idempotency-Key": "etag-cancel-key",
+            "If-Match": cancelled.headers["etag"],
+        },
+    )
 
     assert created.headers["etag"] == '"0"'
     assert fetched.headers["etag"] == '"0"'
+    assert scheduled.headers["etag"] == '"1"'
+    assert unchanged.headers["etag"] == '"1"'
+    assert cancelled.headers["etag"] == '"2"'
+    assert replayed.headers["etag"] == '"2"'
+
+
+def test_mission_execution_mutations_expose_current_version_as_etag() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+
+    created = client.post("/missions", json=payload)
+    mission_id = created.json()["id"]
+    run = client.post(
+        f"/missions/{mission_id}/run",
+        headers={
+            "Idempotency-Key": "etag-run-key",
+            "If-Match": created.headers["etag"],
+        },
+    )
+    run_replay = client.post(
+        f"/missions/{mission_id}/run",
+        headers={
+            "Idempotency-Key": "etag-run-key",
+            "If-Match": run.headers["etag"],
+        },
+    )
+    confirmed = client.post(
+        f"/missions/{mission_id}/confirm",
+        headers={
+            "Idempotency-Key": "etag-confirm-key",
+            "If-Match": run_replay.headers["etag"],
+        },
+    )
+
+    assert run.status_code == 200
+    assert run.headers["etag"] == f'"{run.json()["last_event_sequence"]}"'
+    assert run_replay.headers["etag"] == run.headers["etag"]
+    assert confirmed.status_code == 200
+    assert confirmed.headers["etag"] == (
+        f'"{confirmed.json()["last_event_sequence"]}"'
+    )
 
 
 def test_get_mission_events_returns_bounded_canonical_history() -> None:

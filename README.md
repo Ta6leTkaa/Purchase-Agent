@@ -5,6 +5,32 @@ with typed train-ticket missions, provider resolution, a deterministic mock
 provider, durable Mission events, PostgreSQL persistence, and read-only audit
 APIs for provider resolution history.
 
+## Local Compose deployment
+
+Set a non-empty `ADMIN_API_KEY` in `.env`, then start the full backend:
+
+```bash
+docker compose up --build
+```
+
+Compose starts PostgreSQL, runs `alembic upgrade head` once, and only then
+starts the API at `http://localhost:8000`. `GET /health` is a liveness check;
+`GET /ready` also verifies the configured storage and is used by Compose before
+traffic is considered safe. Scheduled execution and notification delivery remain opt-in:
+
+```bash
+docker compose --profile worker --profile notifications up --build
+```
+
+## Continuous integration
+
+The repository includes a GitHub Actions workflow in
+`.github/workflows/ci.yml`. It runs Ruff, mypy, the unit suite, bytecode
+compilation, verifies that Alembic has exactly one head, validates Compose, and
+builds the production image on every push and pull request. A separate job
+starts PostgreSQL 16, applies migrations to an empty database, verifies the
+migration head, and runs the complete integration suite.
+
 ## Domain models
 
 The backend includes initial Pydantic domain models for:
@@ -19,6 +45,7 @@ The backend includes initial Pydantic domain models for:
 - `POST /identities` creates an identity
 - `GET /identities` lists identities
 - `GET /identities/{identity_id}` returns one identity or `404`
+- `PUT /identities/{identity_id}/preferences` replaces train and notification preferences
 
 Example:
 
@@ -44,6 +71,9 @@ curl -X POST http://127.0.0.1:8000/identities \
 - `POST /missions` creates a mission
 - `GET /missions` lists missions
 - `GET /missions/{mission_id}` returns one mission or `404`
+- `PATCH /missions/{mission_id}` changes safe planning fields
+- `POST /missions/{mission_id}/pause` pauses an unstarted mission
+- `POST /missions/{mission_id}/resume` resumes a paused mission
 
 Example:
 
@@ -75,6 +105,10 @@ server.
 
 Mission creation requires existing Identity ids. `participant_ids` must be
 unique, and the number of participants must match `passengers_count`.
+An optional timezone-aware `expires_at` defines the last instant at which the
+Mission may start. When both values are present, `scheduled_at` must not be
+later than `expires_at`; at an equal timestamp expiration is processed before
+claiming.
 
 Scheduled mission example:
 
@@ -96,9 +130,9 @@ curl -X POST http://127.0.0.1:8000/missions \
   }'
 ```
 
-There is no automatic scheduler yet. A scheduled mission is stored in
-`waiting` status and still has to be started through the run API after
-`scheduled_at`.
+A scheduled mission is stored in `waiting` status. It can be processed by the
+one-shot due processor, the continuous worker, or started explicitly through
+the run API after `scheduled_at`.
 
 An unstarted Mission can be scheduled or rescheduled without executing it:
 
@@ -108,21 +142,71 @@ curl -X PUT http://127.0.0.1:8000/missions/{mission_id}/schedule \
   -d '{"scheduled_at":"2030-08-01T10:00:00Z"}'
 ```
 
-Only `created` and `waiting` Missions accept schedule changes. Scheduling a
-created Mission moves it to `waiting`; sending `{"scheduled_at": null}` for a
-waiting Mission removes its schedule and returns it to `created`. Both changes
-record an audit event. This endpoint does not create a worker or trigger an
+Only `created`, `waiting`, and `paused` Missions accept schedule changes.
+Scheduling a created Mission moves it to `waiting`; sending
+`{"scheduled_at": null}` for a waiting Mission removes its schedule and returns
+it to `created`. A paused Mission stays paused while its schedule is edited.
+All actual changes record an audit event. This endpoint does not trigger an
 immediate run.
 
-Repositories can query missions that are due for scheduled execution. This is
-only preparation for a future background worker; no scheduler, polling loop, or
-automatic `run_mission` call exists yet.
+## Updating Mission configuration
+
+Safe planning fields can be changed before execution:
+
+```bash
+curl -X PATCH http://127.0.0.1:8000/missions/{mission_id} \
+  -H "Content-Type: application/json" \
+  -H 'If-Match: "0"' \
+  -d '{
+    "title": "Updated journey",
+    "execution_mode": "search_only",
+    "max_execution_attempts": 5,
+    "fallback_rules": {"allow_any_coupe_seats": true}
+  }'
+```
+
+The endpoint accepts any non-empty subset of `title`, `fallback_rules`,
+`execution_mode`, and `max_execution_attempts`. It is limited to `created` and
+`waiting` Missions, rejects an attempt limit below the number already used,
+and verifies that an explicitly selected provider supports a changed execution
+mode. Successful changes produce one `mission_updated` audit event and a new
+`ETag`; an unchanged request is an idempotent no-op. `If-Match` is optional,
+but clients should send the last Mission `ETag` to prevent lost updates.
+
+## Pausing and resuming Missions
+
+An unstarted Mission can be taken out of processing without deleting its
+schedule or configuration:
+
+```bash
+curl -X POST http://127.0.0.1:8000/missions/{mission_id}/pause \
+  -H "Idempotency-Key: pause-unique-key" \
+  -H 'If-Match: "3"'
+
+curl -X POST http://127.0.0.1:8000/missions/{mission_id}/resume \
+  -H "Idempotency-Key: resume-unique-key" \
+  -H 'If-Match: "4"'
+```
+
+Only `created` and `waiting` Missions can be paused. A paused Mission is
+excluded from due claims and cannot be run. It can still be reconfigured,
+rescheduled, assigned another provider, or cancelled. Resuming restores
+`waiting` when a schedule exists and `created` otherwise. Both commands are
+idempotency-key protected, support optimistic version checks, return a new
+`ETag`, and append `mission_paused` or `mission_resumed` to the audit history.
+
+Repositories query missions that are due for scheduled execution. Processing is
+triggered explicitly through the admin endpoint, a one-shot CLI command, or
+the continuous worker CLI.
 
 ## Due mission processor
 
 The due mission processor performs one pass over missions whose scheduled time
 has arrived and runs them sequentially. It is exposed through protected admin
-and CLI commands, but no background scheduler or polling loop is included.
+and CLI commands and is also used by the continuous worker.
+Its result separates terminal `failed_mission_ids` from
+`retry_scheduled_mission_ids`, allowing operators to distinguish permanent
+failures from temporary provider outages.
 
 ## Mission claiming
 
@@ -151,7 +235,147 @@ stale recovery: attempts=1
 second claim: attempts=2
 ```
 
-Attempt limits and retry policy will be added separately.
+Retryable provider failures discovered by `process-due` are automatically
+rescheduled with bounded exponential backoff. The default delays are 30, 60,
+120 seconds and continue doubling up to 15 minutes. Each claim still consumes
+one execution attempt. When `max_execution_attempts` is reached, the Mission
+remains `failed` and is not scheduled again. Provider adapters can mark an
+operation error as non-retryable to fail immediately.
+
+An empty search or a result set where every option violates mandatory
+constraints is treated as an availability miss rather than a permanent
+failure. The worker schedules another search using the same bounded backoff,
+up to `max_execution_attempts`. If the calculated retry would cross
+`expires_at`, it is capped at the deadline; expiration runs before claiming,
+so the Mission ends as `expired` without an extra provider call.
+
+Before each due-processing pass, unstarted `created`, `waiting`, and `paused`
+Missions whose `expires_at` has arrived are moved to the terminal `expired`
+state. Expiration records `mission_expired`, consumes no execution attempt, and
+is reported separately in `expired_mission_ids`. Repository claim queries also
+exclude expired deadlines, preventing a race from starting stale work.
+
+## Notification outbox
+
+User-facing lifecycle events are copied to `notification_outbox` in the same
+database transaction as the canonical Mission event. The initial event set is:
+
+- `waiting_for_user_confirmation`;
+- `mission_completed`;
+- `mission_failed`;
+- `mission_cancelled`;
+- `mission_expired`.
+
+Each outbox record also snapshots the Mission `participant_ids` as
+`recipient_ids`. This keeps the event-to-recipient relationship immutable even
+if participants are changed later; a notification gateway can route by these
+identity ids without receiving passport or preference data.
+
+This provides an at-least-once delivery boundary without making a provider
+operation depend on email, messenger, or webhook availability. Outbox rows use
+the immutable Mission `event_id` as a uniqueness boundary. Concurrent
+dispatchers claim pending rows with `FOR UPDATE SKIP LOCKED`.
+
+The first delivery adapter writes JSON Lines to stdout, making the contract
+observable and allowing a process supervisor or log pipeline to consume it:
+
+```bash
+python -m app.cli dispatch-notifications --limit 100
+```
+
+Successful delivery marks the row `delivered`. Transient adapter failures are
+returned to `pending` with a retry delay; after five delivery attempts the row
+is retained as `failed` for operator inspection. The stdout adapter is a safe
+demonstration transport. Set `NOTIFICATION_WEBHOOK_URL` to use the included
+webhook transport instead: it POSTs the full outbox JSON, uses the immutable
+event id in `Idempotency-Key`, and adds `Authorization: Bearer …` when
+`NOTIFICATION_WEBHOOK_BEARER_TOKEN` is configured. A non-2xx response enters
+the normal retry flow. With `NOTIFICATION_WEBHOOK_SIGNING_SECRET`, the adapter
+also adds `X-Purchase-Agent-Signature: sha256=<HMAC-SHA256(body)>` for receiver
+verification. `NOTIFICATION_WEBHOOK_TIMEOUT_SECONDS` defaults to 10.
+Webhook requests declare `Content-Type: application/json` and
+`X-Purchase-Agent-Delivery-Version: 1`. When recipient routing finds no active
+contact, the outbox item is completed without making an external request.
+
+For continuous delivery, run:
+
+```bash
+python -m app.cli notification-worker \
+  --poll-interval-seconds 5 \
+  --claim-timeout-seconds 300 \
+  --limit 100
+```
+
+Every cycle first recovers `processing` messages whose dispatcher claim is
+older than the configured timeout, then delivers the pending batch. Recovery
+preserves the delivery-attempt counter and makes the message immediately
+available, providing at-least-once behavior after a process crash. Multiple
+notification workers can run concurrently.
+
+Operators can inspect the backlog without exposing notification payloads:
+
+```bash
+curl http://127.0.0.1:8000/admin/notification-outbox/statistics \
+  -H "X-Admin-API-Key: $ADMIN_API_KEY"
+```
+
+The response reports counts by delivery status, the number of pending messages
+already eligible for delivery, and the availability timestamp of the oldest
+pending message.
+
+An operator can also return abandoned `processing` deliveries to the pending
+queue without waiting for the continuous worker:
+
+```bash
+curl -X POST \
+  http://127.0.0.1:8000/admin/notification-outbox/recover-stale \
+  -H "X-Admin-API-Key: $ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"claim_timeout_seconds":300,"limit":100}'
+```
+
+Recovery does not increment the delivery-attempt counter and does not perform
+delivery in the request. A later notification-worker cycle claims the messages
+normally; concurrent recovery calls remain safe through `SKIP LOCKED`.
+
+The same worker is available as an opt-in Compose profile:
+
+```bash
+docker compose --profile notifications up notification-worker
+```
+
+Its settings are `NOTIFICATION_WORKER_POLL_INTERVAL_SECONDS`,
+`NOTIFICATION_WORKER_BATCH_SIZE`, and
+`NOTIFICATION_CLAIM_TIMEOUT_SECONDS`; webhook workers also read
+`NOTIFICATION_WEBHOOK_URL`, `NOTIFICATION_WEBHOOK_BEARER_TOKEN`, and
+`NOTIFICATION_WEBHOOK_SIGNING_SECRET`, and
+`NOTIFICATION_WEBHOOK_TIMEOUT_SECONDS`.
+
+## Retrying failed missions
+
+A failed Mission can be explicitly returned to the due-processing queue while
+it still has execution attempts remaining:
+
+```bash
+curl -X POST http://127.0.0.1:8000/missions/{mission_id}/retry \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: retry-unique-key" \
+  -H 'If-Match: "12"' \
+  -d '{"retry_at":"2026-08-01T10:00:00Z"}'
+```
+
+Omit `retry_at` to make the Mission immediately eligible for the next
+`process-due` cycle. Retrying does not execute the Mission inline and does not
+reset `execution_attempts`. It clears stale resolved-provider, reservation, and
+best-option data, records `mission_retry_scheduled`, and returns the new Mission
+`ETag`. Missions outside `failed` and Missions whose attempt limit is exhausted
+return HTTP `409`. The endpoint requires an idempotency key, so replaying the
+same successful retry does not create another event.
+
+Automatic retries use the same state transition and event contract, with
+`trigger=automatic` and the failure category stored in event metadata. They do
+not require an HTTP request or an idempotency key because the claimed attempt
+and its persisted sequence provide the processing boundary.
 
 ## Mission types
 
@@ -196,7 +420,8 @@ second claim -> attempts=2
 stale recovery -> failed
 ```
 
-Backoff and retry scheduling are not implemented yet.
+Retryable provider failures are rescheduled with bounded exponential backoff as
+described above. Manual retries remain available for failed missions.
 
 ## Stale processing missions
 
@@ -269,9 +494,45 @@ python -m app.cli process-due --limit 50
 ```
 
 The command runs exactly one processing cycle, uses `DATABASE_URL` from
-configuration, and writes a JSON result to stdout. It can be run manually today
-and later called by cron or another external scheduler. The CLI itself does not
-contain a polling loop.
+configuration, and writes a JSON result to stdout. It can be run manually or
+called by cron when a continuously running worker is not desired.
+
+## Background worker
+
+Run continuous due-Mission processing with a fresh database session for every
+cycle:
+
+```bash
+python -m app.cli worker
+python -m app.cli worker \
+  --poll-interval-seconds 2.5 \
+  --claim-timeout-seconds 900 \
+  --limit 50
+```
+
+`WORKER_POLL_INTERVAL_SECONDS`, `WORKER_BATCH_SIZE`, and
+`WORKER_CLAIM_TIMEOUT_SECONDS` provide the defaults. Each cycle first recovers
+stale claims in one transaction, then processes due Missions in a fresh
+transaction. A recovered Mission can therefore run in the same cycle. Exhausted
+stale claims are reported separately as `stale_failed_mission_ids`.
+
+The worker releases its transaction and pooled connection before waiting,
+continues after an isolated infrastructure failure, and stops gracefully on
+`SIGINT` or `SIGTERM`. Each successful cycle writes one structured JSON result
+to stdout; safe infrastructure diagnostics go to stderr without including
+connection details.
+
+The worker is also available as an opt-in Docker Compose profile. Apply
+migrations before starting it:
+
+```bash
+docker compose --profile worker build worker
+docker compose --profile worker run --rm worker alembic upgrade head
+docker compose --profile worker up -d
+```
+
+The profile waits for PostgreSQL health before starting and does not run when
+plain `docker compose up` is used.
 
 ## CLI stale recovery
 
@@ -321,8 +582,28 @@ violations, ordered so valid options are considered before violated ones.
 ## Mission Engine
 
 The Mission Engine runs a mission through repositories, `MockTrainAdapter`, and
-Rule Engine. Execution currently stops at `requires_confirmation`; it does not
-perform automatic payment or call real booking websites.
+Rule Engine. Every Mission has an explicit execution policy:
+
+- `search_only` selects the best valid offer and completes without reservation;
+- `require_confirmation` creates a reservation and always waits for the user;
+- `auto_purchase` confirms the mock reservation automatically.
+
+`require_confirmation` is the default for existing and newly created Missions.
+`auto_purchase` must be explicitly supplied at creation. It exercises the
+provider confirmation contract but does not perform real payment or call real
+booking websites.
+
+Providers must also explicitly declare `supports_auto_purchase`. Resolver and
+preview reject an `auto_purchase` Mission before any provider operation when
+the selected adapter lacks that capability. Provider discovery responses expose
+their effective `execution_modes`; adapters that do not opt in remain limited
+to `search_only` and `require_confirmation`.
+
+```json
+{
+  "execution_mode": "search_only"
+}
+```
 
 Example:
 
@@ -332,8 +613,8 @@ curl -X POST http://127.0.0.1:8000/missions/{mission_id}/run \
 ```
 
 Mission execution is not a repeatable operation. Re-running a mission from an
-active or terminal status returns HTTP `409`. A future new attempt should use a
-new Mission or a dedicated retry mechanism.
+active or terminal status returns HTTP `409`. Failed missions with attempts
+remaining can use the dedicated retry endpoint described above.
 
 Confirm a mission waiting for user confirmation:
 
@@ -348,10 +629,11 @@ finished successfully.
 
 ## Mission state machine
 
-Mission statuses are changed through explicit valid transitions. `completed`
-and `failed` are terminal statuses. The state machine does not write execution
-events and does not handle persistence; Mission Engine and repositories remain
-responsible for those concerns.
+Mission statuses are changed through explicit valid transitions. `completed`,
+`failed`, `cancelled`, and `expired` are terminal statuses. `paused` is a
+durable planning state and never participates in due claims. The state machine does not write
+execution events and does not handle persistence; application services and
+repositories remain responsible for those concerns.
 
 ## Repository abstraction
 
@@ -922,6 +1204,9 @@ Individual Mission responses include an `ETag` containing the current event
 sequence. Mutating endpoints accept an optional `If-Match` value such as `"12"`.
 When supplied, a stale version returns `409 mission_version_conflict`; this
 allows clients to avoid applying an action based on an outdated Mission view.
+Every successful Mission mutation also returns the resulting `ETag`, including
+no-op updates and idempotent command replays, so clients can safely carry that
+version into their next `If-Match` request without an extra read.
 
 Clients that need a lightweight live audit view can use bounded long-polling on
 the same endpoint:

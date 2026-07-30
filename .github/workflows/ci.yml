@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project and development dependencies
+        run: >-
+          python -m pip install .
+          "ruff>=0.12.0" "mypy>=1.16.0" "pytest>=8.4.0"
+          "pytest-asyncio>=0.23.0" "aiosqlite>=0.20.0"
+      - name: Lint
+        run: ruff check .
+      - name: Type check
+        run: mypy app tests
+      - name: Unit tests
+        run: pytest -q
+      - name: Compile application
+        run: python -m compileall -q app
+      - name: Verify Alembic has one head
+        run: test "$(alembic heads | wc -l | tr -d ' ')" = "1"
+      - name: Validate Compose model
+        env:
+          ADMIN_API_KEY: ci-admin-key
+        run: docker compose config --quiet
+      - name: Build container
+        run: docker build -t purchase-agent:ci .
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: purchase_agent_test
+          POSTGRES_USER: purchase_agent
+          POSTGRES_PASSWORD: purchase_agent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U purchase_agent -d purchase_agent_test"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      STORAGE_BACKEND: database
+      DATABASE_URL: postgresql+asyncpg://purchase_agent:purchase_agent@localhost:5432/purchase_agent_test
+      TEST_DATABASE_URL: postgresql+asyncpg://purchase_agent:purchase_agent@localhost:5432/purchase_agent_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project and integration dependencies
+        run: >-
+          python -m pip install .
+          "pytest>=8.4.0" "pytest-asyncio>=0.23.0"
+      - name: Apply migrations to clean PostgreSQL
+        run: alembic upgrade head
+      - name: Verify migrated schema is at the expected head
+        run: test "$(alembic current | awk 'NR==1 {print $1}')" = "20260730_0021"
+      - name: PostgreSQL integration suite
+        run: pytest -m integration -q

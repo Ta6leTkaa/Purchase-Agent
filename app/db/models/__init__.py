@@ -3,6 +3,7 @@ from app.db.models.mission import MissionModel
 from app.db.models.mission_command import MissionCommandReceiptModel
 from app.db.models.mission_event import MissionEventModel
 from app.db.models.mission_execution_attempt import MissionExecutionAttemptModel
+from app.db.models.notification_outbox import NotificationOutboxMessageModel
 from app.db.models.provider_history import MissionProviderHistoryEventModel
 
 __all__ = [
@@ -12,5 +13,6 @@ __all__ = [
     "MissionCommandReceiptModel",
     "MissionExecutionAttemptModel",
     "MissionEventModel",
+    "NotificationOutboxMessageModel",
     "MissionProviderHistoryEventModel",
 ]

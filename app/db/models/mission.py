@@ -12,6 +12,7 @@ from app.domain.execution import validate_event_sequence
 from app.domain.mission import (
     FallbackRules,
     Mission,
+    MissionExecutionMode,
     MissionStatus,
     MissionType,
     TrainConstraints,
@@ -55,6 +56,12 @@ class MissionModel(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     provider: Mapped[str] = mapped_column(String, nullable=False)
+    execution_mode: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=MissionExecutionMode.REQUIRE_CONFIRMATION.value,
+        server_default=text("'require_confirmation'"),
+    )
     provider_id: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
@@ -68,6 +75,10 @@ class MissionModel(Base):
         nullable=True,
     )
     scheduled_at: Mapped[datetime | None] = mapped_column(
+        AwareDateTime(),
+        nullable=True,
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
         AwareDateTime(),
         nullable=True,
     )
@@ -143,10 +154,12 @@ def mission_to_model(mission: Mission) -> MissionModel:
         title=mission.title,
         status=mission.status.value,
         provider=mission.provider,
+        execution_mode=mission.execution_mode.value,
         provider_id=mission.provider_id,
         resolved_provider_id=mission.resolved_provider_id,
         reservation_id=mission.reservation_id,
         scheduled_at=mission.scheduled_at,
+        expires_at=mission.expires_at,
         claimed_at=mission.claimed_at,
         execution_attempts=mission.execution_attempts,
         max_execution_attempts=mission.max_execution_attempts,
@@ -190,10 +203,19 @@ def mission_from_model(model: MissionModel) -> Mission:
             for participant_id in model.participant_ids
         ],
         "provider": model.provider,
+        "execution_mode": MissionExecutionMode(
+            getattr(
+                model,
+                "execution_mode",
+                MissionExecutionMode.REQUIRE_CONFIRMATION.value,
+            )
+            or MissionExecutionMode.REQUIRE_CONFIRMATION.value
+        ),
         "provider_id": getattr(model, "provider_id", None),
         "resolved_provider_id": getattr(model, "resolved_provider_id", None),
         "reservation_id": getattr(model, "reservation_id", None),
         "scheduled_at": model.scheduled_at,
+        "expires_at": model.expires_at,
         "claimed_at": model.claimed_at,
         "execution_attempts": execution_attempts,
         "max_execution_attempts": max(

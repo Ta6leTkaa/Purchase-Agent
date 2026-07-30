@@ -23,6 +23,7 @@ class MockTrainAdapter(ProviderAdapter):
         {
             ProviderCapability(
                 mission_type=MissionType.TRAIN_TICKET,
+                supports_auto_purchase=True,
             )
         }
     )

@@ -64,6 +64,178 @@ def test_process_due_command_passes_custom_limit(
     assert limits == [50]
 
 
+def test_worker_command_passes_cli_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[timedelta, int, timedelta]] = []
+
+    async def fake_run_worker(
+        poll_interval: timedelta,
+        limit: int,
+        claim_timeout: timedelta,
+    ) -> int:
+        calls.append((poll_interval, limit, claim_timeout))
+        return 0
+
+    monkeypatch.setattr(cli, "_run_worker_until_signal", fake_run_worker)
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(
+            [
+                "worker",
+                "--poll-interval-seconds",
+                "2.5",
+                "--limit",
+                "25",
+                "--claim-timeout-seconds",
+                "120",
+            ]
+        )
+
+    assert exc_info.value.code == 0
+    assert calls == [
+        (timedelta(seconds=2.5), 25, timedelta(seconds=120))
+    ]
+
+
+@pytest.mark.parametrize("poll_interval", ["0", "-1", "3601", "invalid"])
+def test_worker_command_rejects_invalid_poll_interval(
+    poll_interval: str,
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(
+            ["worker", "--poll-interval-seconds", poll_interval]
+        )
+
+    assert exc_info.value.code == 2
+
+
+def test_worker_command_opens_separate_recovery_and_processing_sessions() -> None:
+    async def scenario() -> None:
+        mission_repository = InMemoryMissionRepository()
+        identity_repository = InMemoryIdentityRepository()
+        session_maker = CountingFakeSessionMaker()
+        dependencies = cli.CliDependencies(
+            session_maker=cast(
+                async_sessionmaker[AsyncSession],
+                session_maker,
+            ),
+            mission_repository_factory=lambda session: mission_repository,
+            identity_repository_factory=lambda session: identity_repository,
+            clock=lambda: CURRENT_TIME,
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        exit_code = await cli.worker_command(
+            timedelta(milliseconds=1),
+            10,
+            dependencies=dependencies,
+            max_cycles=2,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+        output_lines = stdout.getvalue().splitlines()
+        assert exit_code == 0
+        assert session_maker.calls == 4
+        assert len(output_lines) == 2
+        assert all(
+            json.loads(line)["processing"]["processed_count"] == 0
+            for line in output_lines
+        )
+        assert stderr.getvalue() == ""
+
+    asyncio.run(scenario())
+
+
+def test_worker_recovers_stale_mission_before_processing_same_cycle() -> None:
+    async def scenario() -> None:
+        mission_repository = InMemoryMissionRepository()
+        identity_repository = InMemoryIdentityRepository()
+        identities = [
+            await identity_repository.create(make_identity())
+            for _ in range(4)
+        ]
+        mission = make_mission([identity.id for identity in identities])
+        mission.status = MissionStatus.processing
+        mission.claimed_at = CURRENT_TIME - timedelta(minutes=20)
+        mission.execution_attempts = 1
+        await mission_repository.create(mission)
+        dependencies = cli.CliDependencies(
+            session_maker=cast(
+                async_sessionmaker[AsyncSession],
+                CountingFakeSessionMaker(),
+            ),
+            mission_repository_factory=lambda session: mission_repository,
+            identity_repository_factory=lambda session: identity_repository,
+            clock=lambda: CURRENT_TIME,
+        )
+        stdout = io.StringIO()
+
+        exit_code = await cli.worker_command(
+            timedelta(seconds=1),
+            10,
+            claim_timeout=timedelta(minutes=15),
+            dependencies=dependencies,
+            max_cycles=1,
+            stdout=stdout,
+        )
+        output = json.loads(stdout.getvalue())
+        stored = await mission_repository.get(mission.id)
+
+        assert exit_code == 0
+        assert output["recovered_mission_ids"] == [str(mission.id)]
+        assert output["stale_failed_mission_ids"] == []
+        assert output["processing"]["succeeded_mission_ids"] == [
+            str(mission.id)
+        ]
+        assert stored is not None
+        assert stored.status is MissionStatus.requires_confirmation
+        assert stored.execution_attempts == 2
+
+    asyncio.run(scenario())
+
+
+def test_worker_reports_exhausted_stale_mission_without_reprocessing() -> None:
+    async def scenario() -> None:
+        mission_repository = InMemoryMissionRepository()
+        identity_repository = InMemoryIdentityRepository()
+        mission = make_mission([uuid4()])
+        mission.status = MissionStatus.processing
+        mission.claimed_at = CURRENT_TIME - timedelta(minutes=20)
+        mission.execution_attempts = 1
+        mission.max_execution_attempts = 1
+        await mission_repository.create(mission)
+        dependencies = cli.CliDependencies(
+            session_maker=cast(
+                async_sessionmaker[AsyncSession],
+                CountingFakeSessionMaker(),
+            ),
+            mission_repository_factory=lambda session: mission_repository,
+            identity_repository_factory=lambda session: identity_repository,
+            clock=lambda: CURRENT_TIME,
+        )
+        stdout = io.StringIO()
+
+        await cli.worker_command(
+            timedelta(seconds=1),
+            10,
+            claim_timeout=timedelta(minutes=15),
+            dependencies=dependencies,
+            max_cycles=1,
+            stdout=stdout,
+        )
+        output = json.loads(stdout.getvalue())
+
+        assert output["recovered_mission_ids"] == []
+        assert output["stale_failed_mission_ids"] == [str(mission.id)]
+        assert output["processing"]["processed_count"] == 0
+        assert mission.status is MissionStatus.failed
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("limit", ["0", "501"])
 def test_process_due_command_rejects_invalid_limit(limit: str) -> None:
     with pytest.raises(SystemExit) as exc_info:
@@ -428,6 +600,13 @@ class BrokenMissionRepository:
     ) -> builtins.list[Mission]:
         raise RuntimeError(self._message)
 
+    async def expire_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> builtins.list[Mission]:
+        raise RuntimeError(self._message)
+
     async def list_stale_processing(
         self,
         current_time: datetime,
@@ -497,6 +676,9 @@ class FakeSession:
     async def rollback(self) -> None:
         return None
 
+    async def commit(self) -> None:
+        return None
+
 
 class BrokenCommitSession(FakeSession):
     async def execute(self, *args: object, **kwargs: object) -> object:
@@ -516,6 +698,15 @@ class BrokenCommitSessionMaker:
 
 class FakeSessionMaker:
     def __call__(self) -> FakeSession:
+        return FakeSession()
+
+
+class CountingFakeSessionMaker:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self) -> FakeSession:
+        self.calls += 1
         return FakeSession()
 
 

@@ -11,7 +11,10 @@ from app.domain.provider_resolution import (
 from app.repositories.mission import MissionRepository
 from app.services.clock import utc_now
 from app.services.mission_errors import MissionNotFoundError
-from app.services.provider_errors import UnsupportedMissionTypeError
+from app.services.provider_errors import (
+    UnsupportedExecutionModeError,
+    UnsupportedMissionTypeError,
+)
 
 
 class MissionProviderSelectionNotAllowedError(Exception):
@@ -64,6 +67,14 @@ class SetMissionProvider:
                 raise UnsupportedMissionTypeError(
                     provider_id=adapter.provider_id,
                     mission_type=mission.mission_type,
+                )
+            if not adapter.supports_execution_mode(
+                mission.mission_type,
+                mission.execution_mode,
+            ):
+                raise UnsupportedExecutionModeError(
+                    execution_mode=mission.execution_mode,
+                    provider_id=adapter.provider_id,
                 )
 
         previous_provider_id = mission.provider_id

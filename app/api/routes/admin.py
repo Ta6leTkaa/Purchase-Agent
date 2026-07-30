@@ -2,8 +2,9 @@ from datetime import datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import require_admin_api_key
 from app.cli import StaleMissionRecoveryResult
@@ -14,9 +15,18 @@ from app.dependencies import (
     get_mission_repository,
     get_provider_history_projection_verifier,
     get_provider_resolver,
+    get_storage_session,
+)
+from app.domain.notification import (
+    NotificationOutboxMessage,
+    NotificationOutboxStatistics,
+    NotificationOutboxStatus,
 )
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
+from app.repositories.sqlalchemy.notification_outbox import (
+    SqlAlchemyNotificationOutboxRepository,
+)
 from app.services.due_mission_processor import (
     DueMissionProcessingResult,
     process_due_missions,
@@ -55,6 +65,7 @@ type MissionEventProjectionVerifierDep = Annotated[
     VerifyMissionEventProjection,
     Depends(get_mission_event_projection_verifier),
 ]
+type StorageSessionDep = Annotated[AsyncSession | None, Depends(get_storage_session)]
 
 
 class ProcessDueMissionsRequest(BaseModel):
@@ -78,6 +89,159 @@ class RecoverStaleMissionsRequest(BaseModel):
         le=500,
         description="Maximum number of stale missions to recover.",
     )
+
+
+class RecoverStaleNotificationsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    claim_timeout_seconds: int = Field(
+        default=300,
+        ge=1,
+        le=86400,
+        description="Maximum acceptable notification claim age in seconds.",
+    )
+    limit: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Maximum number of stale notification claims to recover.",
+    )
+
+
+class StaleNotificationRecoveryResult(BaseModel):
+    recovered_count: int
+    recovered_message_ids: list[UUID]
+
+
+class NotificationOutboxMessageSummary(BaseModel):
+    """Delivery metadata deliberately excluding the potentially sensitive payload."""
+
+    id: UUID
+    mission_id: UUID
+    event_id: UUID
+    event_type: str
+    occurred_at: datetime
+    status: NotificationOutboxStatus
+    delivery_attempts: int
+    available_at: datetime
+    claimed_at: datetime | None
+    delivered_at: datetime | None
+    last_error: str | None
+
+    @classmethod
+    def from_message(
+        cls, message: NotificationOutboxMessage
+    ) -> "NotificationOutboxMessageSummary":
+        return cls.model_validate(message, from_attributes=True)
+
+
+def _notification_outbox_repository(
+    session: AsyncSession | None,
+) -> SqlAlchemyNotificationOutboxRepository:
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Notification outbox requires the database storage backend",
+        )
+    return SqlAlchemyNotificationOutboxRepository(session)
+
+
+@router.get(
+    "/notification-outbox/statistics",
+    response_model=NotificationOutboxStatistics,
+    summary="Summarize notification delivery backlog",
+)
+async def notification_outbox_statistics_endpoint(
+    _admin_api_key: AdminApiKeyDep,
+    session: StorageSessionDep,
+    current_time: CurrentTimeDep,
+) -> NotificationOutboxStatistics:
+    """Expose bounded delivery health data without notification payloads."""
+    return await _notification_outbox_repository(session).get_statistics(
+        current_time
+    )
+
+
+@router.post(
+    "/notification-outbox/recover-stale",
+    response_model=StaleNotificationRecoveryResult,
+    summary="Recover stale notification delivery claims",
+)
+async def recover_stale_notifications_endpoint(
+    request: RecoverStaleNotificationsRequest,
+    _admin_api_key: AdminApiKeyDep,
+    session: StorageSessionDep,
+    current_time: CurrentTimeDep,
+) -> StaleNotificationRecoveryResult:
+    """Return abandoned processing messages to the pending delivery queue."""
+    recovered = await _notification_outbox_repository(
+        session
+    ).recover_stale_claims(
+        current_time,
+        timedelta(seconds=request.claim_timeout_seconds),
+        request.limit,
+    )
+    return StaleNotificationRecoveryResult(
+        recovered_count=len(recovered),
+        recovered_message_ids=[message.id for message in recovered],
+    )
+
+
+@router.get(
+    "/notification-outbox",
+    response_model=list[NotificationOutboxMessageSummary],
+    summary="List notification delivery outbox",
+)
+async def list_notification_outbox_endpoint(
+    _admin_api_key: AdminApiKeyDep,
+    session: StorageSessionDep,
+    status: NotificationOutboxStatus | None = None,
+    mission_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[NotificationOutboxMessageSummary]:
+    """Inspect delivery state without exposing notification payloads."""
+    messages = await _notification_outbox_repository(session).list_messages(
+        status=status.value if status is not None else None,
+        mission_id=mission_id,
+        limit=limit,
+    )
+    return [NotificationOutboxMessageSummary.from_message(item) for item in messages]
+
+
+@router.post(
+    "/notification-outbox/{message_id}/requeue",
+    response_model=NotificationOutboxMessageSummary,
+    summary="Requeue a failed notification",
+)
+async def requeue_failed_notification_endpoint(
+    message_id: UUID,
+    _admin_api_key: AdminApiKeyDep,
+    session: StorageSessionDep,
+    current_time: CurrentTimeDep,
+) -> NotificationOutboxMessageSummary:
+    """Give a dead-lettered delivery a new five-attempt delivery budget."""
+    repository = _notification_outbox_repository(session)
+    existing = await repository.get_message(message_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Notification outbox message not found",
+        )
+    if existing.status is not NotificationOutboxStatus.failed:
+        raise HTTPException(
+            status_code=409,
+            detail="Only failed notification outbox messages can be requeued",
+        )
+    message = await repository.requeue_failed(
+        message_id,
+        current_time,
+    )
+    if message is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Only failed notification outbox messages can be requeued",
+        )
+    return NotificationOutboxMessageSummary.from_message(message)
 
 
 @router.post("/missions/process-due")

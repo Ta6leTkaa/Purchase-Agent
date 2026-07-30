@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import signal
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
@@ -11,12 +12,17 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.adapters import provider_registry
+from app.core.config import settings
 from app.db.session import async_session_maker
-from app.domain.mission import Mission
+from app.domain.mission import Mission, MissionStatus
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
+from app.repositories.notification_outbox import NotificationOutboxRepository
 from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
+from app.repositories.sqlalchemy.notification_outbox import (
+    SqlAlchemyNotificationOutboxRepository,
+)
 from app.services.clock import utc_now
 from app.services.due_mission_processor import (
     DueMissionProcessingResult,
@@ -25,6 +31,21 @@ from app.services.due_mission_processor import (
 from app.services.mission_event_projection import (
     MissionEventProjectionRebuildResult,
     RebuildMissionEventProjection,
+)
+from app.services.mission_worker import (
+    MissionWorkerCycleResult,
+    run_mission_worker,
+)
+from app.services.notification_delivery import (
+    RecipientRoutingNotificationAdapter,
+    open_notification_delivery_adapter,
+)
+from app.services.notification_outbox import (
+    dispatch_pending_notifications,
+)
+from app.services.notification_worker import (
+    NotificationWorkerCycleResult,
+    process_notification_worker_cycle,
 )
 from app.services.provider_history_rebuild import (
     ProviderHistoryProjectionRebuildResult,
@@ -36,12 +57,15 @@ from app.services.provider_resolver import ProviderResolver
 @dataclass(frozen=True)
 class CliDependencies:
     session_maker: async_sessionmaker[AsyncSession]
-    mission_repository_factory: Callable[
-        [AsyncSession], MissionRepository
-    ] = SqlAlchemyMissionRepository
-    identity_repository_factory: Callable[
-        [AsyncSession], IdentityRepository
-    ] = SqlAlchemyIdentityRepository
+    mission_repository_factory: Callable[[AsyncSession], MissionRepository] = (
+        SqlAlchemyMissionRepository
+    )
+    identity_repository_factory: Callable[[AsyncSession], IdentityRepository] = (
+        SqlAlchemyIdentityRepository
+    )
+    notification_outbox_repository_factory: Callable[
+        [AsyncSession], NotificationOutboxRepository
+    ] = SqlAlchemyNotificationOutboxRepository
     provider_resolver: ProviderResolver = ProviderResolver(provider_registry)
     clock: Callable[[], datetime] = utc_now
 
@@ -130,15 +154,192 @@ async def recover_stale_command(
     )
 
 
+async def dispatch_notifications_command(
+    limit: int,
+    *,
+    dependencies: CliDependencies | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    resolved = dependencies or get_cli_dependencies()
+    output = stdout or sys.stdout
+    error_output = stderr or sys.stderr
+    try:
+        async with open_notification_delivery_adapter(
+            output,
+            webhook_url=settings.notification_webhook_url,
+            webhook_bearer_token=_notification_webhook_bearer_token(),
+            webhook_signing_secret=_notification_webhook_signing_secret(),
+            webhook_timeout_seconds=settings.notification_webhook_timeout_seconds,
+        ) as adapter:
+            async with resolved.session_maker() as session:
+                result = await dispatch_pending_notifications(
+                    resolved.notification_outbox_repository_factory(session),
+                    RecipientRoutingNotificationAdapter(
+                        adapter,
+                        resolved.identity_repository_factory(session),
+                    ),
+                    resolved.clock(),
+                    limit=limit,
+                )
+    except Exception:
+        error_output.write("Infrastructure error while dispatching notifications.\n")
+        return 1
+    output.write(result.model_dump_json() + "\n")
+    output.flush()
+    return 1 if result.permanently_failed_count else 0
+
+
+async def notification_worker_command(
+    poll_interval: timedelta,
+    limit: int,
+    *,
+    claim_timeout: timedelta = timedelta(minutes=5),
+    dependencies: CliDependencies | None = None,
+    stop_event: asyncio.Event | None = None,
+    max_cycles: int | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    resolved = dependencies or get_cli_dependencies()
+    resolved_stop_event = stop_event or asyncio.Event()
+    output = stdout or sys.stdout
+    error_output = stderr or sys.stderr
+
+    async def process_cycle() -> NotificationWorkerCycleResult:
+        async with open_notification_delivery_adapter(
+            output,
+            webhook_url=settings.notification_webhook_url,
+            webhook_bearer_token=_notification_webhook_bearer_token(),
+            webhook_signing_secret=_notification_webhook_signing_secret(),
+            webhook_timeout_seconds=settings.notification_webhook_timeout_seconds,
+        ) as adapter:
+            async with resolved.session_maker() as session:
+                return await process_notification_worker_cycle(
+                    resolved.notification_outbox_repository_factory(session),
+                    RecipientRoutingNotificationAdapter(
+                        adapter,
+                        resolved.identity_repository_factory(session),
+                    ),
+                    resolved.clock(),
+                    limit=limit,
+                    claim_timeout=claim_timeout,
+                )
+
+    async def write_result(result: NotificationWorkerCycleResult) -> None:
+        output.write(result.model_dump_json() + "\n")
+        output.flush()
+
+    async def write_error(error: Exception) -> None:
+        del error
+        error_output.write("Infrastructure error during notification worker cycle.\n")
+        error_output.flush()
+
+    await run_mission_worker(
+        process_cycle,
+        poll_interval=poll_interval,
+        stop_event=resolved_stop_event,
+        on_result=write_result,
+        on_error=write_error,
+        max_cycles=max_cycles,
+    )
+    return 0
+
+
+async def worker_command(
+    poll_interval: timedelta,
+    limit: int,
+    *,
+    claim_timeout: timedelta = timedelta(minutes=15),
+    dependencies: CliDependencies | None = None,
+    stop_event: asyncio.Event | None = None,
+    max_cycles: int | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    resolved_dependencies = dependencies or get_cli_dependencies()
+    resolved_stop_event = stop_event or asyncio.Event()
+    output = stdout or sys.stdout
+    error_output = stderr or sys.stderr
+
+    async def process_cycle() -> MissionWorkerCycleResult:
+        current_time = resolved_dependencies.clock()
+        recovered = await _recover_stale_with_database_session(
+            resolved_dependencies,
+            current_time,
+            claim_timeout,
+            limit,
+        )
+        recovered_mission_ids = [
+            mission.id
+            for mission in recovered
+            if mission.status is MissionStatus.waiting
+        ]
+        stale_failed_mission_ids = [
+            mission.id
+            for mission in recovered
+            if mission.status is MissionStatus.failed
+        ]
+        processing = await _process_due_with_database_session(
+            resolved_dependencies,
+            current_time,
+            limit,
+        )
+        return MissionWorkerCycleResult(
+            recovered_mission_ids=recovered_mission_ids,
+            stale_failed_mission_ids=stale_failed_mission_ids,
+            processing=processing,
+        )
+
+    async def write_result(result: MissionWorkerCycleResult) -> None:
+        output.write(result.model_dump_json() + "\n")
+        output.flush()
+
+    async def write_error(error: Exception) -> None:
+        del error
+        error_output.write("Infrastructure error during Mission worker cycle.\n")
+        error_output.flush()
+
+    await run_mission_worker(
+        process_cycle,
+        poll_interval=poll_interval,
+        stop_event=resolved_stop_event,
+        on_result=write_result,
+        on_error=write_error,
+        max_cycles=max_cycles,
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "process-due":
         raise SystemExit(asyncio.run(process_due_command(args.limit)))
-    if args.command == "rebuild-provider-history":
-        exit_code, rebuild_result = asyncio.run(
-            rebuild_provider_history_command()
+    if args.command == "worker":
+        raise SystemExit(
+            asyncio.run(
+                _run_worker_until_signal(
+                    timedelta(seconds=args.poll_interval_seconds),
+                    args.limit,
+                    timedelta(seconds=args.claim_timeout_seconds),
+                )
+            )
         )
+    if args.command == "dispatch-notifications":
+        raise SystemExit(asyncio.run(dispatch_notifications_command(args.limit)))
+    if args.command == "notification-worker":
+        raise SystemExit(
+            asyncio.run(
+                _run_notification_worker_until_signal(
+                    timedelta(seconds=args.poll_interval_seconds),
+                    args.limit,
+                    timedelta(seconds=args.claim_timeout_seconds),
+                )
+            )
+        )
+    if args.command == "rebuild-provider-history":
+        exit_code, rebuild_result = asyncio.run(rebuild_provider_history_command())
         if exit_code == 0:
             sys.stdout.write(
                 "Processed missions: "
@@ -256,6 +457,16 @@ def _resolve_dependencies(
     return replace(resolved_dependencies, session_maker=session_maker)
 
 
+def _notification_webhook_bearer_token() -> str | None:
+    token = settings.notification_webhook_bearer_token
+    return token.get_secret_value() if token is not None else None
+
+
+def _notification_webhook_signing_secret() -> str | None:
+    secret = settings.notification_webhook_signing_secret
+    return secret.get_secret_value() if secret is not None else None
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m app.cli",
@@ -274,6 +485,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Maximum number of due missions to process, from 1 to 500.",
     )
 
+    worker_parser = subparsers.add_parser(
+        "worker",
+        help="Continuously process due missions until stopped.",
+    )
+    worker_parser.add_argument(
+        "--poll-interval-seconds",
+        type=_parse_poll_interval_seconds,
+        default=settings.worker_poll_interval_seconds,
+        help="Delay between processing cycles, greater than 0 and up to 3600.",
+    )
+    worker_parser.add_argument(
+        "--claim-timeout-seconds",
+        type=_parse_claim_timeout_seconds,
+        default=settings.worker_claim_timeout_seconds,
+        help="Age after which a processing claim is stale, from 1 to 86400.",
+    )
+    worker_parser.add_argument(
+        "--limit",
+        type=_parse_limit,
+        default=settings.worker_batch_size,
+        help="Maximum number of due missions per cycle, from 1 to 500.",
+    )
+
     recover_stale_parser = subparsers.add_parser(
         "recover-stale",
         help="Recover stale processing missions without running them.",
@@ -288,6 +522,35 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "rebuild-provider-history",
         help="Rebuild the provider history projection from Mission events.",
+    )
+    dispatch_notifications_parser = subparsers.add_parser(
+        "dispatch-notifications",
+        help="Deliver one batch of pending notification outbox messages.",
+    )
+    dispatch_notifications_parser.add_argument(
+        "--limit",
+        type=_parse_limit,
+        default=100,
+        help="Maximum number of notifications to deliver, from 1 to 500.",
+    )
+    notification_worker_parser = subparsers.add_parser(
+        "notification-worker",
+        help="Continuously recover and deliver notification outbox messages.",
+    )
+    notification_worker_parser.add_argument(
+        "--poll-interval-seconds",
+        type=_parse_poll_interval_seconds,
+        default=settings.notification_worker_poll_interval_seconds,
+    )
+    notification_worker_parser.add_argument(
+        "--claim-timeout-seconds",
+        type=_parse_claim_timeout_seconds,
+        default=settings.notification_claim_timeout_seconds,
+    )
+    notification_worker_parser.add_argument(
+        "--limit",
+        type=_parse_limit,
+        default=settings.notification_worker_batch_size,
     )
     subparsers.add_parser(
         "rebuild-mission-events",
@@ -325,6 +588,70 @@ def _parse_claim_timeout_seconds(value: str) -> int:
         message = "claim-timeout-seconds must be between 1 and 86400"
         raise argparse.ArgumentTypeError(message)
     return claim_timeout_seconds
+
+
+def _parse_poll_interval_seconds(value: str) -> float:
+    try:
+        interval = float(value)
+    except ValueError as exc:
+        message = "poll-interval-seconds must be a number"
+        raise argparse.ArgumentTypeError(message) from exc
+    if interval <= 0 or interval > 3600:
+        message = "poll-interval-seconds must be greater than 0 and at most 3600"
+        raise argparse.ArgumentTypeError(message)
+    return interval
+
+
+async def _run_worker_until_signal(
+    poll_interval: timedelta,
+    limit: int,
+    claim_timeout: timedelta,
+) -> int:
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    installed_signals: list[signal.Signals] = []
+    for signal_number in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(signal_number, stop_event.set)
+        except (NotImplementedError, RuntimeError):
+            continue
+        installed_signals.append(signal_number)
+    try:
+        return await worker_command(
+            poll_interval,
+            limit,
+            claim_timeout=claim_timeout,
+            stop_event=stop_event,
+        )
+    finally:
+        for signal_number in installed_signals:
+            loop.remove_signal_handler(signal_number)
+
+
+async def _run_notification_worker_until_signal(
+    poll_interval: timedelta,
+    limit: int,
+    claim_timeout: timedelta,
+) -> int:
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    installed_signals: list[signal.Signals] = []
+    for signal_number in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(signal_number, stop_event.set)
+        except (NotImplementedError, RuntimeError):
+            continue
+        installed_signals.append(signal_number)
+    try:
+        return await notification_worker_command(
+            poll_interval,
+            limit,
+            claim_timeout=claim_timeout,
+            stop_event=stop_event,
+        )
+    finally:
+        for signal_number in installed_signals:
+            loop.remove_signal_handler(signal_number)
 
 
 if __name__ == "__main__":

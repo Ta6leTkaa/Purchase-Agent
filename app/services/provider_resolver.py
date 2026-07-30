@@ -1,7 +1,10 @@
 from app.adapters.base import ProviderAdapter
 from app.adapters.registry import ProviderRegistry
 from app.domain.mission import Mission, MissionType
-from app.services.provider_errors import UnsupportedMissionTypeError
+from app.services.provider_errors import (
+    UnsupportedExecutionModeError,
+    UnsupportedMissionTypeError,
+)
 
 
 class NoSupportingProviderError(LookupError):
@@ -40,11 +43,32 @@ class ProviderResolver:
                     provider_id=adapter.provider_id,
                     mission_type=mission.mission_type,
                 )
+            if not adapter.supports_execution_mode(
+                mission.mission_type,
+                mission.execution_mode,
+            ):
+                raise UnsupportedExecutionModeError(
+                    execution_mode=mission.execution_mode,
+                    provider_id=adapter.provider_id,
+                )
             return adapter
 
-        supporting_adapters = self._registry.list_supporting(
+        mission_type_adapters = self._registry.list_supporting(
             mission.mission_type
         )
+        supporting_adapters = tuple(
+            adapter
+            for adapter in mission_type_adapters
+            if adapter.supports_execution_mode(
+                mission.mission_type,
+                mission.execution_mode,
+            )
+        )
+        if mission_type_adapters and not supporting_adapters:
+            raise UnsupportedExecutionModeError(
+                execution_mode=mission.execution_mode,
+                provider_id=None,
+            )
         if not supporting_adapters:
             raise NoSupportingProviderError(mission.mission_type)
         if len(supporting_adapters) > 1:

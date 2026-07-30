@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 
-from app.domain.mission import MissionType
+from app.domain.mission import MissionExecutionMode, MissionType
 
 
 class ProviderResponse(BaseModel):
@@ -10,6 +10,7 @@ class ProviderResponse(BaseModel):
 
     provider_id: str
     mission_types: tuple[MissionType, ...]
+    execution_modes: tuple[MissionExecutionMode, ...]
 
 
 class ProviderListResponse(BaseModel):

@@ -163,6 +163,7 @@ def test_mission_provider_selection_rejects_empty_provider_id(
     [
         (MissionStatus.created, True),
         (MissionStatus.waiting, True),
+        (MissionStatus.paused, True),
         (MissionStatus.processing, False),
         (MissionStatus.running, False),
         (MissionStatus.searching, False),
@@ -356,13 +357,16 @@ def test_api_sets_and_clears_provider_selection() -> None:
     assert response.json()["execution_log"][-1]["type"] == (
         "provider_selection_changed"
     )
+    assert response.headers["etag"] == '"1"'
 
     clear_response = client.put(
         f"/missions/{mission.id}/provider",
         json={"provider_id": None},
+        headers={"If-Match": response.headers["etag"]},
     )
 
     assert clear_response.status_code == 200
+    assert clear_response.headers["etag"] == '"2"'
     assert clear_response.json()["provider_id"] is None
     assert clear_response.json()["resolved_provider_id"] is None
     assert clear_response.json()["execution_log"][-1]["metadata"] == {

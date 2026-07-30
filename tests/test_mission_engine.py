@@ -11,6 +11,7 @@ from app.domain.identity import Identity
 from app.domain.mission import (
     FallbackRules,
     Mission,
+    MissionExecutionMode,
     MissionStatus,
     MissionType,
     TrainConstraints,
@@ -64,6 +65,10 @@ def create_identity(
 def create_mission(
     mission_repository: InMemoryMissionRepository,
     participant_ids: list[UUID],
+    *,
+    execution_mode: MissionExecutionMode = (
+        MissionExecutionMode.REQUIRE_CONFIRMATION
+    ),
 ) -> Mission:
     mission = Mission(
         id=uuid4(),
@@ -71,6 +76,7 @@ def create_mission(
         title="Moscow to Saint Petersburg",
         participant_ids=participant_ids,
         provider="mock_train",
+        execution_mode=execution_mode,
         constraints=TrainConstraints(
             from_city="Moscow",
             to_city="Saint Petersburg",
@@ -86,6 +92,76 @@ def create_mission(
         ),
     )
     return asyncio.run(mission_repository.create(mission))
+
+
+def test_search_only_mission_never_creates_reservation(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    class SearchOnlyAdapter(MockTrainAdapter):
+        async def reserve_option(
+            self,
+            option: ProviderOption,
+            mission: Mission,
+            *,
+            idempotency_key: str,
+        ) -> ReservationResult:
+            raise AssertionError("SEARCH_ONLY must not reserve an option")
+
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+        execution_mode=MissionExecutionMode.SEARCH_ONLY,
+    )
+    resolver = ProviderResolver(ProviderRegistry([SearchOnlyAdapter()]))
+
+    updated = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+            resolver,
+        )
+    )
+
+    assert updated.status is MissionStatus.completed
+    assert updated.best_option is not None
+    assert updated.reservation_id is None
+    assert updated.execution_log[-1].type == "mission_search_completed"
+    assert "reservation_started" not in [
+        event.type for event in updated.execution_log
+    ]
+
+
+def test_auto_purchase_confirms_provider_reservation(
+    repositories: tuple[InMemoryIdentityRepository, InMemoryMissionRepository],
+) -> None:
+    identity_repository, mission_repository = repositories
+    identities = [create_identity(identity_repository) for _ in range(4)]
+    mission = create_mission(
+        mission_repository,
+        [identity.id for identity in identities],
+        execution_mode=MissionExecutionMode.AUTO_PURCHASE,
+    )
+
+    updated = asyncio.run(
+        run_mission(
+            mission.id,
+            mission_repository,
+            identity_repository,
+        )
+    )
+    event_types = [event.type for event in updated.execution_log]
+
+    assert updated.status is MissionStatus.completed
+    assert updated.reservation_id is not None
+    assert "automatic_confirmation_started" in event_types
+    assert "automatic_confirmation_succeeded" in event_types
+    assert event_types[-1] == "mission_completed"
+    assert updated.execution_log[-1].metadata == {
+        "execution_mode": "auto_purchase"
+    }
 
 
 def test_run_mission_sets_requires_confirmation_and_selects_best_option(
@@ -426,6 +502,7 @@ def test_run_mission_persists_typed_provider_search_failure(
     assert updated_mission.execution_log[-1].metadata == {
         "provider_id": "mock_train",
         "operation": "search",
+        "retryable": True,
     }
 
 
@@ -680,6 +757,7 @@ def test_confirm_mission_marks_failed_when_provider_confirmation_fails(
     assert updated_mission.execution_log[-1].metadata == {
         "provider_id": adapter.provider_id,
         "operation": "confirmation",
+        "retryable": True,
     }
 
 
@@ -772,6 +850,7 @@ def test_cancel_mission_marks_failed_when_provider_cancellation_fails(
     assert updated_mission.execution_log[-1].metadata == {
         "provider_id": adapter.provider_id,
         "operation": "cancellation",
+        "retryable": True,
     }
 
 

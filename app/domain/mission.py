@@ -29,6 +29,7 @@ class MissionType(StrEnum):
 class MissionStatus(StrEnum):
     created = "created"
     waiting = "waiting"
+    paused = "paused"
     processing = "processing"
     running = "running"
     searching = "searching"
@@ -38,6 +39,13 @@ class MissionStatus(StrEnum):
     completed = "completed"
     failed = "failed"
     cancelled = "cancelled"
+    expired = "expired"
+
+
+class MissionExecutionMode(StrEnum):
+    SEARCH_ONLY = "search_only"
+    REQUIRE_CONFIRMATION = "require_confirmation"
+    AUTO_PURCHASE = "auto_purchase"
 
 
 class TrainConstraints(BaseModel):
@@ -93,12 +101,16 @@ class Mission(BaseModel):
     status: MissionStatus = MissionStatus.created
     participant_ids: list[UUID] = Field(min_length=1)
     provider: str = Field(min_length=1)
+    execution_mode: MissionExecutionMode = (
+        MissionExecutionMode.REQUIRE_CONFIRMATION
+    )
     provider_id: str | None = None
     resolved_provider_id: str | None = None
     reservation_id: str | None = Field(default=None, max_length=255)
     constraints: TrainConstraints
     fallback_rules: FallbackRules = FallbackRules()
     scheduled_at: datetime | None = None
+    expires_at: datetime | None = None
     claimed_at: datetime | None = None
     execution_attempts: int = Field(default=0, ge=0)
     max_execution_attempts: int = Field(default=3, ge=1, le=100)
@@ -116,7 +128,7 @@ class Mission(BaseModel):
             raise ValueError("payload must be a TrainTicketMissionPayload")
         return value
 
-    @field_validator("scheduled_at", "claimed_at")
+    @field_validator("scheduled_at", "expires_at", "claimed_at")
     @classmethod
     def validate_datetime_timezone(
         cls,
@@ -173,6 +185,12 @@ class Mission(BaseModel):
         ):
             msg = "claimed_at is allowed only for processing missions"
             raise ValueError(msg)
+        if (
+            self.scheduled_at is not None
+            and self.expires_at is not None
+            and self.scheduled_at > self.expires_at
+        ):
+            raise ValueError("scheduled_at must not be after expires_at")
         return self
 
     def record_event(
@@ -244,6 +262,7 @@ class Mission(BaseModel):
         return self.status in {
             MissionStatus.created,
             MissionStatus.waiting,
+            MissionStatus.paused,
         }
 
     def with_provider_selection(

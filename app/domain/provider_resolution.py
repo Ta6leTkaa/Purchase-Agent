@@ -16,6 +16,7 @@ class ProviderSelectionMode(StrEnum):
 class ProviderResolutionFailureReason(StrEnum):
     unknown_provider = "unknown_provider"
     unsupported_mission_type = "unsupported_mission_type"
+    unsupported_execution_mode = "unsupported_execution_mode"
     no_supporting_provider = "no_supporting_provider"
     ambiguous_provider = "ambiguous_provider"
 
@@ -24,6 +25,7 @@ class ProviderResolutionPreviewOutcome(StrEnum):
     resolved = "resolved"
     unknown_provider = "unknown_provider"
     unsupported_mission_type = "unsupported_mission_type"
+    unsupported_execution_mode = "unsupported_execution_mode"
     no_supporting_provider = "no_supporting_provider"
     ambiguous_provider = "ambiguous_provider"
 
@@ -148,7 +150,20 @@ class ProviderResolutionFailedEventPayload(BaseModel):
         if self.reason in explicit_reasons:
             if self.requested_provider_id is None or self.candidate_provider_ids:
                 raise ValueError("explicit resolution failure payload is invalid")
-        elif self.reason is ProviderResolutionFailureReason.no_supporting_provider:
+        elif self.reason in {
+            ProviderResolutionFailureReason.no_supporting_provider,
+            ProviderResolutionFailureReason.unsupported_execution_mode,
+        }:
+            if (
+                self.reason
+                is ProviderResolutionFailureReason.unsupported_execution_mode
+                and self.requested_provider_id is not None
+            ):
+                if self.candidate_provider_ids:
+                    raise ValueError(
+                        "unsupported-execution-mode payload is invalid"
+                    )
+                return self
             if self.requested_provider_id is not None or self.candidate_provider_ids:
                 raise ValueError("no-supporting-provider payload is invalid")
         elif (

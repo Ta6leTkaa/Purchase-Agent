@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from app.adapters.base import ProviderAdapter
 from app.domain.identity import Identity
-from app.domain.mission import Mission, MissionType
+from app.domain.mission import Mission, MissionExecutionMode, MissionType
 from app.domain.provider import ProviderOption, ReservationResult
 from app.domain.provider_capability import ProviderCapability
 
@@ -48,6 +48,7 @@ def test_provider_capability_is_immutable_hashable_and_value_equal() -> None:
     assert capability == ProviderCapability(
         mission_type=MissionType.TRAIN_TICKET,
     )
+    assert capability.supports_auto_purchase is False
     assert {capability} == {
         ProviderCapability(mission_type=MissionType.TRAIN_TICKET)
     }
@@ -60,3 +61,16 @@ def test_adapter_supports_declared_mission_type_only() -> None:
 
     assert adapter.supports(MissionType.TRAIN_TICKET) is True
     assert adapter.supports(cast(MissionType, "unsupported")) is False
+
+
+def test_adapter_requires_explicit_auto_purchase_capability() -> None:
+    adapter = TrainOnlyAdapter()
+
+    assert adapter.supports_execution_mode(
+        MissionType.TRAIN_TICKET,
+        MissionExecutionMode.REQUIRE_CONFIRMATION,
+    )
+    assert not adapter.supports_execution_mode(
+        MissionType.TRAIN_TICKET,
+        MissionExecutionMode.AUTO_PURCHASE,
+    )

@@ -5,7 +5,7 @@ from uuid import UUID
 from app.adapters import provider_registry
 from app.adapters.registry import ProviderRegistry, UnknownProviderError
 from app.domain.identity import Identity
-from app.domain.mission import Mission, MissionStatus
+from app.domain.mission import Mission, MissionExecutionMode, MissionStatus
 from app.domain.provider_resolution import (
     ProviderResolutionFailedEventPayload,
     ProviderResolutionFailureReason,
@@ -17,9 +17,11 @@ from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.services.clock import utc_now
 from app.services.mission_errors import MissionNotFoundError
+from app.services.mission_expiration import expire_mission_if_due
 from app.services.mission_state_machine import MissionStateMachine
 from app.services.provider_errors import (
     ProviderOperationError,
+    UnsupportedExecutionModeError,
     UnsupportedMissionTypeError,
 )
 from app.services.provider_resolver import (
@@ -72,6 +74,12 @@ async def run_mission(
         raise InvalidMissionRunError(message)
 
     now = current_time or utc_now()
+    if await expire_mission_if_due(
+        mission,
+        mission_repository,
+        now,
+    ):
+        raise MissionNotReadyError("Mission has expired")
     if mission.status is MissionStatus.waiting and _is_scheduled_for_future(
         mission,
         now,
@@ -84,6 +92,7 @@ async def run_mission(
     except (
         UnknownProviderError,
         UnsupportedMissionTypeError,
+        UnsupportedExecutionModeError,
         NoSupportingProviderError,
         AmbiguousProviderError,
     ) as error:
@@ -142,13 +151,14 @@ async def run_mission(
 
     try:
         options = await adapter.search_options(mission, identities)
-    except ProviderOperationError:
+    except ProviderOperationError as error:
         return await _fail_provider_operation(
             mission,
             mission_repository,
             state_machine,
             provider_id=adapter.provider_id,
             operation="search",
+            retryable=error.retryable,
         )
     _add_event(
         mission,
@@ -184,6 +194,16 @@ async def run_mission(
         },
     )
 
+    if mission.execution_mode is MissionExecutionMode.SEARCH_ONLY:
+        state_machine.transition(mission, MissionStatus.completed)
+        _add_event(
+            mission,
+            "mission_search_completed",
+            "Mission completed without creating a reservation.",
+            {"execution_mode": mission.execution_mode.value},
+        )
+        return await mission_repository.update(mission)
+
     if not is_processing_run:
         state_machine.transition(mission, MissionStatus.reserving)
     _add_event(mission, "reservation_started", "Reservation started.")
@@ -194,13 +214,14 @@ async def run_mission(
             mission,
             idempotency_key=_reservation_idempotency_key(mission),
         )
-    except ProviderOperationError:
+    except ProviderOperationError as error:
         return await _fail_provider_operation(
             mission,
             mission_repository,
             state_machine,
             provider_id=adapter.provider_id,
             operation="reservation",
+            retryable=error.retryable,
         )
     if not reservation_result.success:
         state_machine.transition(mission, MissionStatus.failed)
@@ -212,6 +233,7 @@ async def run_mission(
         )
         return await mission_repository.update(mission)
 
+    assert reservation_result.reservation_id is not None
     mission.reservation_id = reservation_result.reservation_id
     _add_event(
         mission,
@@ -223,16 +245,69 @@ async def run_mission(
         },
     )
 
-    if reservation_result.requires_confirmation:
+    if (
+        mission.execution_mode
+        is MissionExecutionMode.REQUIRE_CONFIRMATION
+    ):
         state_machine.transition(mission, MissionStatus.requires_confirmation)
         _add_event(
             mission,
             "waiting_for_user_confirmation",
             "Waiting for user confirmation.",
+            {
+                "execution_mode": mission.execution_mode.value,
+                "provider_requires_confirmation": (
+                    reservation_result.requires_confirmation
+                ),
+            },
         )
-    else:
-        state_machine.transition(mission, MissionStatus.completed)
-        _add_event(mission, "mission_completed", "Mission completed.")
+        return await mission_repository.update(mission)
+
+    if reservation_result.requires_confirmation:
+        _add_event(
+            mission,
+            "automatic_confirmation_started",
+            "Automatic reservation confirmation started.",
+            {"provider_id": adapter.provider_id},
+        )
+        try:
+            confirmation_result = await adapter.confirm_reservation(
+                reservation_result.reservation_id,
+                mission,
+                idempotency_key=_confirmation_idempotency_key(mission),
+            )
+        except ProviderOperationError as error:
+            return await _fail_provider_operation(
+                mission,
+                mission_repository,
+                state_machine,
+                provider_id=adapter.provider_id,
+                operation="automatic_confirmation",
+                retryable=error.retryable,
+            )
+        if not confirmation_result.success:
+            state_machine.transition(mission, MissionStatus.failed)
+            _add_event(
+                mission,
+                "automatic_confirmation_failed",
+                "Automatic reservation confirmation failed.",
+                {"provider_id": adapter.provider_id},
+            )
+            return await mission_repository.update(mission)
+        _add_event(
+            mission,
+            "automatic_confirmation_succeeded",
+            "Automatic reservation confirmation succeeded.",
+            {"provider_id": adapter.provider_id},
+        )
+
+    state_machine.transition(mission, MissionStatus.completed)
+    _add_event(
+        mission,
+        "mission_completed",
+        "Mission completed automatically.",
+        {"execution_mode": mission.execution_mode.value},
+    )
 
     return await mission_repository.update(mission)
 
@@ -275,13 +350,14 @@ async def confirm_mission(
                 mission,
                 idempotency_key=_confirmation_idempotency_key(mission),
             )
-        except ProviderOperationError:
+        except ProviderOperationError as error:
             return await _fail_provider_operation(
                 mission,
                 mission_repository,
                 MissionStateMachine(),
                 provider_id=adapter.provider_id,
                 operation="confirmation",
+                retryable=error.retryable,
             )
 
         if not confirmation_result.success:
@@ -322,6 +398,7 @@ async def cancel_mission(
     if mission.status not in {
         MissionStatus.created,
         MissionStatus.waiting,
+        MissionStatus.paused,
         MissionStatus.requires_confirmation,
     }:
         raise InvalidMissionCancellationError(
@@ -362,6 +439,7 @@ async def _fail_provider_operation(
     *,
     provider_id: str,
     operation: str,
+    retryable: bool,
 ) -> Mission:
     state_machine.transition(mission, MissionStatus.failed)
     _add_event(
@@ -371,6 +449,7 @@ async def _fail_provider_operation(
         {
             "provider_id": provider_id,
             "operation": operation,
+            "retryable": retryable,
         },
     )
     return await mission_repository.update(mission)
@@ -407,13 +486,14 @@ async def _cancel_provider_reservation(
             mission,
             idempotency_key=_cancellation_idempotency_key(mission),
         )
-    except ProviderOperationError:
+    except ProviderOperationError as error:
         await _fail_provider_operation(
             mission,
             mission_repository,
             MissionStateMachine(),
             provider_id=adapter.provider_id,
             operation="cancellation",
+            retryable=error.retryable,
         )
         return False
 
@@ -488,6 +568,7 @@ def _provider_resolution_failure_payload(
     error: (
         UnknownProviderError
         | UnsupportedMissionTypeError
+        | UnsupportedExecutionModeError
         | NoSupportingProviderError
         | AmbiguousProviderError
     ),
@@ -498,6 +579,10 @@ def _provider_resolution_failure_payload(
         candidate_provider_ids: tuple[str, ...] = ()
     elif isinstance(error, UnsupportedMissionTypeError):
         reason = ProviderResolutionFailureReason.unsupported_mission_type
+        requested_provider_id = mission.provider_id
+        candidate_provider_ids = ()
+    elif isinstance(error, UnsupportedExecutionModeError):
+        reason = ProviderResolutionFailureReason.unsupported_execution_mode
         requested_provider_id = mission.provider_id
         candidate_provider_ids = ()
     elif isinstance(error, NoSupportingProviderError):

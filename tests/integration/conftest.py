@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 from app.db import models as _models  # noqa: F401
 from app.db.base import Base
@@ -23,7 +24,9 @@ def test_database_url() -> str:
 
 @pytest.fixture(scope="session")
 async def test_engine(test_database_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(test_database_url)
+    # Integration tests may use function-scoped event loops. Avoid retaining
+    # asyncpg connections created by a different loop between tests.
+    engine = create_async_engine(test_database_url, poolclass=NullPool)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 

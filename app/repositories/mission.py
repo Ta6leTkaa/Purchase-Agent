@@ -38,6 +38,13 @@ class MissionRepository(Protocol):
     ) -> builtins.list[Mission]:
         ...
 
+    async def expire_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> builtins.list[Mission]:
+        ...
+
     async def list_stale_processing(
         self,
         current_time: datetime,

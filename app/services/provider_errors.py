@@ -1,4 +1,4 @@
-from app.domain.mission import MissionType
+from app.domain.mission import MissionExecutionMode, MissionType
 
 
 class UnsupportedMissionTypeError(Exception):
@@ -24,9 +24,31 @@ class ProviderOperationError(Exception):
         *,
         provider_id: str,
         operation: str,
+        retryable: bool = True,
     ) -> None:
         self.provider_id = provider_id
         self.operation = operation
+        self.retryable = retryable
         super().__init__(
             f"Provider '{provider_id}' failed during {operation} operation"
+        )
+
+
+class UnsupportedExecutionModeError(Exception):
+    def __init__(
+        self,
+        *,
+        execution_mode: MissionExecutionMode,
+        provider_id: str | None,
+    ) -> None:
+        self.execution_mode = execution_mode
+        self.provider_id = provider_id
+        provider_description = (
+            f"Provider '{provider_id}'"
+            if provider_id is not None
+            else "No configured provider"
+        )
+        super().__init__(
+            f"{provider_description} does not support execution mode "
+            f"'{execution_mode.value}'"
         )

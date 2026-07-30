@@ -10,7 +10,7 @@ from app.db.models.identity import (
     identity_from_model,
     identity_to_model,
 )
-from app.domain.identity import Identity
+from app.domain.identity import Identity, Preferences
 from app.repositories.identity import IdentityRepository
 
 
@@ -42,6 +42,23 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         model = result.scalar_one_or_none()
         if model is None:
             return None
+        return identity_from_model(model)
+
+    async def update_preferences(
+        self,
+        identity_id: UUID,
+        preferences: Preferences,
+    ) -> Identity | None:
+        result = await self._session.execute(
+            select(IdentityModel)
+            .where(IdentityModel.id == identity_id)
+            .options(selectinload(IdentityModel.documents))
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            return None
+        model.preferences = preferences.model_dump(mode="json")
+        await self._session.flush()
         return identity_from_model(model)
 
     async def clear(self) -> None:

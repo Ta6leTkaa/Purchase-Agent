@@ -7,6 +7,7 @@ from app.domain.execution import ExecutionEvent
 from app.domain.mission import (
     FallbackRules,
     Mission,
+    MissionExecutionMode,
     MissionStatus,
     MissionType,
     TrainConstraints,
@@ -33,6 +34,7 @@ def test_mission_to_model_saves_core_fields() -> None:
     assert model.id == mission.id
     assert model.type == "train_trip"
     assert model.mission_type == "train_ticket"
+    assert model.execution_mode == "require_confirmation"
     assert model.provider_id is None
     assert model.resolved_provider_id is None
     assert model.reservation_id is None
@@ -54,6 +56,17 @@ def test_mission_from_model_restores_domain_mission() -> None:
 
     assert restored_mission == mission
     assert restored_mission.mission_type is MissionType.TRAIN_TICKET
+
+
+def test_execution_mode_survives_mapper_round_trip() -> None:
+    mission = make_mission()
+    mission.execution_mode = MissionExecutionMode.AUTO_PURCHASE
+
+    model = mission_to_model(mission)
+    restored_mission = mission_from_model(model)
+
+    assert model.execution_mode == "auto_purchase"
+    assert restored_mission.execution_mode is MissionExecutionMode.AUTO_PURCHASE
 
 
 def test_provider_id_survives_mapper_round_trip() -> None:
@@ -122,6 +135,18 @@ def test_scheduled_at_survives_round_trip() -> None:
     assert restored_mission.scheduled_at == scheduled_at
 
 
+def test_expires_at_survives_round_trip() -> None:
+    expires_at = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+    mission = make_mission()
+    mission.expires_at = expires_at
+    model = mission_to_model(mission)
+
+    restored_mission = mission_from_model(model)
+
+    assert model.expires_at == expires_at
+    assert restored_mission.expires_at == expires_at
+
+
 def test_claimed_at_survives_round_trip() -> None:
     claimed_at = datetime(2026, 8, 1, 12, 30, tzinfo=UTC)
     mission = make_mission(
@@ -157,6 +182,16 @@ def test_max_execution_attempts_survives_round_trip() -> None:
 
     assert model.max_execution_attempts == 5
     assert restored_mission.max_execution_attempts == 5
+
+
+def test_paused_status_survives_round_trip() -> None:
+    mission = make_mission(status=MissionStatus.paused)
+
+    model = mission_to_model(mission)
+    restored_mission = mission_from_model(model)
+
+    assert model.status == "paused"
+    assert restored_mission.status is MissionStatus.paused
 
 
 def test_legacy_processing_without_claimed_at_can_be_restored() -> None:

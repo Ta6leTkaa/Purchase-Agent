@@ -196,9 +196,13 @@ async def test_mission_execution_failure_persists_missing_participant(
 
     assert persisted_mission is not None
     assert persisted_mission.status is MissionStatus.failed
-    assert [event.type for event in persisted_mission.execution_log] == [
-        "participant_missing"
-    ]
+    assert_event_types_contain(
+        [
+            event.model_dump(mode="json")
+            for event in persisted_mission.execution_log
+        ],
+        ["provider_resolved", "participant_missing"],
+    )
 
 
 async def test_mission_confirmation_persists_completed_status(

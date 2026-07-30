@@ -17,5 +17,88 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate:
+    build:
+      context: .
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      STORAGE_BACKEND: database
+      DATABASE_URL: postgresql+asyncpg://purchase_agent:purchase_agent@postgres:5432/purchase_agent
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      STORAGE_BACKEND: database
+      DATABASE_URL: postgresql+asyncpg://purchase_agent:purchase_agent@postgres:5432/purchase_agent
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?Set ADMIN_API_KEY in .env before starting the API}
+      APP_DEBUG: ${APP_DEBUG:-false}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://localhost:8000/ready').read()"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    profiles: ["worker"]
+    build:
+      context: .
+    restart: unless-stopped
+    command:
+      - python
+      - -m
+      - app.cli
+      - worker
+    environment:
+      STORAGE_BACKEND: database
+      DATABASE_URL: postgresql+asyncpg://purchase_agent:purchase_agent@postgres:5432/purchase_agent
+      WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-5}
+      WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-100}
+      WORKER_CLAIM_TIMEOUT_SECONDS: ${WORKER_CLAIM_TIMEOUT_SECONDS:-900}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+
+  notification-worker:
+    profiles: ["notifications"]
+    build:
+      context: .
+    restart: unless-stopped
+    command:
+      - python
+      - -m
+      - app.cli
+      - notification-worker
+    environment:
+      STORAGE_BACKEND: database
+      DATABASE_URL: postgresql+asyncpg://purchase_agent:purchase_agent@postgres:5432/purchase_agent
+      NOTIFICATION_WORKER_POLL_INTERVAL_SECONDS: ${NOTIFICATION_WORKER_POLL_INTERVAL_SECONDS:-5}
+      NOTIFICATION_WORKER_BATCH_SIZE: ${NOTIFICATION_WORKER_BATCH_SIZE:-100}
+      NOTIFICATION_CLAIM_TIMEOUT_SECONDS: ${NOTIFICATION_CLAIM_TIMEOUT_SECONDS:-300}
+      NOTIFICATION_WEBHOOK_URL: ${NOTIFICATION_WEBHOOK_URL:-}
+      NOTIFICATION_WEBHOOK_BEARER_TOKEN: ${NOTIFICATION_WEBHOOK_BEARER_TOKEN:-}
+      NOTIFICATION_WEBHOOK_SIGNING_SECRET: ${NOTIFICATION_WEBHOOK_SIGNING_SECRET:-}
+      NOTIFICATION_WEBHOOK_TIMEOUT_SECONDS: ${NOTIFICATION_WEBHOOK_TIMEOUT_SECONDS:-10}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+
 volumes:
   purchase_agent_postgres_data:

@@ -6,7 +6,13 @@ from pydantic import ValidationError
 
 from app.domain.execution import ExecutionEvent
 from app.domain.identity import Document, DocumentType, Identity
-from app.domain.mission import Mission, MissionStatus, MissionType, TrainConstraints
+from app.domain.mission import (
+    Mission,
+    MissionExecutionMode,
+    MissionStatus,
+    MissionType,
+    TrainConstraints,
+)
 from app.domain.provider import (
     ProviderOption,
     ProviderOptionType,
@@ -85,6 +91,7 @@ def test_create_train_trip_mission_with_default_created_status() -> None:
     assert mission.type is MissionType.train_trip
     assert mission.mission_type is MissionType.TRAIN_TICKET
     assert mission.status is MissionStatus.created
+    assert mission.execution_mode is MissionExecutionMode.REQUIRE_CONFIRMATION
     assert mission.provider_id is None
 
 

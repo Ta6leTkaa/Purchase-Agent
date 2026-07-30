@@ -219,7 +219,7 @@ def test_exception_for_one_mission_does_not_stop_next_due_mission() -> None:
     asyncio.run(scenario())
 
 
-def test_typed_provider_failure_closes_claimed_attempt_without_batch_error() -> None:
+def test_typed_provider_failure_closes_attempt_and_schedules_retry() -> None:
     class FailingSearchAdapter(MockTrainAdapter):
         async def search_options(
             self,
@@ -257,14 +257,227 @@ def test_typed_provider_failure_closes_claimed_attempt_without_batch_error() -> 
 
         assert result.processed_count == 1
         assert result.succeeded_mission_ids == []
-        assert result.failed_mission_ids == [mission.id]
+        assert result.failed_mission_ids == []
+        assert result.retry_scheduled_mission_ids == [mission.id]
         assert result.errors == {}
         assert stored_mission is not None
-        assert stored_mission.status is MissionStatus.failed
+        assert stored_mission.status is MissionStatus.waiting
         assert stored_mission.claimed_at is None
-        assert stored_mission.execution_log[-1].type == "provider_operation_failed"
+        assert stored_mission.scheduled_at == current_time + timedelta(seconds=30)
+        assert [event.type for event in stored_mission.execution_log[-2:]] == [
+            "provider_operation_failed",
+            "mission_retry_scheduled",
+        ]
+        assert stored_mission.execution_log[-1].metadata["trigger"] == (
+            "automatic"
+        )
         assert len(attempts) == 1
         assert attempts[0].status is MissionExecutionAttemptStatus.failed
+
+    asyncio.run(scenario())
+
+
+def test_retry_backoff_grows_until_attempts_are_exhausted() -> None:
+    class FailingSearchAdapter(MockTrainAdapter):
+        async def search_options(
+            self,
+            mission: Mission,
+            identities: list[Identity],
+        ) -> list[ProviderOption]:
+            raise ProviderOperationError(
+                provider_id=self.provider_id,
+                operation="search",
+            )
+
+    async def scenario() -> None:
+        identity_repository = InMemoryIdentityRepository()
+        mission_repository = InMemoryMissionRepository()
+        identities = [
+            await identity_repository.create(make_identity())
+            for _ in range(4)
+        ]
+        mission = make_mission(
+            [identity.id for identity in identities],
+            scheduled_at=aware_datetime(),
+        )
+        await mission_repository.create(mission)
+        resolver = ProviderResolver(ProviderRegistry([FailingSearchAdapter()]))
+
+        first = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            aware_datetime(),
+            provider_resolver=resolver,
+        )
+        second_time = aware_datetime() + timedelta(seconds=30)
+        second = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            second_time,
+            provider_resolver=resolver,
+        )
+        third_time = second_time + timedelta(seconds=60)
+        third = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            third_time,
+            provider_resolver=resolver,
+        )
+        stored = await mission_repository.get(mission.id)
+        attempts = await mission_repository.list_execution_attempts(mission.id)
+
+        assert first.retry_scheduled_mission_ids == [mission.id]
+        assert second.retry_scheduled_mission_ids == [mission.id]
+        assert third.retry_scheduled_mission_ids == []
+        assert third.failed_mission_ids == [mission.id]
+        assert stored is not None
+        assert stored.status is MissionStatus.failed
+        assert stored.execution_attempts == 3
+        assert len(attempts) == 3
+        retry_events = [
+            event
+            for event in stored.execution_log
+            if event.type == "mission_retry_scheduled"
+        ]
+        assert [event.metadata["retry_at"] for event in retry_events] == [
+            second_time.isoformat(),
+            third_time.isoformat(),
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_non_retryable_provider_failure_remains_failed() -> None:
+    class NonRetryableSearchAdapter(MockTrainAdapter):
+        async def search_options(
+            self,
+            mission: Mission,
+            identities: list[Identity],
+        ) -> list[ProviderOption]:
+            raise ProviderOperationError(
+                provider_id=self.provider_id,
+                operation="search",
+                retryable=False,
+            )
+
+    async def scenario() -> None:
+        identity_repository = InMemoryIdentityRepository()
+        mission_repository = InMemoryMissionRepository()
+        identities = [
+            await identity_repository.create(make_identity())
+            for _ in range(4)
+        ]
+        mission = make_mission(
+            [identity.id for identity in identities],
+            scheduled_at=aware_datetime(),
+        )
+        await mission_repository.create(mission)
+
+        result = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            aware_datetime(),
+            provider_resolver=ProviderResolver(
+                ProviderRegistry([NonRetryableSearchAdapter()])
+            ),
+        )
+
+        assert result.failed_mission_ids == [mission.id]
+        assert result.retry_scheduled_mission_ids == []
+        assert mission.status is MissionStatus.failed
+        assert mission.execution_log[-2].metadata["retryable"] is False
+        assert mission.execution_log[-1].type == "mission_failed"
+
+    asyncio.run(scenario())
+
+
+def test_no_valid_option_is_rescheduled_for_monitoring() -> None:
+    class EmptySearchAdapter(MockTrainAdapter):
+        async def search_options(
+            self,
+            mission: Mission,
+            identities: list[Identity],
+        ) -> list[ProviderOption]:
+            return []
+
+    async def scenario() -> None:
+        identity_repository = InMemoryIdentityRepository()
+        mission_repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        identity = await identity_repository.create(make_identity())
+        mission = make_mission(
+            [identity.id],
+            scheduled_at=current_time,
+        )
+        await mission_repository.create(mission)
+
+        result = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            current_time,
+            provider_resolver=ProviderResolver(
+                ProviderRegistry([EmptySearchAdapter()])
+            ),
+        )
+
+        assert result.failed_mission_ids == []
+        assert result.retry_scheduled_mission_ids == [mission.id]
+        assert mission.status is MissionStatus.waiting
+        assert mission.scheduled_at == current_time + timedelta(seconds=30)
+        assert [event.type for event in mission.execution_log[-2:]] == [
+            "no_valid_option_found",
+            "mission_retry_scheduled",
+        ]
+        assert mission.execution_log[-1].metadata["reason"] == (
+            "no_valid_option_found"
+        )
+
+    asyncio.run(scenario())
+
+
+def test_monitoring_retry_is_capped_at_expiry_deadline() -> None:
+    class EmptySearchAdapter(MockTrainAdapter):
+        async def search_options(
+            self,
+            mission: Mission,
+            identities: list[Identity],
+        ) -> list[ProviderOption]:
+            return []
+
+    async def scenario() -> None:
+        identity_repository = InMemoryIdentityRepository()
+        mission_repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        identity = await identity_repository.create(make_identity())
+        mission = make_mission(
+            [identity.id],
+            scheduled_at=current_time,
+        )
+        mission.expires_at = current_time + timedelta(seconds=10)
+        await mission_repository.create(mission)
+        resolver = ProviderResolver(
+            ProviderRegistry([EmptySearchAdapter()])
+        )
+
+        first = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            current_time,
+            provider_resolver=resolver,
+        )
+        at_deadline = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            mission.expires_at,
+            provider_resolver=resolver,
+        )
+
+        assert first.retry_scheduled_mission_ids == [mission.id]
+        assert mission.scheduled_at == mission.expires_at
+        assert at_deadline.expired_mission_ids == [mission.id]
+        assert at_deadline.processed_count == 0
+        assert mission.status is MissionStatus.expired
+        assert mission.execution_attempts == 1
 
     asyncio.run(scenario())
 
@@ -320,6 +533,38 @@ def test_empty_result_when_no_due_missions_exist() -> None:
         assert result.succeeded_mission_ids == []
         assert result.failed_mission_ids == []
         assert result.errors == {}
+
+    asyncio.run(scenario())
+
+
+def test_expired_due_mission_is_expired_without_claiming() -> None:
+    async def scenario() -> None:
+        identity_repository = InMemoryIdentityRepository()
+        mission_repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        identity = await identity_repository.create(make_identity())
+        mission = make_mission(
+            [identity.id],
+            scheduled_at=current_time - timedelta(minutes=2),
+        )
+        mission.expires_at = current_time - timedelta(minutes=1)
+        await mission_repository.create(mission)
+
+        result = await process_due_missions(
+            mission_repository,
+            identity_repository,
+            current_time,
+        )
+
+        stored = await mission_repository.get(mission.id)
+        assert result.processed_count == 0
+        assert result.expired_mission_ids == [mission.id]
+        assert stored is not None
+        assert stored.status is MissionStatus.expired
+        assert stored.execution_attempts == 0
+        assert await mission_repository.list_execution_attempts(
+            mission.id
+        ) == []
 
     asyncio.run(scenario())
 

@@ -12,7 +12,10 @@ from app.domain.provider_resolution import (
 )
 from app.repositories.mission import MissionRepository
 from app.services.mission_errors import MissionNotFoundError
-from app.services.provider_errors import UnsupportedMissionTypeError
+from app.services.provider_errors import (
+    UnsupportedExecutionModeError,
+    UnsupportedMissionTypeError,
+)
 from app.services.provider_resolver import (
     AmbiguousProviderError,
     NoSupportingProviderError,
@@ -63,6 +66,14 @@ class ProviderResolutionPreview(BaseModel):
         }:
             if self.requested_provider_id is None or self.candidate_provider_ids:
                 raise ValueError("explicit provider failure preview is invalid")
+        elif (
+            self.outcome
+            is ProviderResolutionPreviewOutcome.unsupported_execution_mode
+        ):
+            if self.candidate_provider_ids:
+                raise ValueError(
+                    "unsupported-execution-mode preview is invalid"
+                )
         elif self.outcome is ProviderResolutionPreviewOutcome.no_supporting_provider:
             if self.requested_provider_id is not None or self.candidate_provider_ids:
                 raise ValueError("no-supporting-provider preview is invalid")
@@ -101,6 +112,12 @@ class PreviewMissionProviderResolution:
                 mission,
                 ProviderResolutionPreviewOutcome.unsupported_mission_type,
                 ProviderResolutionFailureReason.unsupported_mission_type,
+            )
+        except UnsupportedExecutionModeError:
+            return _failure_preview(
+                mission,
+                ProviderResolutionPreviewOutcome.unsupported_execution_mode,
+                ProviderResolutionFailureReason.unsupported_execution_mode,
             )
         except NoSupportingProviderError:
             return _failure_preview(

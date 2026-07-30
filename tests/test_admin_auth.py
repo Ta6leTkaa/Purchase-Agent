@@ -95,9 +95,11 @@ def test_admin_endpoint_runs_when_key_is_valid(
     assert response.status_code == 200
     assert response.json() in [
         {
-            "processed_count": 0,
-            "succeeded_mission_ids": [],
+                "processed_count": 0,
+                "expired_mission_ids": [],
+                "succeeded_mission_ids": [],
             "failed_mission_ids": [],
+            "retry_scheduled_mission_ids": [],
             "errors": {},
         },
         {

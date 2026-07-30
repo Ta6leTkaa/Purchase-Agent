@@ -10,6 +10,12 @@ def test_settings_contains_database_url() -> None:
     settings = Settings()
 
     assert settings.database_url
+    assert settings.worker_poll_interval_seconds == 5
+    assert settings.worker_batch_size == 100
+    assert settings.worker_claim_timeout_seconds == 900
+    assert settings.notification_worker_poll_interval_seconds == 5
+    assert settings.notification_worker_batch_size == 100
+    assert settings.notification_claim_timeout_seconds == 300
 
 
 def test_database_url_uses_postgresql_async_driver() -> None:

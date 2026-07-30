@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.adapters.base import ProviderAdapter
+from app.adapters.mock_train import MockTrainAdapter
 from app.adapters.registry import ProviderRegistry
 from app.api.routes.providers import provider_to_response
 from app.dependencies import get_provider_registry
@@ -92,7 +93,21 @@ def test_provider_response_is_public_and_deterministic() -> None:
 
     assert response.provider_id == "mock_train"
     assert response.mission_types == (MissionType.TRAIN_TICKET,)
+    assert [mode.value for mode in response.execution_modes] == [
+        "search_only",
+        "require_confirmation",
+    ]
     assert adapter.provider_operations == []
+
+
+def test_provider_response_exposes_explicit_auto_purchase_capability() -> None:
+    response = provider_to_response(MockTrainAdapter())
+
+    assert [mode.value for mode in response.execution_modes] == [
+        "search_only",
+        "require_confirmation",
+        "auto_purchase",
+    ]
 
 
 def test_list_providers_preserves_registry_order_without_operations() -> None:
@@ -108,10 +123,18 @@ def test_list_providers_preserves_registry_order_without_operations() -> None:
             {
                 "provider_id": "provider_b",
                 "mission_types": ["train_ticket"],
+                "execution_modes": [
+                    "search_only",
+                    "require_confirmation",
+                ],
             },
             {
                 "provider_id": "provider_a",
                 "mission_types": ["train_ticket"],
+                "execution_modes": [
+                    "search_only",
+                    "require_confirmation",
+                ],
             },
         ]
     }
@@ -139,10 +162,18 @@ def test_list_supporting_providers_uses_registry_filtering() -> None:
             {
                 "provider_id": "provider_a",
                 "mission_types": ["train_ticket"],
+                "execution_modes": [
+                    "search_only",
+                    "require_confirmation",
+                ],
             },
             {
                 "provider_id": "provider_c",
                 "mission_types": ["train_ticket"],
+                "execution_modes": [
+                    "search_only",
+                    "require_confirmation",
+                ],
             },
         ],
     }
@@ -213,6 +244,10 @@ def test_get_provider_returns_public_representation_without_operations() -> None
     assert response.json() == {
         "provider_id": "provider_a",
         "mission_types": ["train_ticket"],
+        "execution_modes": [
+            "search_only",
+            "require_confirmation",
+        ],
     }
     assert registry.get_calls == ["provider_a"]
     assert adapter.provider_operations == []

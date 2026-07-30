@@ -12,6 +12,7 @@ from app.domain.execution_attempt import (
 from app.domain.mission import (
     FallbackRules,
     Mission,
+    MissionExecutionMode,
     MissionStatus,
     MissionType,
     TrainConstraints,
@@ -238,13 +239,17 @@ class MissionCreate(BaseModel):
     title: str
     participant_ids: list[UUID] = Field(min_length=1)
     provider: str = Field(min_length=1)
+    execution_mode: MissionExecutionMode = (
+        MissionExecutionMode.REQUIRE_CONFIRMATION
+    )
     provider_id: str | None = None
     constraints: TrainConstraints
     fallback_rules: FallbackRules = Field(default_factory=FallbackRules)
     scheduled_at: datetime | None = None
+    expires_at: datetime | None = None
     max_execution_attempts: int = Field(default=3, ge=1, le=100)
 
-    @field_validator("scheduled_at")
+    @field_validator("scheduled_at", "expires_at")
     @classmethod
     def validate_scheduled_at(
         cls,
@@ -274,6 +279,12 @@ class MissionCreate(BaseModel):
         if self.constraints.passengers_count != len(self.participant_ids):
             msg = "passengers_count must match participant_ids count"
             raise ValueError(msg)
+        if (
+            self.scheduled_at is not None
+            and self.expires_at is not None
+            and self.scheduled_at > self.expires_at
+        ):
+            raise ValueError("scheduled_at must not be after expires_at")
 
         return self
 
@@ -292,11 +303,64 @@ class MissionCreate(BaseModel):
             status=status,
             participant_ids=self.participant_ids,
             provider=self.provider,
+            execution_mode=self.execution_mode,
             provider_id=self.provider_id,
             constraints=self.constraints,
             fallback_rules=self.fallback_rules,
             scheduled_at=self.scheduled_at,
+            expires_at=self.expires_at,
             max_execution_attempts=self.max_execution_attempts,
             execution_log=[],
             best_option=None,
         )
+
+
+class RetryMissionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retry_at: datetime | None = None
+
+    @field_validator("retry_at")
+    @classmethod
+    def validate_retry_at(
+        cls,
+        retry_at: datetime | None,
+    ) -> datetime | None:
+        if (
+            retry_at is not None
+            and (retry_at.tzinfo is None or retry_at.utcoffset() is None)
+        ):
+            raise ValueError("retry_at must be timezone-aware")
+        return retry_at
+
+
+class MissionUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    fallback_rules: FallbackRules | None = None
+    execution_mode: MissionExecutionMode | None = None
+    max_execution_attempts: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+    )
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("title must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_changes(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("at least one Mission field must be supplied")
+        for field_name in self.model_fields_set:
+            if getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} cannot be null")
+        return self

@@ -7,6 +7,9 @@ class MissionCommandType(StrEnum):
     RUN = "run"
     CONFIRM = "confirm"
     CANCEL = "cancel"
+    RETRY = "retry"
+    PAUSE = "pause"
+    RESUME = "resume"
 
 
 class MissionCommandIdempotencyConflictError(Exception):

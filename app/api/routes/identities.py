@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies import get_identity_repository
 from app.domain.identity import Identity
 from app.repositories.identity import IdentityRepository
-from app.schemas.identity import IdentityCreate
+from app.schemas.identity import IdentityCreate, IdentityPreferencesUpdate
 
 router = APIRouter(prefix="/identities", tags=["identities"])
 type IdentityRepositoryDep = Annotated[
@@ -36,6 +36,21 @@ async def get_identity(
     repository: IdentityRepositoryDep,
 ) -> Identity:
     identity = await repository.get(identity_id)
+    if identity is None:
+        raise HTTPException(status_code=404, detail="Identity not found")
+    return identity
+
+
+@router.put("/{identity_id}/preferences")
+async def update_identity_preferences(
+    identity_id: UUID,
+    request: IdentityPreferencesUpdate,
+    repository: IdentityRepositoryDep,
+) -> Identity:
+    identity = await repository.update_preferences(
+        identity_id,
+        request.preferences,
+    )
     if identity is None:
         raise HTTPException(status_code=404, detail="Identity not found")
     return identity

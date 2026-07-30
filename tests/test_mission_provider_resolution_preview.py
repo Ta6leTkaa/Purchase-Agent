@@ -11,7 +11,13 @@ from app.adapters.base import ProviderAdapter
 from app.adapters.registry import ProviderRegistry
 from app.dependencies import get_provider_resolver, mission_repository
 from app.domain.identity import Identity
-from app.domain.mission import Mission, MissionStatus, MissionType, TrainConstraints
+from app.domain.mission import (
+    Mission,
+    MissionExecutionMode,
+    MissionStatus,
+    MissionType,
+    TrainConstraints,
+)
 from app.domain.provider import ProviderOption, ReservationResult
 from app.domain.provider_capability import ProviderCapability
 from app.domain.provider_resolution import (
@@ -30,9 +36,16 @@ from app.storage.memory import InMemoryMissionRepository
 
 
 class PreviewAdapter(ProviderAdapter):
-    def __init__(self, provider_id: str, *, supports_mission_type: bool = True) -> None:
+    def __init__(
+        self,
+        provider_id: str,
+        *,
+        supports_mission_type: bool = True,
+        supports_auto_purchase: bool = False,
+    ) -> None:
         self._provider_id = provider_id
         self._supports_mission_type = supports_mission_type
+        self._supports_auto_purchase = supports_auto_purchase
         self.operations: list[str] = []
 
     @property
@@ -45,6 +58,7 @@ class PreviewAdapter(ProviderAdapter):
             {
                 ProviderCapability(
                     mission_type=MissionType.TRAIN_TICKET,
+                    supports_auto_purchase=self._supports_auto_purchase,
                 )
             }
         )
@@ -76,6 +90,9 @@ def make_mission(
     provider_id: str | None = None,
     resolved_provider_id: str | None = None,
     status: MissionStatus = MissionStatus.created,
+    execution_mode: MissionExecutionMode = (
+        MissionExecutionMode.REQUIRE_CONFIRMATION
+    ),
 ) -> Mission:
     return Mission(
         id=uuid4(),
@@ -84,6 +101,7 @@ def make_mission(
         status=status,
         participant_ids=[uuid4()],
         provider="mock_train",
+        execution_mode=execution_mode,
         provider_id=provider_id,
         resolved_provider_id=resolved_provider_id,
         constraints=TrainConstraints(
@@ -189,6 +207,26 @@ def test_preview_works_for_terminal_mission_status() -> None:
     preview = execute_preview(mission, [PreviewAdapter("provider_a")])
 
     assert preview.outcome is ProviderResolutionPreviewOutcome.resolved
+
+
+def test_preview_reports_unsupported_automatic_purchase_without_operations() -> None:
+    mission = make_mission(
+        execution_mode=MissionExecutionMode.AUTO_PURCHASE
+    )
+    adapter = PreviewAdapter("search_provider")
+
+    preview = execute_preview(mission, [adapter])
+
+    assert (
+        preview.outcome
+        is ProviderResolutionPreviewOutcome.unsupported_execution_mode
+    )
+    assert (
+        preview.failure_reason
+        is ProviderResolutionFailureReason.unsupported_execution_mode
+    )
+    assert preview.resolved_provider_id is None
+    assert adapter.operations == []
 
 
 def test_preview_reports_missing_mission() -> None:

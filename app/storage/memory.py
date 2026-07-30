@@ -9,7 +9,7 @@ from app.domain.execution_attempt import (
     MissionExecutionAttempt,
     MissionExecutionAttemptStatus,
 )
-from app.domain.identity import Identity
+from app.domain.identity import Identity, Preferences
 from app.domain.mission import Mission, MissionStatus
 from app.repositories.mission import InvalidRepositoryTimeError
 from app.services.mission_state_machine import MissionStateMachine
@@ -28,6 +28,17 @@ class InMemoryIdentityRepository:
 
     async def get(self, identity_id: UUID) -> Identity | None:
         return self._identities.get(identity_id)
+
+    async def update_preferences(
+        self,
+        identity_id: UUID,
+        preferences: Preferences,
+    ) -> Identity | None:
+        identity = self._identities.get(identity_id)
+        if identity is None:
+            return None
+        identity.preferences = preferences
+        return identity
 
     async def clear(self) -> None:
         self._identities.clear()
@@ -58,6 +69,10 @@ class InMemoryMissionRepository:
             if mission.status is MissionStatus.waiting
             and mission.scheduled_at is not None
             and mission.scheduled_at <= current_time
+            and (
+                mission.expires_at is None
+                or mission.expires_at > current_time
+            )
             and not mission.has_exhausted_attempts
         ]
         return sorted(
@@ -78,6 +93,10 @@ class InMemoryMissionRepository:
                 if mission.status is MissionStatus.waiting
                 and mission.scheduled_at is not None
                 and mission.scheduled_at <= current_time
+                and (
+                    mission.expires_at is None
+                    or mission.expires_at > current_time
+                )
                 and not mission.has_exhausted_attempts
             ]
             claimed_missions = sorted(
@@ -122,6 +141,45 @@ class InMemoryMissionRepository:
             stale_missions,
             key=lambda mission: mission.claimed_at or current_time,
         )[:limit]
+
+    async def expire_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> builtins.list[Mission]:
+        _validate_list_due_arguments(current_time, limit)
+        async with self._claim_lock:
+            candidates = sorted(
+                (
+                    mission
+                    for mission in self._missions.values()
+                    if mission.status
+                    in {
+                        MissionStatus.created,
+                        MissionStatus.waiting,
+                        MissionStatus.paused,
+                    }
+                    and mission.expires_at is not None
+                    and mission.expires_at <= current_time
+                ),
+                key=lambda mission: mission.expires_at or current_time,
+            )[:limit]
+            state_machine = MissionStateMachine()
+            for mission in candidates:
+                previous_status = mission.status
+                assert mission.expires_at is not None
+                state_machine.transition(mission, MissionStatus.expired)
+                mission.record_event(
+                    timestamp=current_time,
+                    event_type="mission_expired",
+                    message="Mission expired before execution.",
+                    metadata={
+                        "expires_at": mission.expires_at.isoformat(),
+                        "previous_status": previous_status.value,
+                    },
+                )
+                self._missions[mission.id] = mission
+            return candidates
 
     async def recover_stale_processing(
         self,

@@ -38,9 +38,10 @@ def test_mock_train_adapter_declares_train_ticket_capability() -> None:
     assert adapter.provider_id == "mock_train"
     assert adapter.capabilities == frozenset(
         {
-            ProviderCapability(
-                mission_type=MissionType.TRAIN_TICKET,
-            )
+                ProviderCapability(
+                    mission_type=MissionType.TRAIN_TICKET,
+                    supports_auto_purchase=True,
+                )
         }
     )
 

@@ -322,6 +322,58 @@ def test_claim_due_skips_missions_with_exhausted_attempts() -> None:
     asyncio.run(scenario())
 
 
+def test_expire_due_is_ordered_bounded_and_atomic() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        earlier = make_mission(status=MissionStatus.created)
+        earlier.expires_at = current_time - timedelta(minutes=2)
+        later = make_mission(status=MissionStatus.paused)
+        later.expires_at = current_time - timedelta(minutes=1)
+        future = make_mission(status=MissionStatus.waiting)
+        future.expires_at = current_time + timedelta(minutes=1)
+        for mission in [later, future, earlier]:
+            await repository.create(mission)
+
+        first = await repository.expire_due(current_time, limit=1)
+        second = await repository.expire_due(current_time, limit=1)
+
+        assert first == [earlier]
+        assert second == [later]
+        assert future.status is MissionStatus.waiting
+        assert earlier.execution_log[-1].type == "mission_expired"
+        assert later.execution_log[-1].metadata["previous_status"] == "paused"
+
+    asyncio.run(scenario())
+
+
+def test_expire_due_concurrent_calls_do_not_duplicate_missions() -> None:
+    async def scenario() -> None:
+        repository = InMemoryMissionRepository()
+        current_time = aware_datetime()
+        missions = [
+            make_mission(status=MissionStatus.created)
+            for _ in range(4)
+        ]
+        for mission in missions:
+            mission.expires_at = current_time
+            await repository.create(mission)
+
+        first, second = await asyncio.gather(
+            repository.expire_due(current_time, limit=2),
+            repository.expire_due(current_time, limit=2),
+        )
+
+        first_ids = {mission.id for mission in first}
+        second_ids = {mission.id for mission in second}
+        assert first_ids.isdisjoint(second_ids)
+        assert first_ids | second_ids == {
+            mission.id for mission in missions
+        }
+
+    asyncio.run(scenario())
+
+
 def make_mission(
     status: MissionStatus,
     scheduled_at: datetime | None = None,

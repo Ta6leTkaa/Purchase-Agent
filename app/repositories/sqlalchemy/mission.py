@@ -14,6 +14,7 @@ from app.db.models.mission import (
     mission_to_model,
 )
 from app.db.models.mission_execution_attempt import MissionExecutionAttemptModel
+from app.db.models.notification_outbox import NotificationOutboxMessageModel
 from app.domain.execution_attempt import (
     MissionExecutionAttempt,
     MissionExecutionAttemptStatus,
@@ -32,6 +33,7 @@ from app.repositories.sqlalchemy.provider_history import (
 )
 from app.services.mission_event_store import mission_json_event_store
 from app.services.mission_state_machine import MissionStateMachine
+from app.services.notification_outbox import NOTIFICATION_EVENT_TYPES
 from app.services.provider_history_projection import (
     execution_event_to_provider_projection,
 )
@@ -80,6 +82,10 @@ class SqlAlchemyMissionRepository(MissionRepository):
             .where(MissionModel.scheduled_at.is_not(None))
             .where(MissionModel.scheduled_at <= current_time)
             .where(
+                (MissionModel.expires_at.is_(None))
+                | (MissionModel.expires_at > current_time)
+            )
+            .where(
                 MissionModel.execution_attempts
                 < MissionModel.max_execution_attempts
             )
@@ -102,6 +108,10 @@ class SqlAlchemyMissionRepository(MissionRepository):
             .where(MissionModel.status == MissionStatus.waiting.value)
             .where(MissionModel.scheduled_at.is_not(None))
             .where(MissionModel.scheduled_at <= current_time)
+            .where(
+                (MissionModel.expires_at.is_(None))
+                | (MissionModel.expires_at > current_time)
+            )
             .where(
                 MissionModel.execution_attempts
                 < MissionModel.max_execution_attempts
@@ -156,6 +166,62 @@ class SqlAlchemyMissionRepository(MissionRepository):
             mission_from_model(model)
             for model in result.scalars().all()
         ]
+
+    async def expire_due(
+        self,
+        current_time: datetime,
+        limit: int = 100,
+    ) -> builtins.list[Mission]:
+        _validate_list_due_arguments(current_time, limit)
+        result = await self._session.execute(
+            select(MissionModel)
+            .where(
+                MissionModel.status.in_(
+                    [
+                        MissionStatus.created.value,
+                        MissionStatus.waiting.value,
+                        MissionStatus.paused.value,
+                    ]
+                )
+            )
+            .where(MissionModel.expires_at.is_not(None))
+            .where(MissionModel.expires_at <= current_time)
+            .order_by(MissionModel.expires_at.asc())
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        expired_missions: list[Mission] = []
+        state_machine = MissionStateMachine()
+        for model in result.scalars().all():
+            mission = mission_from_model(model)
+            previous_status = mission.status
+            previous_sequence = mission.last_event_sequence
+            state_machine.transition(mission, MissionStatus.expired)
+            assert mission.expires_at is not None
+            mission.record_event(
+                timestamp=current_time,
+                event_type="mission_expired",
+                message="Mission expired before execution.",
+                metadata={
+                    "expires_at": mission.expires_at.isoformat(),
+                    "previous_status": previous_status.value,
+                },
+            )
+            model.status = mission.status.value
+            model.last_event_sequence = mission.last_event_sequence
+            model.execution_log = mission_json_event_store.serialize(
+                mission.execution_log
+            )
+            await self._append_mission_events(
+                mission,
+                previous_last_event_sequence=previous_sequence,
+            )
+            mission.mark_event_sequence_persisted()
+            expired_missions.append(mission)
+
+        await self._session.flush()
+        await self._session.commit()
+        return expired_missions
 
     async def recover_stale_processing(
         self,
@@ -246,10 +312,12 @@ class SqlAlchemyMissionRepository(MissionRepository):
                 title=updated_model.title,
                 status=updated_model.status,
                 provider=updated_model.provider,
+                execution_mode=updated_model.execution_mode,
                 provider_id=updated_model.provider_id,
                 resolved_provider_id=updated_model.resolved_provider_id,
                 reservation_id=updated_model.reservation_id,
                 scheduled_at=updated_model.scheduled_at,
+                expires_at=updated_model.expires_at,
                 claimed_at=updated_model.claimed_at,
                 execution_attempts=updated_model.execution_attempts,
                 max_execution_attempts=updated_model.max_execution_attempts,
@@ -310,6 +378,19 @@ class SqlAlchemyMissionRepository(MissionRepository):
         }
         attempt_status = status_by_mission_status.get(mission.status)
         if attempt_status is not None:
+            open_attempt_id = await self._session.scalar(
+                select(MissionExecutionAttemptModel.id)
+                .where(
+                    MissionExecutionAttemptModel.mission_id == mission.id
+                )
+                .where(
+                    MissionExecutionAttemptModel.status
+                    == MissionExecutionAttemptStatus.processing.value
+                )
+                .limit(1)
+            )
+            if open_attempt_id is None:
+                return
             await self._close_open_execution_attempt(
                 mission,
                 finished_at=_mission_event_time(mission),
@@ -383,6 +464,26 @@ class SqlAlchemyMissionRepository(MissionRepository):
             await SqlAlchemyMissionEventProjectionRepository(
                 self._session
             ).append_many(mission.id, events)
+            for event in events:
+                if event.type not in NOTIFICATION_EVENT_TYPES:
+                    continue
+                self._session.add(
+                    NotificationOutboxMessageModel(
+                        id=uuid4(),
+                        mission_id=mission.id,
+                        event_id=event.event_id,
+                        event_type=event.type,
+                        occurred_at=event.timestamp,
+                        payload=mission_json_event_store.serialize([event])[0],
+                        recipient_ids=[
+                            str(participant_id)
+                            for participant_id in mission.participant_ids
+                        ],
+                        status="pending",
+                        delivery_attempts=0,
+                        available_at=event.timestamp,
+                    )
+                )
 
 
 def get_sqlalchemy_mission_repository(

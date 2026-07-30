@@ -8,10 +8,16 @@ from app.adapters.mock_train import MockTrainAdapter
 from app.adapters.registry import ProviderRegistry, UnknownProviderError
 from app.dependencies import get_provider_registry, get_provider_resolver
 from app.domain.identity import Identity
-from app.domain.mission import Mission, MissionType, TrainConstraints
+from app.domain.mission import (
+    Mission,
+    MissionExecutionMode,
+    MissionType,
+    TrainConstraints,
+)
 from app.domain.provider import ProviderOption, ReservationResult
 from app.domain.provider_capability import ProviderCapability
 from app.services.mission_engine import UnsupportedMissionTypeError
+from app.services.provider_errors import UnsupportedExecutionModeError
 from app.services.provider_resolver import (
     AmbiguousProviderError,
     NoSupportingProviderError,
@@ -20,9 +26,16 @@ from app.services.provider_resolver import (
 
 
 class FakeAdapter(ProviderAdapter):
-    def __init__(self, provider_id: str, *, supports_mission: bool) -> None:
+    def __init__(
+        self,
+        provider_id: str,
+        *,
+        supports_mission: bool,
+        supports_auto_purchase: bool = False,
+    ) -> None:
         self._provider_id = provider_id
         self._supports_mission = supports_mission
+        self._supports_auto_purchase = supports_auto_purchase
         self.search_calls = 0
         self.reserve_calls = 0
 
@@ -36,6 +49,7 @@ class FakeAdapter(ProviderAdapter):
             {
                 ProviderCapability(
                     mission_type=MissionType.TRAIN_TICKET,
+                    supports_auto_purchase=self._supports_auto_purchase,
                 )
             }
         )
@@ -80,13 +94,20 @@ class SpyRegistry(ProviderRegistry):
         return super().list_supporting(mission_type)
 
 
-def make_mission(provider_id: str | None = None) -> Mission:
+def make_mission(
+    provider_id: str | None = None,
+    *,
+    execution_mode: MissionExecutionMode = (
+        MissionExecutionMode.REQUIRE_CONFIRMATION
+    ),
+) -> Mission:
     return Mission(
         id=uuid4(),
         type=MissionType.TRAIN_TICKET,
         title="Moscow to Saint Petersburg",
         participant_ids=[uuid4()],
         provider="mock_train",
+        execution_mode=execution_mode,
         provider_id=provider_id,
         constraints=TrainConstraints(
             from_city="Moscow",
@@ -153,6 +174,43 @@ def test_resolve_without_provider_returns_only_supporting_adapter() -> None:
     assert registry.list_supporting_calls == [MissionType.TRAIN_TICKET]
     assert mission.provider_id is None
     assert mission.model_dump() == before
+
+
+def test_resolver_rejects_explicit_provider_without_auto_purchase() -> None:
+    adapter = FakeAdapter("search_only", supports_mission=True)
+    mission = make_mission(
+        provider_id=adapter.provider_id,
+        execution_mode=MissionExecutionMode.AUTO_PURCHASE,
+    )
+
+    with pytest.raises(UnsupportedExecutionModeError) as exc_info:
+        ProviderResolver(ProviderRegistry([adapter])).resolve(mission)
+
+    assert exc_info.value.provider_id == adapter.provider_id
+    assert (
+        exc_info.value.execution_mode
+        is MissionExecutionMode.AUTO_PURCHASE
+    )
+    assert adapter.search_calls == 0
+    assert adapter.reserve_calls == 0
+
+
+def test_resolver_filters_automatic_candidates_by_execution_mode() -> None:
+    incompatible = FakeAdapter("search_only", supports_mission=True)
+    compatible = FakeAdapter(
+        "auto",
+        supports_mission=True,
+        supports_auto_purchase=True,
+    )
+    mission = make_mission(
+        execution_mode=MissionExecutionMode.AUTO_PURCHASE
+    )
+
+    resolved = ProviderResolver(
+        ProviderRegistry([incompatible, compatible])
+    ).resolve(mission)
+
+    assert resolved is compatible
 
 
 def test_resolve_without_supporting_adapter_raises_typed_error() -> None:

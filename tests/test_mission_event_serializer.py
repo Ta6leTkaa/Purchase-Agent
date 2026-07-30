@@ -38,6 +38,38 @@ CONTEXT = MissionEventDeserializationContext(
 )
 
 
+@pytest.mark.parametrize(
+    "event_type",
+    [
+        "automatic_confirmation_failed",
+        "automatic_confirmation_started",
+        "automatic_confirmation_succeeded",
+        "mission_expired",
+        "mission_paused",
+        "mission_resumed",
+        "mission_retry_scheduled",
+        "mission_search_completed",
+        "mission_updated",
+    ],
+)
+def test_current_generic_events_round_trip(event_type: str) -> None:
+    serializer = PydanticMissionEventSerializer()
+    event = ExecutionEvent(
+        sequence=1,
+        timestamp=CURRENT_TIME,
+        type=event_type,
+        message="Current generic event.",
+        metadata={"key": "value"},
+    )
+
+    restored = serializer.deserialize(
+        serializer.serialize(event),
+        context=CONTEXT,
+    )
+
+    assert restored == event
+
+
 def _provider_events() -> list[ExecutionEvent]:
     snapshot = ProviderResolutionSnapshot(
         selection_mode=ProviderSelectionMode.automatic,

@@ -49,10 +49,74 @@ def test_process_due_returns_empty_result_without_due_missions() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "processed_count": 0,
+        "expired_mission_ids": [],
         "succeeded_mission_ids": [],
         "failed_mission_ids": [],
+        "retry_scheduled_mission_ids": [],
         "errors": {},
     }
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/admin/notification-outbox",
+        "/admin/notification-outbox/statistics",
+    ],
+)
+def test_notification_outbox_is_unavailable_with_memory_storage(
+    path: str,
+) -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        path,
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Notification outbox requires the database storage backend"
+    }
+
+
+def test_notification_recovery_is_unavailable_with_memory_storage() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/admin/notification-outbox/recover-stale",
+        json={},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Notification outbox requires the database storage backend"
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"claim_timeout_seconds": 0},
+        {"claim_timeout_seconds": 86401},
+        {"limit": 0},
+        {"limit": 501},
+        {"unknown": True},
+    ],
+)
+def test_notification_recovery_rejects_invalid_request(
+    payload: dict[str, object],
+) -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/admin/notification-outbox/recover-stale",
+        json=payload,
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 422
 
 
 def test_process_due_runs_due_mission() -> None:

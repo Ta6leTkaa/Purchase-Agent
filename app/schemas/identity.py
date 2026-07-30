@@ -50,3 +50,9 @@ class IdentityCreate(BaseModel):
             ],
             preferences=self.preferences,
         )
+
+
+class IdentityPreferencesUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preferences: Preferences

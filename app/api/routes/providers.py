@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from app.adapters.base import ProviderAdapter
 from app.adapters.registry import ProviderRegistry, UnknownProviderError
 from app.dependencies import get_provider_registry
-from app.domain.mission import MissionType
+from app.domain.mission import MissionExecutionMode, MissionType
 from app.domain.provider_id import normalize_provider_id
 from app.schemas.provider import (
     ProviderListResponse,
@@ -31,6 +31,17 @@ def provider_to_response(adapter: ProviderAdapter) -> ProviderResponse:
                     for capability in adapter.capabilities
                 ),
                 key=lambda mission_type: mission_type.value,
+            )
+        ),
+        execution_modes=tuple(
+            mode
+            for mode in MissionExecutionMode
+            if any(
+                adapter.supports_execution_mode(
+                    capability.mission_type,
+                    mode,
+                )
+                for capability in adapter.capabilities
             )
         ),
     )

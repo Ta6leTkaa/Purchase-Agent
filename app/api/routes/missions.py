@@ -32,6 +32,8 @@ from app.schemas.mission import (
     MissionProviderResolutionHistoryResponse,
     MissionProviderResolutionIncrementResponse,
     MissionProviderResolutionPreviewResponse,
+    MissionUpdateRequest,
+    RetryMissionRequest,
     ScheduleMissionRequest,
     SetMissionProviderRequest,
 )
@@ -60,14 +62,31 @@ from app.services.mission_event_history import (
     MissionEventHistoryPageRequest,
     WaitForMissionEventHistory,
 )
+from app.services.mission_pause import (
+    MissionPauseNotAllowedError,
+    MissionResumeNotAllowedError,
+    pause_mission,
+    resume_mission,
+)
 from app.services.mission_provider_selection import (
     MissionProviderSelectionNotAllowedError,
     SetMissionProvider,
+)
+from app.services.mission_retry import (
+    InvalidMissionRetryTimeError,
+    MissionAttemptsExhaustedError,
+    MissionRetryNotAllowedError,
+    retry_mission,
 )
 from app.services.mission_scheduling import (
     InvalidMissionScheduleError,
     MissionSchedulingNotAllowedError,
     schedule_mission,
+)
+from app.services.mission_update import (
+    InvalidMissionUpdateError,
+    MissionUpdateNotAllowedError,
+    update_mission,
 )
 from app.services.provider_resolution_history import (
     DEFAULT_PROVIDER_HISTORY_INCREMENT_LIMIT,
@@ -180,6 +199,53 @@ async def get_mission(
         raise HTTPException(status_code=404, detail="Mission not found")
     _set_mission_etag(response, mission)
     return mission
+
+
+@router.patch("/{mission_id}")
+async def update_mission_endpoint(
+    mission_id: UUID,
+    request: MissionUpdateRequest,
+    mission_repository: MissionRepositoryDep,
+    provider_registry: ProviderRegistryDep,
+    response: Response,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> Mission:
+    try:
+        await _ensure_mission_version(
+            mission_repository,
+            mission_id,
+            if_match,
+        )
+        mission = await update_mission(
+            mission_id,
+            mission_repository,
+            provider_registry,
+            title=request.title,
+            fallback_rules=request.fallback_rules,
+            execution_mode=request.execution_mode,
+            max_execution_attempts=request.max_execution_attempts,
+        )
+        _set_mission_etag(response, mission)
+        return mission
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    except MissionUpdateNotAllowedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "mission_update_not_allowed",
+                "message": str(exc),
+                "details": {"status": exc.status.value},
+            },
+        ) from exc
+    except InvalidMissionUpdateError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_mission_update",
+                "message": str(exc),
+            },
+        ) from exc
 
 
 @router.get(
@@ -452,14 +518,17 @@ async def set_mission_provider_endpoint(
     request: SetMissionProviderRequest,
     mission_repository: MissionRepositoryDep,
     set_mission_provider: SetMissionProviderDep,
+    response: Response,
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> Mission:
     try:
         await _ensure_mission_version(mission_repository, mission_id, if_match)
-        return await set_mission_provider.execute(
+        mission = await set_mission_provider.execute(
             mission_id,
             request.provider_id,
         )
+        _set_mission_etag(response, mission)
+        return mission
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except MissionProviderSelectionNotAllowedError as exc:
@@ -492,15 +561,18 @@ async def schedule_mission_endpoint(
     mission_id: UUID,
     request: ScheduleMissionRequest,
     mission_repository: MissionRepositoryDep,
+    response: Response,
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> Mission:
     try:
         await _ensure_mission_version(mission_repository, mission_id, if_match)
-        return await schedule_mission(
+        mission = await schedule_mission(
             mission_id,
             request.scheduled_at,
             mission_repository,
         )
+        _set_mission_etag(response, mission)
+        return mission
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except MissionSchedulingNotAllowedError as exc:
@@ -517,6 +589,164 @@ async def schedule_mission_endpoint(
 
 
 @router.post(
+    "/{mission_id}/pause",
+    summary="Pause mission",
+    description=(
+        "Pauses a created or waiting Mission and requires an Idempotency-Key "
+        "header. A paused Mission cannot be claimed or run."
+    ),
+)
+async def pause_mission_endpoint(
+    mission_id: UUID,
+    mission_repository: MissionRepositoryDep,
+    idempotency_store: MissionCommandIdempotencyStoreDep,
+    response: Response,
+    idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1)
+    ],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> Mission:
+    try:
+        await _ensure_mission_version(mission_repository, mission_id, if_match)
+        mission = await _execute_idempotent_mission_command(
+            mission_id=mission_id,
+            command=MissionCommandType.PAUSE,
+            idempotency_key=idempotency_key,
+            idempotency_store=idempotency_store,
+            mission_repository=mission_repository,
+            execute=lambda: pause_mission(mission_id, mission_repository),
+        )
+        _set_mission_etag(response, mission)
+        return mission
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    except MissionPauseNotAllowedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "mission_pause_not_allowed",
+                "message": str(exc),
+                "details": {"status": exc.status.value},
+            },
+        ) from exc
+    except MissionCommandIdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail="Idempotency key conflict") from exc
+    except MissionCommandInProgressError as exc:
+        raise HTTPException(status_code=409, detail="Command is in progress") from exc
+
+
+@router.post(
+    "/{mission_id}/resume",
+    summary="Resume mission",
+    description=(
+        "Resumes a paused Mission and requires an Idempotency-Key header. "
+        "Scheduled Missions return to waiting; unscheduled Missions return "
+        "to created."
+    ),
+)
+async def resume_mission_endpoint(
+    mission_id: UUID,
+    mission_repository: MissionRepositoryDep,
+    idempotency_store: MissionCommandIdempotencyStoreDep,
+    response: Response,
+    idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1)
+    ],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> Mission:
+    try:
+        await _ensure_mission_version(mission_repository, mission_id, if_match)
+        mission = await _execute_idempotent_mission_command(
+            mission_id=mission_id,
+            command=MissionCommandType.RESUME,
+            idempotency_key=idempotency_key,
+            idempotency_store=idempotency_store,
+            mission_repository=mission_repository,
+            execute=lambda: resume_mission(mission_id, mission_repository),
+        )
+        _set_mission_etag(response, mission)
+        return mission
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    except MissionResumeNotAllowedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "mission_resume_not_allowed",
+                "message": str(exc),
+                "details": {"status": exc.status.value},
+            },
+        ) from exc
+    except MissionCommandIdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail="Idempotency key conflict") from exc
+    except MissionCommandInProgressError as exc:
+        raise HTTPException(status_code=409, detail="Command is in progress") from exc
+
+
+@router.post(
+    "/{mission_id}/retry",
+    summary="Retry failed mission",
+    description=(
+        "Moves a failed Mission with attempts remaining back to waiting and "
+        "requires an Idempotency-Key header. The next processing cycle claims "
+        "the Mission at or after retry_at."
+    ),
+)
+async def retry_mission_endpoint(
+    mission_id: UUID,
+    request: RetryMissionRequest,
+    mission_repository: MissionRepositoryDep,
+    idempotency_store: MissionCommandIdempotencyStoreDep,
+    response: Response,
+    idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1)
+    ],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> Mission:
+    try:
+        await _ensure_mission_version(mission_repository, mission_id, if_match)
+        mission = await _execute_idempotent_mission_command(
+            mission_id=mission_id,
+            command=MissionCommandType.RETRY,
+            idempotency_key=idempotency_key,
+            idempotency_store=idempotency_store,
+            mission_repository=mission_repository,
+            execute=lambda: retry_mission(
+                mission_id,
+                mission_repository,
+                retry_at=request.retry_at,
+            ),
+        )
+        _set_mission_etag(response, mission)
+        return mission
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Mission not found") from exc
+    except MissionRetryNotAllowedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "mission_retry_not_allowed",
+                "message": "Mission cannot be retried in its current state.",
+                "details": {"status": exc.status.value},
+            },
+        ) from exc
+    except MissionAttemptsExhaustedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "mission_attempts_exhausted",
+                "message": str(exc),
+            },
+        ) from exc
+    except InvalidMissionRetryTimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except MissionCommandIdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail="Idempotency key conflict") from exc
+    except MissionCommandInProgressError as exc:
+        raise HTTPException(status_code=409, detail="Command is in progress") from exc
+
+
+@router.post(
     "/{mission_id}/run",
     summary="Run mission",
     description="Runs a Mission once and requires an Idempotency-Key header.",
@@ -527,6 +757,7 @@ async def run_mission_endpoint(
     identity_repository: IdentityRepositoryDep,
     provider_resolver: ProviderResolverDep,
     idempotency_store: MissionCommandIdempotencyStoreDep,
+    response: Response,
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1)
     ],
@@ -534,7 +765,7 @@ async def run_mission_endpoint(
 ) -> Mission:
     try:
         await _ensure_mission_version(mission_repository, mission_id, if_match)
-        return await _execute_idempotent_mission_command(
+        mission = await _execute_idempotent_mission_command(
             mission_id=mission_id,
             command=MissionCommandType.RUN,
             idempotency_key=idempotency_key,
@@ -547,6 +778,8 @@ async def run_mission_endpoint(
                 provider_resolver,
             ),
         )
+        _set_mission_etag(response, mission)
+        return mission
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except InvalidMissionRunError as exc:
@@ -571,6 +804,7 @@ async def confirm_mission_endpoint(
     mission_repository: MissionRepositoryDep,
     provider_registry: ProviderRegistryDep,
     idempotency_store: MissionCommandIdempotencyStoreDep,
+    response: Response,
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1)
     ],
@@ -578,7 +812,7 @@ async def confirm_mission_endpoint(
 ) -> Mission:
     try:
         await _ensure_mission_version(mission_repository, mission_id, if_match)
-        return await _execute_idempotent_mission_command(
+        mission = await _execute_idempotent_mission_command(
             mission_id=mission_id,
             command=MissionCommandType.CONFIRM,
             idempotency_key=idempotency_key,
@@ -590,6 +824,8 @@ async def confirm_mission_endpoint(
                 provider_registry,
             ),
         )
+        _set_mission_etag(response, mission)
+        return mission
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except InvalidMissionConfirmationError as exc:
@@ -613,6 +849,7 @@ async def cancel_mission_endpoint(
     mission_repository: MissionRepositoryDep,
     provider_registry: ProviderRegistryDep,
     idempotency_store: MissionCommandIdempotencyStoreDep,
+    response: Response,
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1)
     ],
@@ -620,7 +857,7 @@ async def cancel_mission_endpoint(
 ) -> Mission:
     try:
         await _ensure_mission_version(mission_repository, mission_id, if_match)
-        return await _execute_idempotent_mission_command(
+        mission = await _execute_idempotent_mission_command(
             mission_id=mission_id,
             command=MissionCommandType.CANCEL,
             idempotency_key=idempotency_key,
@@ -632,6 +869,8 @@ async def cancel_mission_endpoint(
                 provider_registry,
             ),
         )
+        _set_mission_etag(response, mission)
+        return mission
     except MissionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Mission not found") from exc
     except InvalidMissionCancellationError as exc:

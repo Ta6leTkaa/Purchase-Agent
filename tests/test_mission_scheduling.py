@@ -111,6 +111,26 @@ def test_unschedule_created_mission_is_a_noop() -> None:
     assert result.execution_log == []
 
 
+def test_reschedule_paused_mission_preserves_paused_status() -> None:
+    repository = InMemoryMissionRepository()
+    now = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
+    mission = make_mission(MissionStatus.paused)
+    asyncio.run(repository.create(mission))
+
+    scheduled = asyncio.run(
+        schedule_mission(
+            mission.id,
+            now + timedelta(hours=1),
+            repository,
+            current_time=now,
+        )
+    )
+
+    assert scheduled.status is MissionStatus.paused
+    assert scheduled.scheduled_at == now + timedelta(hours=1)
+    assert scheduled.execution_log[-1].type == "mission_scheduled"
+
+
 def test_schedule_terminal_mission_is_rejected() -> None:
     repository = InMemoryMissionRepository()
     mission = make_mission(MissionStatus.completed)

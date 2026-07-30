@@ -431,14 +431,11 @@ async def test_list_stale_processing_is_read_only_and_filters_in_database(
         status=MissionStatus.waiting,
         scheduled_at=current_time,
     )
-    legacy_processing_mission = Mission.model_construct(
-        **{
-            **make_mission(
-                status=MissionStatus.processing,
-                claimed_at=current_time,
-            ).model_dump(),
-            "claimed_at": None,
-        }
+    legacy_processing_mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=current_time,
+    ).model_copy(
+        update={"claimed_at": None},
     )
     for mission in [
         boundary_mission,
@@ -448,6 +445,7 @@ async def test_list_stale_processing_is_read_only_and_filters_in_database(
         oldest_mission,
     ]:
         mission.execution_log = [make_execution_event()]
+        mission.last_event_sequence = 1
 
     async with session_maker() as session:
         repository = SqlAlchemyMissionRepository(session)
@@ -528,14 +526,11 @@ async def test_recover_stale_processing_persists_recovery_event(
         status=MissionStatus.processing,
         claimed_at=current_time - timedelta(minutes=14),
     )
-    legacy_processing_mission = Mission.model_construct(
-        **{
-            **make_mission(
-                status=MissionStatus.processing,
-                claimed_at=current_time,
-            ).model_dump(),
-            "claimed_at": None,
-        }
+    legacy_processing_mission = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=current_time,
+    ).model_copy(
+        update={"claimed_at": None},
     )
 
     async with session_maker() as session:
@@ -654,12 +649,72 @@ async def test_recover_stale_processing_uses_skip_locked_concurrently(
     )
 
 
+async def test_expire_due_uses_skip_locked_concurrently(
+    test_engine: AsyncEngine,
+    clean_database: None,
+) -> None:
+    session_maker = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    current_time = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
+    missions = [
+        make_mission(
+            status=(
+                MissionStatus.paused
+                if index % 2
+                else MissionStatus.created
+            ),
+            expires_at=current_time - timedelta(minutes=4 - index),
+        )
+        for index in range(4)
+    ]
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        for mission in missions:
+            await repository.create(mission)
+        await session.commit()
+
+    async with session_maker() as first_session:
+        async with session_maker() as second_session:
+            first_repository = SqlAlchemyMissionRepository(first_session)
+            second_repository = SqlAlchemyMissionRepository(second_session)
+            first_expired, second_expired = await asyncio.wait_for(
+                asyncio.gather(
+                    first_repository.expire_due(current_time, limit=2),
+                    second_repository.expire_due(current_time, limit=2),
+                ),
+                timeout=5,
+            )
+
+    first_ids = {mission.id for mission in first_expired}
+    second_ids = {mission.id for mission in second_expired}
+    assert first_ids.isdisjoint(second_ids)
+    assert first_ids | second_ids == {mission.id for mission in missions}
+
+    async with session_maker() as session:
+        repository = SqlAlchemyMissionRepository(session)
+        persisted = [
+            await repository.get(mission.id)
+            for mission in missions
+        ]
+    assert all(
+        mission is not None
+        and mission.status is MissionStatus.expired
+        and mission.execution_log[-1].type == "mission_expired"
+        for mission in persisted
+    )
+
+
 def make_mission(
     participant_ids: list[UUID] | None = None,
     best_option: ProviderOption | None = None,
     status: MissionStatus = MissionStatus.created,
     scheduled_at: datetime | None = None,
     claimed_at: datetime | None = None,
+    expires_at: datetime | None = None,
 ) -> Mission:
     return Mission(
         id=uuid4(),
@@ -690,6 +745,7 @@ def make_mission(
         ),
         scheduled_at=scheduled_at,
         claimed_at=claimed_at,
+        expires_at=expires_at,
         execution_log=[],
         best_option=best_option,
     )

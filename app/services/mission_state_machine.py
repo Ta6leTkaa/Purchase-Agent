@@ -11,14 +11,24 @@ class MissionStateMachine:
     _allowed_transitions: dict[MissionStatus, set[MissionStatus]] = {
         MissionStatus.created: {
             MissionStatus.waiting,
+            MissionStatus.paused,
             MissionStatus.running,
             MissionStatus.cancelled,
+            MissionStatus.expired,
         },
         MissionStatus.waiting: {
             MissionStatus.created,
+            MissionStatus.paused,
             MissionStatus.processing,
             MissionStatus.running,
             MissionStatus.cancelled,
+            MissionStatus.expired,
+        },
+        MissionStatus.paused: {
+            MissionStatus.created,
+            MissionStatus.waiting,
+            MissionStatus.cancelled,
+            MissionStatus.expired,
         },
         MissionStatus.processing: {
             MissionStatus.requires_confirmation,
@@ -35,6 +45,7 @@ class MissionStateMachine:
         },
         MissionStatus.option_found: {
             MissionStatus.reserving,
+            MissionStatus.completed,
             MissionStatus.failed,
         },
         MissionStatus.reserving: {
@@ -50,6 +61,7 @@ class MissionStateMachine:
         MissionStatus.completed: set(),
         MissionStatus.failed: set(),
         MissionStatus.cancelled: set(),
+        MissionStatus.expired: set(),
     }
 
     def transition(
@@ -59,9 +71,15 @@ class MissionStateMachine:
         current_time: datetime | None = None,
         *,
         recovery: bool = False,
+        retry: bool = False,
     ) -> Mission:
         current = mission.status
-        if not self.can_transition(current, target, recovery=recovery):
+        if not self.can_transition(
+            current,
+            target,
+            recovery=recovery,
+            retry=retry,
+        ):
             message = (
                 "Invalid mission status transition: "
                 f"{current.value} -> {target.value}"
@@ -71,7 +89,7 @@ class MissionStateMachine:
         if (
             current is MissionStatus.waiting
             and target is MissionStatus.processing
-        ) or recovery:
+        ) or recovery or retry:
             _require_aware_current_time(current_time)
 
         mission.status = target
@@ -82,6 +100,18 @@ class MissionStateMachine:
         else:
             mission.claimed_at = None
         return mission
+
+    def retry_failed(
+        self,
+        mission: Mission,
+        current_time: datetime,
+    ) -> Mission:
+        return self.transition(
+            mission,
+            MissionStatus.waiting,
+            current_time=current_time,
+            retry=True,
+        )
 
     def recover_stale(
         self,
@@ -124,12 +154,15 @@ class MissionStateMachine:
         target: MissionStatus,
         *,
         recovery: bool = False,
+        retry: bool = False,
     ) -> bool:
         if (
             current is MissionStatus.processing
             and target is MissionStatus.waiting
         ):
             return recovery
+        if current is MissionStatus.failed and target is MissionStatus.waiting:
+            return retry
         return target in self._allowed_transitions[current]
 
 

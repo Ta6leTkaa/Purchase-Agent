@@ -115,6 +115,20 @@ def test_processing_transition_requires_current_time() -> None:
     assert mission.claimed_at is None
 
 
+def test_failed_mission_retry_requires_explicit_retry_transition() -> None:
+    state_machine = MissionStateMachine()
+    mission = make_mission(status=MissionStatus.failed)
+    current_time = aware_datetime()
+
+    with pytest.raises(InvalidMissionTransitionError):
+        state_machine.transition(mission, MissionStatus.waiting)
+
+    state_machine.retry_failed(mission, current_time)
+
+    assert mission.status is MissionStatus.waiting
+    assert mission.claimed_at is None
+
+
 def test_recover_stale_returns_processing_mission_to_waiting() -> None:
     state_machine = MissionStateMachine()
     current_time = aware_datetime() + timedelta(minutes=15)
@@ -284,6 +298,11 @@ def test_invalid_status_transitions_are_rejected(
     [
         (MissionStatus.created, MissionStatus.running, True),
         (MissionStatus.created, MissionStatus.waiting, True),
+        (MissionStatus.created, MissionStatus.paused, True),
+        (MissionStatus.waiting, MissionStatus.paused, True),
+        (MissionStatus.paused, MissionStatus.created, True),
+        (MissionStatus.paused, MissionStatus.waiting, True),
+        (MissionStatus.paused, MissionStatus.running, False),
         (MissionStatus.waiting, MissionStatus.processing, True),
         (MissionStatus.waiting, MissionStatus.running, True),
         (MissionStatus.processing, MissionStatus.requires_confirmation, True),

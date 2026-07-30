@@ -1,7 +1,10 @@
 from app.adapters.registry import UnknownProviderError
 from app.api.exception_handlers import map_provider_resolution_error
-from app.domain.mission import MissionType
-from app.services.provider_errors import UnsupportedMissionTypeError
+from app.domain.mission import MissionExecutionMode, MissionType
+from app.services.provider_errors import (
+    UnsupportedExecutionModeError,
+    UnsupportedMissionTypeError,
+)
 from app.services.provider_resolver import (
     AmbiguousProviderError,
     NoSupportingProviderError,
@@ -37,6 +40,22 @@ def test_maps_no_supporting_provider_error() -> None:
     assert mapped.status_code == 409
     assert mapped.code == "no_supporting_provider"
     assert mapped.details == {"mission_type": "train_ticket"}
+
+
+def test_maps_unsupported_execution_mode_error() -> None:
+    mapped = map_provider_resolution_error(
+        UnsupportedExecutionModeError(
+            execution_mode=MissionExecutionMode.AUTO_PURCHASE,
+            provider_id="search_provider",
+        )
+    )
+
+    assert mapped.status_code == 422
+    assert mapped.code == "unsupported_execution_mode"
+    assert mapped.details == {
+        "provider_id": "search_provider",
+        "execution_mode": "auto_purchase",
+    }
 
 
 def test_maps_ambiguous_provider_error_in_registration_order() -> None:

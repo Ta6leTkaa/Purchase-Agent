@@ -93,3 +93,27 @@ def test_get_unknown_identity_returns_404() -> None:
     response = client.get(f"/identities/{uuid4()}")
 
     assert response.status_code == 404
+
+
+def test_put_identity_preferences_updates_notification_settings() -> None:
+    client = TestClient(app)
+    created = client.post("/identities", json=make_identity_payload()).json()
+
+    response = client.put(
+        f"/identities/{created['id']}/preferences",
+        json={
+            "preferences": {
+                "notifications": {
+                    "enabled": True,
+                    "channels": ["telegram", "webhook"],
+                    "external_recipient_id": "chat:12345",
+                }
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    notifications = response.json()["preferences"]["notifications"]
+    assert notifications["enabled"] is True
+    assert set(notifications["channels"]) == {"telegram", "webhook"}
+    assert notifications["external_recipient_id"] == "chat:12345"

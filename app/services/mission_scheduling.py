@@ -32,7 +32,11 @@ async def schedule_mission(
     mission = await mission_repository.get(mission_id)
     if mission is None:
         raise MissionNotFoundError
-    if mission.status not in {MissionStatus.created, MissionStatus.waiting}:
+    if mission.status not in {
+        MissionStatus.created,
+        MissionStatus.waiting,
+        MissionStatus.paused,
+    }:
         raise MissionSchedulingNotAllowedError(mission.status)
     if mission.scheduled_at == scheduled_at:
         return mission
@@ -41,7 +45,8 @@ async def schedule_mission(
     if scheduled_at is None:
         if mission.status is MissionStatus.created:
             return mission
-        MissionStateMachine().transition(mission, MissionStatus.created)
+        if mission.status is MissionStatus.waiting:
+            MissionStateMachine().transition(mission, MissionStatus.created)
         mission.scheduled_at = None
         mission.record_event(
             timestamp=now,
@@ -58,6 +63,10 @@ async def schedule_mission(
         return await mission_repository.update(mission)
 
     _validate_schedule_time(scheduled_at, now)
+    if mission.expires_at is not None and scheduled_at > mission.expires_at:
+        raise InvalidMissionScheduleError(
+            "scheduled_at must not be after expires_at"
+        )
     mission.scheduled_at = scheduled_at
     if mission.status is MissionStatus.created:
         MissionStateMachine().transition(mission, MissionStatus.waiting)
