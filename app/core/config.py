@@ -1,6 +1,13 @@
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import (
+    AnyHttpUrl,
+    Field,
+    SecretStr,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,6 +64,33 @@ class Settings(BaseSettings):
         gt=0,
         le=120,
     )
+
+    @field_validator("notification_webhook_url", mode="before")
+    @classmethod
+    def validate_notification_webhook_url(
+        cls,
+        value: object,
+    ) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("notification_webhook_url must be a string")
+        normalized = value.strip()
+        if not normalized:
+            return None
+        parsed = TypeAdapter(AnyHttpUrl).validate_python(normalized)
+        if parsed.scheme != "https" and parsed.host not in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            "[::1]",
+        }:
+            raise ValueError(
+                "notification_webhook_url must use HTTPS for non-local hosts"
+            )
+        if parsed.fragment is not None:
+            raise ValueError("notification_webhook_url must not contain a fragment")
+        return normalized
 
     @model_validator(mode="after")
     def validate_notification_retry_delays(self) -> "Settings":

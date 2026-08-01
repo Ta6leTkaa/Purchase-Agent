@@ -300,6 +300,8 @@ verification. `NOTIFICATION_WEBHOOK_TIMEOUT_SECONDS` defaults to 10.
 Webhook requests declare `Content-Type: application/json` and
 `X-Purchase-Agent-Delivery-Version: 1`. When recipient routing finds no active
 contact, the outbox item is completed without making an external request.
+External webhook URLs must use HTTPS. Plain HTTP is accepted only for
+`localhost`, `127.0.0.1`, and `::1`; an empty URL keeps JSONL delivery enabled.
 
 For continuous delivery, run:
 

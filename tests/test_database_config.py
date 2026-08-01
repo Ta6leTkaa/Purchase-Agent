@@ -50,6 +50,51 @@ def test_notification_retry_settings_load_from_environment(
     assert configured.notification_max_delivery_attempts == 8
 
 
+def test_blank_notification_webhook_url_disables_webhook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NOTIFICATION_WEBHOOK_URL", "   ")
+
+    assert Settings().notification_webhook_url is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:9000/notifications",
+        "http://127.0.0.1:9000/notifications",
+        "http://[::1]:9000/notifications",
+        "https://notifications.example.test/events?tenant=demo",
+    ],
+)
+def test_notification_webhook_url_accepts_safe_urls(
+    monkeypatch: pytest.MonkeyPatch,
+    url: str,
+) -> None:
+    monkeypatch.setenv("NOTIFICATION_WEBHOOK_URL", f"  {url}  ")
+
+    assert Settings().notification_webhook_url == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "notifications.example.test/events",
+        "ftp://notifications.example.test/events",
+        "http://notifications.example.test/events",
+        "https://notifications.example.test/events#ignored",
+    ],
+)
+def test_notification_webhook_url_rejects_unsafe_urls(
+    monkeypatch: pytest.MonkeyPatch,
+    url: str,
+) -> None:
+    monkeypatch.setenv("NOTIFICATION_WEBHOOK_URL", url)
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
 def test_database_url_uses_postgresql_async_driver() -> None:
     settings = Settings()
 
