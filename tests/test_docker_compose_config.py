@@ -47,3 +47,6 @@ def test_docker_compose_defines_opt_in_notification_worker() -> None:
     assert "NOTIFICATION_WORKER_POLL_INTERVAL_SECONDS" in content
     assert "NOTIFICATION_WORKER_BATCH_SIZE" in content
     assert "NOTIFICATION_CLAIM_TIMEOUT_SECONDS" in content
+    assert "NOTIFICATION_RETRY_INITIAL_SECONDS" in content
+    assert "NOTIFICATION_RETRY_MAX_SECONDS" in content
+    assert "NOTIFICATION_MAX_DELIVERY_ATTEMPTS" in content

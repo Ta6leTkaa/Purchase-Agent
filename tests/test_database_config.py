@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
@@ -16,6 +18,36 @@ def test_settings_contains_database_url() -> None:
     assert settings.notification_worker_poll_interval_seconds == 5
     assert settings.notification_worker_batch_size == 100
     assert settings.notification_claim_timeout_seconds == 300
+    assert settings.notification_retry_initial_seconds == 30
+    assert settings.notification_retry_max_seconds == 900
+    assert settings.notification_max_delivery_attempts == 5
+
+
+def test_notification_retry_maximum_must_cover_initial_delay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NOTIFICATION_RETRY_INITIAL_SECONDS", "60")
+    monkeypatch.setenv("NOTIFICATION_RETRY_MAX_SECONDS", "30")
+
+    with pytest.raises(
+        ValidationError,
+        match="notification_retry_max_seconds must not be less than",
+    ):
+        Settings()
+
+
+def test_notification_retry_settings_load_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NOTIFICATION_RETRY_INITIAL_SECONDS", "45")
+    monkeypatch.setenv("NOTIFICATION_RETRY_MAX_SECONDS", "600")
+    monkeypatch.setenv("NOTIFICATION_MAX_DELIVERY_ATTEMPTS", "8")
+
+    configured = Settings()
+
+    assert configured.notification_retry_initial_seconds == 45
+    assert configured.notification_retry_max_seconds == 600
+    assert configured.notification_max_delivery_attempts == 8
 
 
 def test_database_url_uses_postgresql_async_driver() -> None:

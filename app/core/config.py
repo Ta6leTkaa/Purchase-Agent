@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,6 +34,21 @@ class Settings(BaseSettings):
         ge=1,
         le=86400,
     )
+    notification_retry_initial_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=86400,
+    )
+    notification_retry_max_seconds: int = Field(
+        default=900,
+        ge=1,
+        le=86400,
+    )
+    notification_max_delivery_attempts: int = Field(
+        default=5,
+        ge=1,
+        le=100,
+    )
     notification_webhook_url: str | None = None
     notification_webhook_bearer_token: SecretStr | None = None
     notification_webhook_signing_secret: SecretStr | None = None
@@ -42,6 +57,18 @@ class Settings(BaseSettings):
         gt=0,
         le=120,
     )
+
+    @model_validator(mode="after")
+    def validate_notification_retry_delays(self) -> "Settings":
+        if (
+            self.notification_retry_max_seconds
+            < self.notification_retry_initial_seconds
+        ):
+            raise ValueError(
+                "notification_retry_max_seconds must not be less than "
+                "notification_retry_initial_seconds"
+            )
+        return self
 
 
 settings = Settings()

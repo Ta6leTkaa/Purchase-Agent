@@ -181,6 +181,13 @@ async def dispatch_notifications_command(
                     ),
                     resolved.clock(),
                     limit=limit,
+                    retry_delay=timedelta(
+                        seconds=settings.notification_retry_initial_seconds
+                    ),
+                    max_retry_delay=timedelta(
+                        seconds=settings.notification_retry_max_seconds
+                    ),
+                    max_attempts=settings.notification_max_delivery_attempts,
                 )
     except Exception:
         error_output.write("Infrastructure error while dispatching notifications.\n")
@@ -224,6 +231,13 @@ async def notification_worker_command(
                     resolved.clock(),
                     limit=limit,
                     claim_timeout=claim_timeout,
+                    retry_delay=timedelta(
+                        seconds=settings.notification_retry_initial_seconds
+                    ),
+                    max_retry_delay=timedelta(
+                        seconds=settings.notification_retry_max_seconds
+                    ),
+                    max_attempts=settings.notification_max_delivery_attempts,
                 )
 
     async def write_result(result: NotificationWorkerCycleResult) -> None:
