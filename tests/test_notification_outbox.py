@@ -2,6 +2,8 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+import pytest
+
 from app.domain.notification import (
     NotificationOutboxMessage,
     NotificationOutboxStatistics,
@@ -214,6 +216,34 @@ def test_dispatch_reschedules_transient_delivery_failure() -> None:
     assert message.last_error == "notification channel unavailable"
 
 
+@pytest.mark.parametrize(
+    ("previous_attempts", "expected_delay"),
+    [
+        (0, timedelta(seconds=30)),
+        (1, timedelta(minutes=1)),
+        (2, timedelta(minutes=2)),
+        (10, timedelta(minutes=15)),
+    ],
+)
+def test_dispatch_uses_bounded_exponential_retry_delay(
+    previous_attempts: int,
+    expected_delay: timedelta,
+) -> None:
+    message = make_message(attempts=previous_attempts)
+    repository = FakeOutboxRepository([message])
+
+    asyncio.run(
+        dispatch_pending_notifications(
+            repository,
+            CapturingAdapter(fail=True),
+            NOW,
+            max_attempts=20,
+        )
+    )
+
+    assert message.available_at == NOW + expected_delay
+
+
 def test_dispatch_permanently_fails_after_attempt_limit() -> None:
     message = make_message(attempts=4)
     repository = FakeOutboxRepository([message])
@@ -248,3 +278,21 @@ def test_dispatch_honors_adapter_retry_delay() -> None:
     )
 
     assert message.available_at == NOW + timedelta(minutes=2)
+
+
+def test_dispatch_rejects_retry_delay_above_maximum() -> None:
+    message = make_message()
+
+    with pytest.raises(
+        ValueError,
+        match="max_retry_delay must not be less than retry_delay",
+    ):
+        asyncio.run(
+            dispatch_pending_notifications(
+                FakeOutboxRepository([message]),
+                CapturingAdapter(),
+                NOW,
+                retry_delay=timedelta(minutes=2),
+                max_retry_delay=timedelta(minutes=1),
+            )
+        )

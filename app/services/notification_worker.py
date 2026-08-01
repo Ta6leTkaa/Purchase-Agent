@@ -23,6 +23,7 @@ async def process_notification_worker_cycle(
     limit: int = 100,
     claim_timeout: timedelta = timedelta(minutes=5),
     retry_delay: timedelta = timedelta(seconds=30),
+    max_retry_delay: timedelta = timedelta(minutes=15),
     max_attempts: int = 5,
 ) -> NotificationWorkerCycleResult:
     recovered = await repository.recover_stale_claims(
@@ -36,6 +37,7 @@ async def process_notification_worker_cycle(
         current_time,
         limit=limit,
         retry_delay=retry_delay,
+        max_retry_delay=max_retry_delay,
         max_attempts=max_attempts,
     )
     return NotificationWorkerCycleResult(

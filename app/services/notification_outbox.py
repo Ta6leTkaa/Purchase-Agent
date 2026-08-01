@@ -50,10 +50,13 @@ async def dispatch_pending_notifications(
     *,
     limit: int = 100,
     retry_delay: timedelta = timedelta(seconds=30),
+    max_retry_delay: timedelta = timedelta(minutes=15),
     max_attempts: int = 5,
 ) -> NotificationDispatchResult:
     if retry_delay <= timedelta(0):
         raise ValueError("retry_delay must be greater than zero")
+    if max_retry_delay < retry_delay:
+        raise ValueError("max_retry_delay must not be less than retry_delay")
     if max_attempts < 1:
         raise ValueError("max_attempts must be at least one")
     messages = await repository.claim_pending(current_time, limit)
@@ -71,7 +74,11 @@ async def dispatch_pending_notifications(
                 exc.retry_delay
                 if isinstance(exc, NotificationDeliveryError)
                 and exc.retry_delay is not None
-                else retry_delay
+                else _exponential_retry_delay(
+                    retry_delay,
+                    max_retry_delay,
+                    message.delivery_attempts,
+                )
             )
             await repository.mark_delivery_failed(
                 message.id,
@@ -93,3 +100,17 @@ async def dispatch_pending_notifications(
         retry_scheduled_count=retry_scheduled,
         permanently_failed_count=permanently_failed,
     )
+
+
+def _exponential_retry_delay(
+    base_delay: timedelta,
+    max_delay: timedelta,
+    attempt: int,
+) -> timedelta:
+    """Double retry delay after every failed delivery, without overflowing."""
+    delay = base_delay
+    for _ in range(max(attempt - 1, 0)):
+        if delay >= max_delay / 2:
+            return max_delay
+        delay *= 2
+    return min(delay, max_delay)

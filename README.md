@@ -284,8 +284,10 @@ python -m app.cli dispatch-notifications --limit 100
 ```
 
 Successful delivery marks the row `delivered`. Transient adapter failures are
-returned to `pending` with a retry delay; after five delivery attempts the row
-is retained as `failed` for operator inspection. The stdout adapter is a safe
+returned to `pending` with exponential delays of 30, 60, 120 seconds and so on,
+capped at 15 minutes. A valid receiver-provided `Retry-After` delay takes
+precedence. After five delivery attempts the row is retained as `failed` for
+operator inspection. The stdout adapter is a safe
 demonstration transport. Set `NOTIFICATION_WEBHOOK_URL` to use the included
 webhook transport instead: it POSTs the full outbox JSON, uses the immutable
 event id in `Idempotency-Key`, and adds `Authorization: Bearer …` when
