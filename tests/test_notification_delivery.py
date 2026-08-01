@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx
+import pytest
 
 from app.domain.identity import Identity, NotificationChannel, Preferences
 from app.domain.notification import NotificationOutboxMessage
@@ -57,7 +58,22 @@ def test_webhook_adapter_posts_event_with_idempotency_key() -> None:
     assert captured["signature"] == f"sha256={expected_signature}"
 
 
-def test_webhook_adapter_raises_for_non_success_response() -> None:
+@pytest.mark.parametrize(
+    ("status_code", "retryable"),
+    [
+        (307, False),
+        (400, False),
+        (401, False),
+        (408, True),
+        (425, True),
+        (429, True),
+        (503, True),
+    ],
+)
+def test_webhook_adapter_classifies_non_success_response(
+    status_code: int,
+    retryable: bool,
+) -> None:
     message = NotificationOutboxMessage(
         id=uuid4(),
         mission_id=uuid4(),
@@ -71,7 +87,7 @@ def test_webhook_adapter_raises_for_non_success_response() -> None:
     async def deliver() -> None:
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(
-                lambda request: httpx.Response(307, request=request)
+                lambda request: httpx.Response(status_code, request=request)
             )
         ) as client:
             await WebhookNotificationAdapter(
@@ -81,7 +97,8 @@ def test_webhook_adapter_raises_for_non_success_response() -> None:
     try:
         asyncio.run(deliver())
     except NotificationDeliveryError as exc:
-        assert str(exc) == "Webhook returned HTTP 307."
+        assert str(exc) == f"Webhook returned HTTP {status_code}."
+        assert exc.retryable is retryable
     else:
         raise AssertionError("Expected NotificationDeliveryError")
 

@@ -19,7 +19,10 @@ from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 from app.repositories.sqlalchemy.notification_outbox import (
     SqlAlchemyNotificationOutboxRepository,
 )
-from app.services.notification_outbox import dispatch_pending_notifications
+from app.services.notification_outbox import (
+    NotificationDeliveryError,
+    dispatch_pending_notifications,
+)
 
 pytestmark = pytest.mark.integration
 NOW = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
@@ -31,6 +34,15 @@ class CapturingNotificationAdapter:
 
     async def deliver(self, message: NotificationOutboxMessage) -> None:
         self.messages.append(message)
+
+
+class NonRetryableNotificationAdapter:
+    async def deliver(self, message: NotificationOutboxMessage) -> None:
+        del message
+        raise NotificationDeliveryError(
+            "receiver rejected payload",
+            retryable=False,
+        )
 
 
 async def test_mission_event_creates_and_dispatches_transactional_outbox(
@@ -110,6 +122,50 @@ async def test_non_notification_event_does_not_create_outbox_row(
     assert await test_session.scalar(
         select(func.count()).select_from(NotificationOutboxMessageModel)
     ) == 0
+
+
+async def test_non_retryable_delivery_is_dead_lettered_after_first_attempt(
+    test_session: AsyncSession,
+) -> None:
+    mission = Mission(
+        id=uuid4(),
+        title="Rejected notification",
+        participant_ids=[uuid4()],
+        provider="mock_train",
+        constraints=TrainConstraints(
+            from_city="Moscow",
+            to_city="Saint Petersburg",
+            travel_date=date(2026, 8, 1),
+            passengers_count=1,
+        ),
+    )
+    await SqlAlchemyMissionRepository(test_session).create(mission)
+    message = NotificationOutboxMessageModel(
+        id=uuid4(),
+        mission_id=mission.id,
+        event_id=uuid4(),
+        event_type="mission_failed",
+        occurred_at=NOW,
+        payload={},
+        status=NotificationOutboxStatus.pending.value,
+        delivery_attempts=0,
+        available_at=NOW,
+    )
+    test_session.add(message)
+    await test_session.commit()
+
+    result = await dispatch_pending_notifications(
+        SqlAlchemyNotificationOutboxRepository(test_session),
+        NonRetryableNotificationAdapter(),
+        NOW,
+        max_attempts=5,
+    )
+
+    await test_session.refresh(message)
+    assert result.permanently_failed_count == 1
+    assert message.status == NotificationOutboxStatus.failed.value
+    assert message.delivery_attempts == 1
+    assert message.last_error == "receiver rejected payload"
 
 
 async def test_stale_delivery_claim_is_recovered(

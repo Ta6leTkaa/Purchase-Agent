@@ -261,6 +261,33 @@ def test_dispatch_permanently_fails_after_attempt_limit() -> None:
     assert message.status is NotificationOutboxStatus.failed
 
 
+def test_dispatch_immediately_fails_non_retryable_delivery_error() -> None:
+    class InvalidRequestAdapter:
+        async def deliver(self, message: NotificationOutboxMessage) -> None:
+            del message
+            raise NotificationDeliveryError(
+                "invalid receiver request",
+                retryable=False,
+            )
+
+    message = make_message()
+    repository = FakeOutboxRepository([message])
+
+    result = asyncio.run(
+        dispatch_pending_notifications(
+            repository,
+            InvalidRequestAdapter(),
+            NOW,
+            max_attempts=5,
+        )
+    )
+
+    assert result.permanently_failed_count == 1
+    assert result.retry_scheduled_count == 0
+    assert message.status is NotificationOutboxStatus.failed
+    assert message.delivery_attempts == 1
+
+
 def test_dispatch_honors_adapter_retry_delay() -> None:
     class RetryAfterAdapter:
         async def deliver(self, message: NotificationOutboxMessage) -> None:

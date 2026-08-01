@@ -287,7 +287,9 @@ Successful delivery marks the row `delivered`. Transient adapter failures are
 returned to `pending` with exponential delays of 30, 60, 120 seconds and so on,
 capped at 15 minutes. A valid receiver-provided `Retry-After` delay takes
 precedence. After five delivery attempts the row is retained as `failed` for
-operator inspection. The stdout adapter is a safe
+operator inspection. Webhook responses `408`, `425`, `429`, and `5xx` are
+retryable; other `3xx` and `4xx` responses fail immediately because repeating
+the same request cannot normally correct them. The stdout adapter is a safe
 demonstration transport. Set `NOTIFICATION_WEBHOOK_URL` to use the included
 webhook transport instead: it POSTs the full outbox JSON, uses the immutable
 event id in `Idempotency-Key`, and adds `Authorization: Bearer …` when

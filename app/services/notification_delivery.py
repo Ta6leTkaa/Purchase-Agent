@@ -66,6 +66,7 @@ class WebhookNotificationAdapter(NotificationDeliveryAdapter):
             raise NotificationDeliveryError(
                 f"Webhook returned HTTP {response.status_code}.",
                 retry_delay=_retry_after(response),
+                retryable=_is_retryable_status(response.status_code),
             )
 
 
@@ -146,3 +147,7 @@ def _retry_after(response: httpx.Response) -> timedelta | None:
     if seconds <= 0:
         return None
     return timedelta(seconds=min(seconds, 86400))
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code in {408, 425, 429} or status_code >= 500

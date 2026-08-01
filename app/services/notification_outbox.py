@@ -31,9 +31,11 @@ class NotificationDeliveryError(Exception):
         message: str,
         *,
         retry_delay: timedelta | None = None,
+        retryable: bool = True,
     ) -> None:
         super().__init__(message)
         self.retry_delay = retry_delay
+        self.retryable = retryable
 
 
 class NotificationDispatchResult(BaseModel):
@@ -69,7 +71,13 @@ async def dispatch_pending_notifications(
         except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
             raise
         except Exception as exc:
-            exhausted = message.delivery_attempts >= max_attempts
+            retryable = not isinstance(
+                exc, NotificationDeliveryError
+            ) or exc.retryable
+            exhausted = (
+                not retryable
+                or message.delivery_attempts >= max_attempts
+            )
             requested_retry_delay = (
                 exc.retry_delay
                 if isinstance(exc, NotificationDeliveryError)
@@ -85,7 +93,9 @@ async def dispatch_pending_notifications(
                 failed_at=current_time,
                 retry_at=current_time + requested_retry_delay,
                 error=str(exc),
-                max_attempts=max_attempts,
+                max_attempts=(
+                    max_attempts if retryable else message.delivery_attempts
+                ),
             )
             if exhausted:
                 permanently_failed += 1
