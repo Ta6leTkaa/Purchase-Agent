@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.admin import (
@@ -44,6 +44,39 @@ class NonRetryableNotificationAdapter:
             "receiver rejected payload",
             retryable=False,
         )
+
+
+async def test_notification_outbox_has_operational_indexes(
+    test_session: AsyncSession,
+) -> None:
+    connection = await test_session.connection()
+    indexes = await connection.run_sync(
+        lambda sync_connection: inspect(sync_connection).get_indexes(
+            "notification_outbox"
+        )
+    )
+    indexed_columns = {
+        index["name"]: index["column_names"] for index in indexes
+    }
+
+    assert indexed_columns["ix_notification_outbox_dispatch"] == [
+        "status",
+        "available_at",
+    ]
+    assert indexed_columns["ix_notification_outbox_page"] == [
+        "occurred_at",
+        "id",
+    ]
+    assert indexed_columns["ix_notification_outbox_status_page"] == [
+        "status",
+        "occurred_at",
+        "id",
+    ]
+    assert indexed_columns["ix_notification_outbox_mission_page"] == [
+        "mission_id",
+        "occurred_at",
+        "id",
+    ]
 
 
 async def test_mission_event_creates_and_dispatches_transactional_outbox(
