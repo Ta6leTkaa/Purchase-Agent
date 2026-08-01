@@ -23,6 +23,7 @@ from app.services.notification_outbox import (
     NotificationDeliveryError,
     dispatch_pending_notifications,
 )
+from app.services.notification_outbox_pagination import NotificationOutboxCursor
 
 pytestmark = pytest.mark.integration
 NOW = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
@@ -378,3 +379,52 @@ async def test_outbox_statistics_summarize_backlog(
     assert statistics.failed_count == 1
     assert statistics.ready_count == 1
     assert statistics.oldest_pending_at == NOW - timedelta(minutes=5)
+
+
+async def test_outbox_cursor_pagination_is_stable_for_equal_timestamps(
+    test_session: AsyncSession,
+) -> None:
+    mission = Mission(
+        id=uuid4(),
+        title="Paginated notification backlog",
+        participant_ids=[uuid4()],
+        provider="mock_train",
+        constraints=TrainConstraints(
+            from_city="Moscow",
+            to_city="Saint Petersburg",
+            travel_date=date(2026, 8, 1),
+            passengers_count=1,
+        ),
+    )
+    await SqlAlchemyMissionRepository(test_session).create(mission)
+    ids = sorted([uuid4(), uuid4(), uuid4()], reverse=True)
+    test_session.add_all(
+        [
+            NotificationOutboxMessageModel(
+                id=message_id,
+                mission_id=mission.id,
+                event_id=uuid4(),
+                event_type="mission_completed",
+                occurred_at=NOW,
+                payload={},
+                status=NotificationOutboxStatus.pending.value,
+                delivery_attempts=0,
+                available_at=NOW,
+            )
+            for message_id in ids
+        ]
+    )
+    await test_session.commit()
+    repository = SqlAlchemyNotificationOutboxRepository(test_session)
+
+    first = await repository.list_message_page_candidates(limit=3)
+    second = await repository.list_message_page_candidates(
+        cursor=NotificationOutboxCursor(
+            occurred_at=first[1].occurred_at,
+            message_id=first[1].id,
+        ),
+        limit=3,
+    )
+
+    assert [message.id for message in first] == ids
+    assert [message.id for message in second] == [ids[2]]

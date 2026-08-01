@@ -95,6 +95,21 @@ def test_notification_recovery_is_unavailable_with_memory_storage() -> None:
     }
 
 
+def test_notification_outbox_page_rejects_invalid_cursor() -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        "/admin/notification-outbox/page",
+        params={"cursor": "invalid"},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == (
+        "invalid_notification_outbox_cursor"
+    )
+
+
 @pytest.mark.parametrize(
     "payload",
     [

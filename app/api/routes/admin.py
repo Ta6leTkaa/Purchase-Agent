@@ -36,6 +36,11 @@ from app.services.mission_event_projection import (
     MissionEventProjectionVerification,
     VerifyMissionEventProjection,
 )
+from app.services.notification_outbox_pagination import (
+    InvalidNotificationOutboxCursorError,
+    NotificationOutboxCursor,
+    NotificationOutboxCursorCodec,
+)
 from app.services.provider_history_verification import (
     MissionProviderHistoryProjectionVerification,
     VerifyMissionProviderHistoryProjection,
@@ -135,6 +140,12 @@ class NotificationOutboxMessageSummary(BaseModel):
         return cls.model_validate(message, from_attributes=True)
 
 
+class NotificationOutboxPage(BaseModel):
+    items: list[NotificationOutboxMessageSummary]
+    has_more: bool
+    next_cursor: str | None
+
+
 def _notification_outbox_repository(
     session: AsyncSession | None,
 ) -> SqlAlchemyNotificationOutboxRepository:
@@ -184,6 +195,60 @@ async def recover_stale_notifications_endpoint(
     return StaleNotificationRecoveryResult(
         recovered_count=len(recovered),
         recovered_message_ids=[message.id for message in recovered],
+    )
+
+
+@router.get(
+    "/notification-outbox/page",
+    response_model=NotificationOutboxPage,
+    summary="Page through notification delivery outbox",
+)
+async def page_notification_outbox_endpoint(
+    _admin_api_key: AdminApiKeyDep,
+    session: StorageSessionDep,
+    status: NotificationOutboxStatus | None = None,
+    mission_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    cursor: str | None = None,
+) -> NotificationOutboxPage:
+    """Return a stable descending page without exposing payloads."""
+    codec = NotificationOutboxCursorCodec()
+    try:
+        decoded_cursor = codec.decode(cursor) if cursor is not None else None
+    except InvalidNotificationOutboxCursorError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_notification_outbox_cursor",
+                "message": "Notification outbox cursor is invalid.",
+            },
+        ) from exc
+    candidates = await _notification_outbox_repository(
+        session
+    ).list_message_page_candidates(
+        status=status.value if status is not None else None,
+        mission_id=mission_id,
+        cursor=decoded_cursor,
+        limit=limit + 1,
+    )
+    has_more = len(candidates) > limit
+    messages = candidates[:limit]
+    next_cursor = None
+    if has_more:
+        last = messages[-1]
+        next_cursor = codec.encode(
+            NotificationOutboxCursor(
+                occurred_at=last.occurred_at,
+                message_id=last.id,
+            )
+        )
+    return NotificationOutboxPage(
+        items=[
+            NotificationOutboxMessageSummary.from_message(message)
+            for message in messages
+        ],
+        has_more=has_more,
+        next_cursor=next_cursor,
     )
 
 

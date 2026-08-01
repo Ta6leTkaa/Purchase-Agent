@@ -329,6 +329,12 @@ The response reports counts by delivery status, the number of pending messages
 already eligible for delivery, and the availability timestamp of the oldest
 pending message.
 
+Large outboxes can be traversed through
+`GET /admin/notification-outbox/page?limit=100`. The response contains
+`items`, `has_more`, and an opaque `next_cursor`; pass that cursor unchanged to
+the next request. Status and Mission filters remain stable across pages when
+the client repeats them.
+
 An operator can also return abandoned `processing` deliveries to the pending
 queue without waiting for the continuous worker:
 

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.notification_outbox import (
@@ -14,6 +14,7 @@ from app.domain.notification import (
     NotificationOutboxStatus,
 )
 from app.repositories.notification_outbox import NotificationOutboxRepository
+from app.services.notification_outbox_pagination import NotificationOutboxCursor
 
 
 class SqlAlchemyNotificationOutboxRepository(
@@ -97,6 +98,48 @@ class SqlAlchemyNotificationOutboxRepository(
         if mission_id is not None:
             statement = statement.where(
                 NotificationOutboxMessageModel.mission_id == mission_id
+            )
+        result = await self._session.execute(
+            statement.order_by(
+                NotificationOutboxMessageModel.occurred_at.desc(),
+                NotificationOutboxMessageModel.id.desc(),
+            ).limit(limit)
+        )
+        return [
+            notification_outbox_from_model(model)
+            for model in result.scalars().all()
+        ]
+
+    async def list_message_page_candidates(
+        self,
+        *,
+        status: str | None = None,
+        mission_id: UUID | None = None,
+        cursor: NotificationOutboxCursor | None = None,
+        limit: int = 101,
+    ) -> list[NotificationOutboxMessage]:
+        if limit < 1:
+            raise ValueError("limit must be at least one")
+        statement = select(NotificationOutboxMessageModel)
+        if status is not None:
+            statement = statement.where(
+                NotificationOutboxMessageModel.status == status
+            )
+        if mission_id is not None:
+            statement = statement.where(
+                NotificationOutboxMessageModel.mission_id == mission_id
+            )
+        if cursor is not None:
+            statement = statement.where(
+                or_(
+                    NotificationOutboxMessageModel.occurred_at
+                    < cursor.occurred_at,
+                    and_(
+                        NotificationOutboxMessageModel.occurred_at
+                        == cursor.occurred_at,
+                        NotificationOutboxMessageModel.id < cursor.message_id,
+                    ),
+                )
             )
         result = await self._session.execute(
             statement.order_by(
