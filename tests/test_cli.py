@@ -16,6 +16,7 @@ from app.domain.mission import (
     FallbackRules,
     Mission,
     MissionStatus,
+    MissionSummary,
     MissionType,
     TrainConstraints,
 )
@@ -638,6 +639,16 @@ class BrokenMissionRepository:
         mission_type: MissionType | None = None,
         limit: int = 100,
     ) -> builtins.list[Mission]:
+        del status, mission_type, limit
+        raise NotImplementedError
+
+    async def list_summaries(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        limit: int = 100,
+    ) -> builtins.list[MissionSummary]:
         del status, mission_type, limit
         raise NotImplementedError
 

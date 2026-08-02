@@ -19,7 +19,13 @@ from app.domain.execution_attempt import (
     MissionExecutionAttempt,
     MissionExecutionAttemptStatus,
 )
-from app.domain.mission import Mission, MissionStatus, MissionType
+from app.domain.mission import (
+    Mission,
+    MissionExecutionMode,
+    MissionStatus,
+    MissionSummary,
+    MissionType,
+)
 from app.repositories.mission import (
     InvalidRepositoryTimeError,
     MissionRepository,
@@ -85,6 +91,60 @@ class SqlAlchemyMissionRepository(MissionRepository):
         return [
             mission_from_model(model)
             for model in result.scalars().all()
+        ]
+
+    async def list_summaries(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        limit: int = 100,
+    ) -> builtins.list[MissionSummary]:
+        _validate_list_limit(limit)
+        statement = select(
+            MissionModel.id,
+            MissionModel.mission_type,
+            MissionModel.title,
+            MissionModel.status,
+            MissionModel.execution_mode,
+            MissionModel.provider_id,
+            MissionModel.resolved_provider_id,
+            MissionModel.scheduled_at,
+            MissionModel.expires_at,
+            MissionModel.execution_attempts,
+            MissionModel.max_execution_attempts,
+            MissionModel.last_event_sequence,
+            MissionModel.participant_ids,
+        )
+        if status is not None:
+            statement = statement.where(MissionModel.status == status.value)
+        if mission_type is not None:
+            statement = statement.where(
+                MissionModel.mission_type == mission_type.value
+            )
+        result = await self._session.execute(
+            statement.order_by(
+                MissionModel.created_at,
+                MissionModel.id,
+            ).limit(limit)
+        )
+        return [
+            MissionSummary(
+                id=row.id,
+                type=MissionType(row.mission_type),
+                title=row.title,
+                status=MissionStatus(row.status),
+                execution_mode=MissionExecutionMode(row.execution_mode),
+                provider_id=row.provider_id,
+                resolved_provider_id=row.resolved_provider_id,
+                scheduled_at=row.scheduled_at,
+                expires_at=row.expires_at,
+                execution_attempts=row.execution_attempts,
+                max_execution_attempts=row.max_execution_attempts,
+                last_event_sequence=row.last_event_sequence,
+                participant_count=len(row.participant_ids),
+            )
+            for row in result.all()
         ]
 
     async def list_due(

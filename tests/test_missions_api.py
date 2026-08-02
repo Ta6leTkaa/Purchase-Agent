@@ -589,6 +589,36 @@ def test_get_missions_filters_by_type_and_applies_limit() -> None:
     assert len(response.json()) == 1
 
 
+def test_get_mission_summaries_omits_heavy_and_sensitive_fields() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+    client.post(
+        f"/missions/{created.json()['id']}/run",
+        headers={"Idempotency-Key": "run-for-summary"},
+    )
+
+    response = client.get(
+        "/missions/summaries",
+        params={"status": "requires_confirmation", "limit": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == created.json()["id"]
+    assert response.json()[0]["participant_count"] == len(
+        created.json()["participant_ids"]
+    )
+    assert response.json()[0]["last_event_sequence"] > 0
+    assert "participant_ids" not in response.json()[0]
+    assert "constraints" not in response.json()[0]
+    assert "execution_log" not in response.json()[0]
+    assert "best_option" not in response.json()[0]
+
+
 @pytest.mark.parametrize(
     "params",
     [

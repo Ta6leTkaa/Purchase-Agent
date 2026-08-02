@@ -155,7 +155,6 @@ class Mission(BaseModel):
         if not normalized_value:
             raise ValueError("reservation_id must be a non-empty string")
         return normalized_value
-
     @model_validator(mode="after")
     def validate_claimed_at_for_status(self) -> "Mission":
         if self.payload is None:
@@ -279,4 +278,38 @@ class Mission(BaseModel):
                 "resolved_provider_id": None,
                 "reservation_id": None,
             }
+        )
+
+
+class MissionSummary(BaseModel):
+    id: UUID
+    type: MissionType
+    title: str
+    status: MissionStatus
+    execution_mode: MissionExecutionMode
+    provider_id: str | None
+    resolved_provider_id: str | None
+    scheduled_at: datetime | None
+    expires_at: datetime | None
+    execution_attempts: int = Field(ge=0)
+    max_execution_attempts: int = Field(ge=1)
+    last_event_sequence: int = Field(ge=0)
+    participant_count: int = Field(ge=1)
+
+    @classmethod
+    def from_mission(cls, mission: Mission) -> "MissionSummary":
+        return cls(
+            id=mission.id,
+            type=mission.type,
+            title=mission.title,
+            status=mission.status,
+            execution_mode=mission.execution_mode,
+            provider_id=mission.provider_id,
+            resolved_provider_id=mission.resolved_provider_id,
+            scheduled_at=mission.scheduled_at,
+            expires_at=mission.expires_at,
+            execution_attempts=mission.execution_attempts,
+            max_execution_attempts=mission.max_execution_attempts,
+            last_event_sequence=mission.last_event_sequence,
+            participant_count=len(mission.participant_ids),
         )

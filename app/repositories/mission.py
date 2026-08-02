@@ -6,7 +6,7 @@ from typing import Protocol
 from uuid import UUID
 
 from app.domain.execution_attempt import MissionExecutionAttempt
-from app.domain.mission import Mission, MissionStatus, MissionType
+from app.domain.mission import Mission, MissionStatus, MissionSummary, MissionType
 
 
 class RepositoryEntityNotFoundError(Exception):
@@ -28,6 +28,15 @@ class MissionRepository(Protocol):
         mission_type: MissionType | None = None,
         limit: int = 100,
     ) -> builtins.list[Mission]:
+        ...
+
+    async def list_summaries(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        limit: int = 100,
+    ) -> builtins.list[MissionSummary]:
         ...
 
     async def list_due(

@@ -19,7 +19,7 @@ from app.dependencies import (
     get_set_mission_provider,
     get_wait_for_mission_event_history,
 )
-from app.domain.mission import Mission, MissionStatus, MissionType
+from app.domain.mission import Mission, MissionStatus, MissionSummary, MissionType
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.repositories.sqlalchemy.mission_event import (
@@ -192,6 +192,23 @@ async def list_missions(
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[Mission]:
     return await repository.list(
+        status=status,
+        mission_type=mission_type,
+        limit=limit,
+    )
+
+
+@router.get("/summaries")
+async def list_mission_summaries(
+    repository: MissionRepositoryDep,
+    status: MissionStatus | None = None,
+    mission_type: Annotated[
+        MissionType | None,
+        Query(alias="type"),
+    ] = None,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[MissionSummary]:
+    return await repository.list_summaries(
         status=status,
         mission_type=mission_type,
         limit=limit,

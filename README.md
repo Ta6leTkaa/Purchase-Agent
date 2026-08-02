@@ -85,6 +85,12 @@ remains a JSON array for compatibility. Composite indexes cover general,
 status-filtered, and type-filtered ordering; separate indexes support due and
 stale worker claims.
 
+`GET /missions/summaries` accepts the same filters and returns a lightweight
+projection for list screens. It includes status, scheduling, provider and
+attempt counters, but omits participant ids, constraints, provider options and
+the complete execution log. Use `GET /missions/{mission_id}` when the full
+aggregate is required.
+
 Example:
 
 ```bash
