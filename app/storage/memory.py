@@ -23,8 +23,30 @@ class InMemoryIdentityRepository:
         self._identities[identity.id] = identity
         return identity
 
-    async def list(self) -> list[Identity]:
-        return list(self._identities.values())
+    async def list(
+        self,
+        *,
+        query: str | None = None,
+        limit: int = 100,
+    ) -> list[Identity]:
+        if limit <= 0:
+            raise ValueError("limit must be greater than 0")
+        normalized = query.strip().casefold() if query is not None else None
+        if normalized == "":
+            raise ValueError("query must not be blank")
+        return [
+            identity
+            for identity in self._identities.values()
+            if normalized is None
+            or any(
+                normalized in value.casefold()
+                for value in (
+                    identity.display_name,
+                    identity.first_name,
+                    identity.last_name,
+                )
+            )
+        ][:limit]
 
     async def get(self, identity_id: UUID) -> Identity | None:
         return self._identities.get(identity_id)

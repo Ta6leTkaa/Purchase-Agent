@@ -57,6 +57,26 @@ async def test_list_returns_multiple_identities(
     }
 
 
+async def test_list_searches_names_and_applies_limit(
+    test_session: AsyncSession,
+) -> None:
+    repository = SqlAlchemyIdentityRepository(test_session)
+    matching = make_identity().model_copy(
+        update={"display_name": "Anna 100% Sidorova", "first_name": "Anna"}
+    )
+    other = make_identity().model_copy(
+        update={"display_name": "Ivan Petrov"}
+    )
+    await repository.create(matching)
+    await repository.create(other)
+
+    by_name = await repository.list(query="aNnA", limit=1)
+    literal_wildcard = await repository.list(query="100%", limit=10)
+
+    assert [identity.id for identity in by_name] == [matching.id]
+    assert [identity.id for identity in literal_wildcard] == [matching.id]
+
+
 async def test_preferences_are_persisted_and_restored(
     test_session: AsyncSession,
 ) -> None:

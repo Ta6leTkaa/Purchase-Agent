@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.dependencies import get_identity_repository
 from app.domain.identity import Identity
@@ -26,8 +26,13 @@ async def create_identity(
 @router.get("")
 async def list_identities(
     repository: IdentityRepositoryDep,
+    query: str | None = Query(default=None, alias="q", min_length=1, max_length=200),
+    limit: int = Query(default=100, ge=1, le=500),
 ) -> list[Identity]:
-    return await repository.list()
+    normalized_query = query.strip() if query is not None else None
+    if normalized_query == "":
+        raise HTTPException(status_code=422, detail="q must not be blank")
+    return await repository.list(query=normalized_query, limit=limit)
 
 
 @router.get("/{identity_id}")

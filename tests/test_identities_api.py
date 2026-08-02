@@ -75,6 +75,63 @@ def test_get_identities_returns_created_identity() -> None:
     assert response.json()[0]["id"] == create_response.json()["id"]
 
 
+def test_get_identities_searches_names_case_insensitively() -> None:
+    client = TestClient(app)
+    ivan = client.post("/identities", json=make_identity_payload())
+    client.post(
+        "/identities",
+        json={
+            **make_identity_payload(),
+            "display_name": "Anna Sidorova",
+            "first_name": "Anna",
+            "last_name": "Sidorova",
+        },
+    )
+
+    response = client.get("/identities", params={"q": "pEtRoV"})
+
+    assert response.status_code == 200
+    assert [identity["id"] for identity in response.json()] == [
+        ivan.json()["id"]
+    ]
+
+
+def test_get_identities_applies_limit() -> None:
+    client = TestClient(app)
+    client.post("/identities", json=make_identity_payload())
+    client.post(
+        "/identities",
+        json={
+            **make_identity_payload(),
+            "display_name": "Anna Sidorova",
+            "first_name": "Anna",
+            "last_name": "Sidorova",
+        },
+    )
+
+    response = client.get("/identities", params={"limit": 1})
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"q": ""},
+        {"q": "   "},
+        {"limit": 0},
+        {"limit": 501},
+    ],
+)
+def test_get_identities_rejects_invalid_search(
+    params: dict[str, object],
+) -> None:
+    response = TestClient(app).get("/identities", params=params)
+
+    assert response.status_code == 422
+
+
 def test_get_identity_by_id_returns_created_identity() -> None:
     client = TestClient(app)
     payload = make_identity_payload()

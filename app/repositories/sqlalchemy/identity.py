@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -24,9 +24,39 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         await self._session.flush()
         return identity_from_model(model)
 
-    async def list(self) -> list[Identity]:
+    async def list(
+        self,
+        *,
+        query: str | None = None,
+        limit: int = 100,
+    ) -> list[Identity]:
+        if limit <= 0:
+            raise ValueError("limit must be greater than 0")
+        statement = select(IdentityModel).options(
+            selectinload(IdentityModel.documents)
+        )
+        if query is not None:
+            normalized = query.strip()
+            if not normalized:
+                raise ValueError("query must not be blank")
+            escaped = (
+                normalized.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            pattern = f"%{escaped}%"
+            statement = statement.where(
+                or_(
+                    IdentityModel.display_name.ilike(pattern, escape="\\"),
+                    IdentityModel.first_name.ilike(pattern, escape="\\"),
+                    IdentityModel.last_name.ilike(pattern, escape="\\"),
+                )
+            )
         result = await self._session.execute(
-            select(IdentityModel).options(selectinload(IdentityModel.documents))
+            statement.order_by(
+                IdentityModel.created_at,
+                IdentityModel.id,
+            ).limit(limit)
         )
         return [
             identity_from_model(model)
