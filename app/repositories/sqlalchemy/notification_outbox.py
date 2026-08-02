@@ -180,9 +180,11 @@ class SqlAlchemyNotificationOutboxRepository(
         self,
         cutoff: datetime,
         limit: int = 500,
+        *,
+        dry_run: bool = False,
     ) -> list[UUID]:
         _validate_arguments(cutoff, limit)
-        result = await self._session.execute(
+        statement = (
             select(NotificationOutboxMessageModel.id)
             .where(
                 NotificationOutboxMessageModel.status
@@ -194,9 +196,13 @@ class SqlAlchemyNotificationOutboxRepository(
                 NotificationOutboxMessageModel.id.asc(),
             )
             .limit(limit)
-            .with_for_update(skip_locked=True)
         )
+        if not dry_run:
+            statement = statement.with_for_update(skip_locked=True)
+        result = await self._session.execute(statement)
         message_ids = list(result.scalars().all())
+        if dry_run:
+            return message_ids
         if message_ids:
             await self._session.execute(
                 delete(NotificationOutboxMessageModel)

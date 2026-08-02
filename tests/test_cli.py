@@ -67,13 +67,15 @@ def test_process_due_command_passes_custom_limit(
 def test_prune_notifications_command_passes_retention_and_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[tuple[timedelta, int]] = []
+    calls: list[tuple[timedelta, int, bool]] = []
 
     async def fake_prune_notifications_command(
         retention: timedelta,
         limit: int,
+        *,
+        dry_run: bool = False,
     ) -> int:
-        calls.append((retention, limit))
+        calls.append((retention, limit, dry_run))
         return 0
 
     monkeypatch.setattr(
@@ -90,11 +92,12 @@ def test_prune_notifications_command_passes_retention_and_limit(
                 "45",
                 "--limit",
                 "250",
+                "--dry-run",
             ]
         )
 
     assert exc_info.value.code == 0
-    assert calls == [(timedelta(days=45), 250)]
+    assert calls == [(timedelta(days=45), 250, True)]
 
 
 @pytest.mark.parametrize("retention_days", ["0", "3651", "invalid"])

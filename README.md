@@ -357,6 +357,9 @@ Delivered outbox history can be removed in bounded maintenance batches:
 python -m app.cli prune-notifications --retention-days 30 --limit 500
 ```
 
+Add `--dry-run` to preview the same bounded candidate batch without locking or
+deleting records.
+
 The command deletes only records whose status is `delivered` and whose
 `delivered_at` is older than the calculated cutoff. Pending, processing, and
 failed records are always retained. Concurrent cleanup processes divide work

@@ -534,3 +534,48 @@ async def test_prune_removes_only_delivered_messages_before_cutoff(
         NotificationOutboxMessageModel,
         old_failed.id,
     ) is not None
+
+
+async def test_prune_dry_run_reports_without_deleting(
+    test_session: AsyncSession,
+) -> None:
+    mission = Mission(
+        id=uuid4(),
+        title="Notification retention preview",
+        participant_ids=[uuid4()],
+        provider="mock_train",
+        constraints=TrainConstraints(
+            from_city="Moscow",
+            to_city="Saint Petersburg",
+            travel_date=date(2026, 8, 1),
+            passengers_count=1,
+        ),
+    )
+    await SqlAlchemyMissionRepository(test_session).create(mission)
+    message = NotificationOutboxMessageModel(
+        id=uuid4(),
+        mission_id=mission.id,
+        event_id=uuid4(),
+        event_type="mission_completed",
+        occurred_at=NOW - timedelta(days=60),
+        payload={},
+        status=NotificationOutboxStatus.delivered.value,
+        delivery_attempts=1,
+        available_at=NOW - timedelta(days=60),
+        delivered_at=NOW - timedelta(days=40),
+    )
+    test_session.add(message)
+    await test_session.commit()
+
+    matching_ids = await SqlAlchemyNotificationOutboxRepository(
+        test_session
+    ).prune_delivered_before(
+        NOW - timedelta(days=30),
+        dry_run=True,
+    )
+
+    assert matching_ids == [message.id]
+    assert await test_session.get(
+        NotificationOutboxMessageModel,
+        message.id,
+    ) is not None

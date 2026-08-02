@@ -80,8 +80,10 @@ class StaleMissionRecoveryResult(BaseModel):
 
 class NotificationPruneResult(BaseModel):
     cutoff: datetime
+    dry_run: bool
+    matched_count: int
     deleted_count: int
-    deleted_message_ids: list[UUID]
+    message_ids: list[UUID]
 
 
 def get_cli_dependencies() -> CliDependencies:
@@ -273,6 +275,7 @@ async def prune_notifications_command(
     retention: timedelta,
     limit: int,
     *,
+    dry_run: bool = False,
     dependencies: CliDependencies | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
@@ -287,15 +290,17 @@ async def prune_notifications_command(
         async with resolved.session_maker() as session:
             message_ids = await resolved.notification_maintenance_repository_factory(
                 session
-            ).prune_delivered_before(cutoff, limit)
+            ).prune_delivered_before(cutoff, limit, dry_run=dry_run)
     except Exception:
         error_output.write("Infrastructure error while pruning notifications.\n")
         return 1
     output.write(
         NotificationPruneResult(
             cutoff=cutoff,
-            deleted_count=len(message_ids),
-            deleted_message_ids=message_ids,
+            dry_run=dry_run,
+            matched_count=len(message_ids),
+            deleted_count=0 if dry_run else len(message_ids),
+            message_ids=message_ids,
         ).model_dump_json()
         + "\n"
     )
@@ -401,6 +406,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 prune_notifications_command(
                     timedelta(days=args.retention_days),
                     args.limit,
+                    dry_run=args.dry_run,
                 )
             )
         )
@@ -633,6 +639,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_parse_limit,
         default=500,
         help="Maximum number of delivered records to delete, from 1 to 500.",
+    )
+    prune_notifications_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List matching records without locking or deleting them.",
     )
     subparsers.add_parser(
         "rebuild-mission-events",
