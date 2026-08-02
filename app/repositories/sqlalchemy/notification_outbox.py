@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, case, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.notification_outbox import (
@@ -175,6 +175,39 @@ class SqlAlchemyNotificationOutboxRepository(
         message.last_error = None
         await self._session.commit()
         return notification_outbox_from_model(message)
+
+    async def prune_delivered_before(
+        self,
+        cutoff: datetime,
+        limit: int = 500,
+    ) -> list[UUID]:
+        _validate_arguments(cutoff, limit)
+        result = await self._session.execute(
+            select(NotificationOutboxMessageModel.id)
+            .where(
+                NotificationOutboxMessageModel.status
+                == NotificationOutboxStatus.delivered.value
+            )
+            .where(NotificationOutboxMessageModel.delivered_at < cutoff)
+            .order_by(
+                NotificationOutboxMessageModel.delivered_at.asc(),
+                NotificationOutboxMessageModel.id.asc(),
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        message_ids = list(result.scalars().all())
+        if message_ids:
+            await self._session.execute(
+                delete(NotificationOutboxMessageModel)
+                .where(NotificationOutboxMessageModel.id.in_(message_ids))
+                .where(
+                    NotificationOutboxMessageModel.status
+                    == NotificationOutboxStatus.delivered.value
+                )
+            )
+        await self._session.commit()
+        return message_ids
 
     async def claim_pending(
         self,

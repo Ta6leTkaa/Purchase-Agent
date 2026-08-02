@@ -66,6 +66,9 @@ class CliDependencies:
     notification_outbox_repository_factory: Callable[
         [AsyncSession], NotificationOutboxRepository
     ] = SqlAlchemyNotificationOutboxRepository
+    notification_maintenance_repository_factory: Callable[
+        [AsyncSession], SqlAlchemyNotificationOutboxRepository
+    ] = SqlAlchemyNotificationOutboxRepository
     provider_resolver: ProviderResolver = ProviderResolver(provider_registry)
     clock: Callable[[], datetime] = utc_now
 
@@ -73,6 +76,12 @@ class CliDependencies:
 class StaleMissionRecoveryResult(BaseModel):
     recovered_count: int
     recovered_mission_ids: list[UUID]
+
+
+class NotificationPruneResult(BaseModel):
+    cutoff: datetime
+    deleted_count: int
+    deleted_message_ids: list[UUID]
 
 
 def get_cli_dependencies() -> CliDependencies:
@@ -260,6 +269,40 @@ async def notification_worker_command(
     return 0
 
 
+async def prune_notifications_command(
+    retention: timedelta,
+    limit: int,
+    *,
+    dependencies: CliDependencies | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    if retention <= timedelta(0):
+        raise ValueError("retention must be greater than zero")
+    resolved = dependencies or get_cli_dependencies()
+    output = stdout or sys.stdout
+    error_output = stderr or sys.stderr
+    cutoff = resolved.clock() - retention
+    try:
+        async with resolved.session_maker() as session:
+            message_ids = await resolved.notification_maintenance_repository_factory(
+                session
+            ).prune_delivered_before(cutoff, limit)
+    except Exception:
+        error_output.write("Infrastructure error while pruning notifications.\n")
+        return 1
+    output.write(
+        NotificationPruneResult(
+            cutoff=cutoff,
+            deleted_count=len(message_ids),
+            deleted_message_ids=message_ids,
+        ).model_dump_json()
+        + "\n"
+    )
+    output.flush()
+    return 0
+
+
 async def worker_command(
     poll_interval: timedelta,
     limit: int,
@@ -349,6 +392,15 @@ def main(argv: Sequence[str] | None = None) -> None:
                     timedelta(seconds=args.poll_interval_seconds),
                     args.limit,
                     timedelta(seconds=args.claim_timeout_seconds),
+                )
+            )
+        )
+    if args.command == "prune-notifications":
+        raise SystemExit(
+            asyncio.run(
+                prune_notifications_command(
+                    timedelta(days=args.retention_days),
+                    args.limit,
                 )
             )
         )
@@ -566,6 +618,22 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_parse_limit,
         default=settings.notification_worker_batch_size,
     )
+    prune_notifications_parser = subparsers.add_parser(
+        "prune-notifications",
+        help="Delete an oldest batch of delivered notification records.",
+    )
+    prune_notifications_parser.add_argument(
+        "--retention-days",
+        type=_parse_retention_days,
+        default=30,
+        help="Delete delivered records older than this many days, from 1 to 3650.",
+    )
+    prune_notifications_parser.add_argument(
+        "--limit",
+        type=_parse_limit,
+        default=500,
+        help="Maximum number of delivered records to delete, from 1 to 500.",
+    )
     subparsers.add_parser(
         "rebuild-mission-events",
         help="Rebuild the Mission event projection from canonical Mission logs.",
@@ -614,6 +682,20 @@ def _parse_poll_interval_seconds(value: str) -> float:
         message = "poll-interval-seconds must be greater than 0 and at most 3600"
         raise argparse.ArgumentTypeError(message)
     return interval
+
+
+def _parse_retention_days(value: str) -> int:
+    try:
+        days = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "retention-days must be an integer"
+        ) from exc
+    if days < 1 or days > 3650:
+        raise argparse.ArgumentTypeError(
+            "retention-days must be between 1 and 3650"
+        )
+    return days
 
 
 async def _run_worker_until_signal(

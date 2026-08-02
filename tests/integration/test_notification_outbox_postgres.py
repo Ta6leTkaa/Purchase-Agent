@@ -461,3 +461,71 @@ async def test_outbox_cursor_pagination_is_stable_for_equal_timestamps(
 
     assert [message.id for message in first] == ids
     assert [message.id for message in second] == [ids[2]]
+
+
+async def test_prune_removes_only_delivered_messages_before_cutoff(
+    test_session: AsyncSession,
+) -> None:
+    mission = Mission(
+        id=uuid4(),
+        title="Notification retention",
+        participant_ids=[uuid4()],
+        provider="mock_train",
+        constraints=TrainConstraints(
+            from_city="Moscow",
+            to_city="Saint Petersburg",
+            travel_date=date(2026, 8, 1),
+            passengers_count=1,
+        ),
+    )
+    await SqlAlchemyMissionRepository(test_session).create(mission)
+
+    def make_stored_message(
+        status: NotificationOutboxStatus,
+        delivered_at: datetime | None,
+    ) -> NotificationOutboxMessageModel:
+        return NotificationOutboxMessageModel(
+            id=uuid4(),
+            mission_id=mission.id,
+            event_id=uuid4(),
+            event_type="mission_completed",
+            occurred_at=NOW - timedelta(days=60),
+            payload={},
+            status=status.value,
+            delivery_attempts=1,
+            available_at=NOW - timedelta(days=60),
+            delivered_at=delivered_at,
+        )
+
+    old_delivered = make_stored_message(
+        NotificationOutboxStatus.delivered,
+        NOW - timedelta(days=40),
+    )
+    recent_delivered = make_stored_message(
+        NotificationOutboxStatus.delivered,
+        NOW - timedelta(days=5),
+    )
+    old_failed = make_stored_message(
+        NotificationOutboxStatus.failed,
+        None,
+    )
+    test_session.add_all([old_delivered, recent_delivered, old_failed])
+    await test_session.commit()
+
+    deleted_ids = await SqlAlchemyNotificationOutboxRepository(
+        test_session
+    ).prune_delivered_before(NOW - timedelta(days=30))
+
+    assert deleted_ids == [old_delivered.id]
+    assert await test_session.get(
+        NotificationOutboxMessageModel,
+        old_delivered.id,
+    ) is None
+    assert await test_session.get(
+        NotificationOutboxMessageModel,
+        recent_delivered.id,
+    ) is not None
+    assert await test_session.get(
+        NotificationOutboxMessageModel,
+        old_failed.id,
+    ) is not None

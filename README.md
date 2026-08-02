@@ -351,6 +351,17 @@ Recovery does not increment the delivery-attempt counter and does not perform
 delivery in the request. A later notification-worker cycle claims the messages
 normally; concurrent recovery calls remain safe through `SKIP LOCKED`.
 
+Delivered outbox history can be removed in bounded maintenance batches:
+
+```bash
+python -m app.cli prune-notifications --retention-days 30 --limit 500
+```
+
+The command deletes only records whose status is `delivered` and whose
+`delivered_at` is older than the calculated cutoff. Pending, processing, and
+failed records are always retained. Concurrent cleanup processes divide work
+with `SKIP LOCKED`; repeat the command until `deleted_count` becomes zero.
+
 The same worker is available as an opt-in Compose profile:
 
 ```bash

@@ -64,6 +64,51 @@ def test_process_due_command_passes_custom_limit(
     assert limits == [50]
 
 
+def test_prune_notifications_command_passes_retention_and_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[timedelta, int]] = []
+
+    async def fake_prune_notifications_command(
+        retention: timedelta,
+        limit: int,
+    ) -> int:
+        calls.append((retention, limit))
+        return 0
+
+    monkeypatch.setattr(
+        cli,
+        "prune_notifications_command",
+        fake_prune_notifications_command,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(
+            [
+                "prune-notifications",
+                "--retention-days",
+                "45",
+                "--limit",
+                "250",
+            ]
+        )
+
+    assert exc_info.value.code == 0
+    assert calls == [(timedelta(days=45), 250)]
+
+
+@pytest.mark.parametrize("retention_days", ["0", "3651", "invalid"])
+def test_prune_notifications_rejects_invalid_retention(
+    retention_days: str,
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(
+            ["prune-notifications", "--retention-days", retention_days]
+        )
+
+    assert exc_info.value.code == 2
+
+
 def test_worker_command_passes_cli_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
