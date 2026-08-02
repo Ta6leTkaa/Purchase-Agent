@@ -38,6 +38,7 @@ from app.repositories.sqlalchemy.provider_history import (
     SqlAlchemyProviderHistoryProjectionRepository,
 )
 from app.services.mission_event_store import mission_json_event_store
+from app.services.mission_pagination import MissionCursor
 from app.services.mission_state_machine import MissionStateMachine
 from app.services.notification_outbox import NOTIFICATION_EVENT_TYPES
 from app.services.provider_history_projection import (
@@ -127,6 +128,60 @@ class SqlAlchemyMissionRepository(MissionRepository):
                 MissionModel.created_at,
                 MissionModel.id,
             ).limit(limit)
+        )
+        return [
+            MissionSummary(
+                id=row.id,
+                type=MissionType(row.mission_type),
+                title=row.title,
+                status=MissionStatus(row.status),
+                execution_mode=MissionExecutionMode(row.execution_mode),
+                provider_id=row.provider_id,
+                resolved_provider_id=row.resolved_provider_id,
+                scheduled_at=row.scheduled_at,
+                expires_at=row.expires_at,
+                execution_attempts=row.execution_attempts,
+                max_execution_attempts=row.max_execution_attempts,
+                last_event_sequence=row.last_event_sequence,
+                participant_count=len(row.participant_ids),
+            )
+            for row in result.all()
+        ]
+
+    async def list_summary_page_candidates(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        cursor: MissionCursor | None = None,
+        limit: int = 101,
+    ) -> builtins.list[MissionSummary]:
+        _validate_list_limit(limit)
+        statement = select(
+            MissionModel.id,
+            MissionModel.mission_type,
+            MissionModel.title,
+            MissionModel.status,
+            MissionModel.execution_mode,
+            MissionModel.provider_id,
+            MissionModel.resolved_provider_id,
+            MissionModel.scheduled_at,
+            MissionModel.expires_at,
+            MissionModel.execution_attempts,
+            MissionModel.max_execution_attempts,
+            MissionModel.last_event_sequence,
+            MissionModel.participant_ids,
+        )
+        if status is not None:
+            statement = statement.where(MissionModel.status == status.value)
+        if mission_type is not None:
+            statement = statement.where(
+                MissionModel.mission_type == mission_type.value
+            )
+        if cursor is not None:
+            statement = statement.where(MissionModel.id > cursor.mission_id)
+        result = await self._session.execute(
+            statement.order_by(MissionModel.id).limit(limit)
         )
         return [
             MissionSummary(

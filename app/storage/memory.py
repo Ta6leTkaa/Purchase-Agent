@@ -13,6 +13,7 @@ from app.domain.identity import Identity, IdentitySummary, Preferences
 from app.domain.mission import Mission, MissionStatus, MissionSummary, MissionType
 from app.repositories.mission import InvalidRepositoryTimeError
 from app.services.identity_pagination import IdentityCursor
+from app.services.mission_pagination import MissionCursor
 from app.services.mission_state_machine import MissionStateMachine
 
 
@@ -145,6 +146,25 @@ class InMemoryMissionRepository:
             limit=limit,
         )
         return [MissionSummary.from_mission(mission) for mission in missions]
+
+    async def list_summary_page_candidates(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        cursor: MissionCursor | None = None,
+        limit: int = 101,
+    ) -> builtins.list[MissionSummary]:
+        if limit <= 0:
+            raise ValueError("limit must be greater than 0")
+        missions = sorted(self._missions.values(), key=lambda item: item.id)
+        return [
+            MissionSummary.from_mission(mission)
+            for mission in missions
+            if (cursor is None or mission.id > cursor.mission_id)
+            and (status is None or mission.status is status)
+            and (mission_type is None or mission.type is mission_type)
+        ][:limit]
 
     async def list_due(
         self,

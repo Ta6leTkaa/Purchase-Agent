@@ -80,6 +80,7 @@ curl -X POST http://127.0.0.1:8000/identities \
 
 - `POST /missions` creates a mission
 - `GET /missions` lists missions
+- `GET /missions/summaries/page` pages through lightweight mission summaries
 - `GET /missions/{mission_id}` returns one mission or `404`
 - `PATCH /missions/{mission_id}` changes safe planning fields
 - `POST /missions/{mission_id}/pause` pauses an unstarted mission
@@ -96,6 +97,9 @@ projection for list screens. It includes status, scheduling, provider and
 attempt counters, but omits participant ids, constraints, provider options and
 the complete execution log. Use `GET /missions/{mission_id}` when the full
 aggregate is required.
+The paged summary response contains `items`, `has_more`, and an opaque
+`next_cursor`. Repeat the same `status` and `type` filters when continuing a
+stable exclusive traversal.
 
 Example:
 

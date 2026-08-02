@@ -619,6 +619,52 @@ def test_get_mission_summaries_omits_heavy_and_sensitive_fields() -> None:
     assert "best_option" not in response.json()[0]
 
 
+def test_get_mission_summary_pages_preserve_filters() -> None:
+    client = TestClient(app)
+    participant_ids = make_existing_participant_ids(client)
+    created_ids = {
+        client.post(
+            "/missions",
+            json=make_mission_payload(participant_ids=participant_ids),
+        ).json()["id"]
+        for _ in range(3)
+    }
+
+    first = client.get(
+        "/missions/summaries/page",
+        params={"type": "train_ticket", "status": "created", "limit": 2},
+    )
+
+    assert first.status_code == 200
+    assert first.json()["has_more"] is True
+    second = client.get(
+        "/missions/summaries/page",
+        params={
+            "type": "train_ticket",
+            "status": "created",
+            "limit": 2,
+            "cursor": first.json()["next_cursor"],
+        },
+    )
+    assert second.status_code == 200
+    assert second.json()["has_more"] is False
+    assert second.json()["next_cursor"] is None
+    returned_ids = {
+        item["id"] for item in first.json()["items"] + second.json()["items"]
+    }
+    assert returned_ids == created_ids
+
+
+def test_get_mission_summary_page_rejects_invalid_cursor() -> None:
+    response = TestClient(app).get(
+        "/missions/summaries/page",
+        params={"cursor": "invalid"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_mission_cursor"
+
+
 @pytest.mark.parametrize(
     "params",
     [

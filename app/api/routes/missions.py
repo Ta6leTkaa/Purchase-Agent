@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Response
+from pydantic import BaseModel
 
 from app.adapters import ProviderRegistry
 from app.dependencies import (
@@ -62,6 +63,11 @@ from app.services.mission_event_history import (
     MissionEventHistoryPageRequest,
     WaitForMissionEventHistory,
 )
+from app.services.mission_pagination import (
+    InvalidMissionCursorError,
+    MissionCursor,
+    MissionCursorCodec,
+)
 from app.services.mission_pause import (
     MissionPauseNotAllowedError,
     MissionResumeNotAllowedError,
@@ -105,6 +111,12 @@ from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
 )
 from app.services.provider_resolver import ProviderResolver
+
+
+class MissionSummaryPage(BaseModel):
+    items: list[MissionSummary]
+    has_more: bool
+    next_cursor: str | None
 
 router = APIRouter(prefix="/missions", tags=["missions"])
 type MissionRepositoryDep = Annotated[
@@ -212,6 +224,46 @@ async def list_mission_summaries(
         status=status,
         mission_type=mission_type,
         limit=limit,
+    )
+
+
+@router.get("/summaries/page")
+async def page_mission_summaries(
+    repository: MissionRepositoryDep,
+    status: MissionStatus | None = None,
+    mission_type: Annotated[
+        MissionType | None,
+        Query(alias="type"),
+    ] = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    cursor: str | None = None,
+) -> MissionSummaryPage:
+    codec = MissionCursorCodec()
+    try:
+        decoded_cursor = codec.decode(cursor) if cursor is not None else None
+    except InvalidMissionCursorError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_mission_cursor",
+                "message": "Mission cursor is invalid.",
+            },
+        ) from exc
+    candidates = await repository.list_summary_page_candidates(
+        status=status,
+        mission_type=mission_type,
+        cursor=decoded_cursor,
+        limit=limit + 1,
+    )
+    has_more = len(candidates) > limit
+    items = candidates[:limit]
+    next_cursor = None
+    if has_more:
+        next_cursor = codec.encode(MissionCursor(mission_id=items[-1].id))
+    return MissionSummaryPage(
+        items=items,
+        has_more=has_more,
+        next_cursor=next_cursor,
     )
 
 

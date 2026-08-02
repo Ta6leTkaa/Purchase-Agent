@@ -24,6 +24,7 @@ from app.repositories.mission import MissionRepository
 from app.services.mission_event_projection import (
     MissionEventProjectionRebuildResult,
 )
+from app.services.mission_pagination import MissionCursor
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
@@ -650,6 +651,17 @@ class BrokenMissionRepository:
         limit: int = 100,
     ) -> builtins.list[MissionSummary]:
         del status, mission_type, limit
+        raise NotImplementedError
+
+    async def list_summary_page_candidates(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        cursor: MissionCursor | None = None,
+        limit: int = 101,
+    ) -> builtins.list[MissionSummary]:
+        del status, mission_type, cursor, limit
         raise NotImplementedError
 
     async def list_due(

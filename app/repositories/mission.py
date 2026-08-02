@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.domain.execution_attempt import MissionExecutionAttempt
 from app.domain.mission import Mission, MissionStatus, MissionSummary, MissionType
+from app.services.mission_pagination import MissionCursor
 
 
 class RepositoryEntityNotFoundError(Exception):
@@ -36,6 +37,16 @@ class MissionRepository(Protocol):
         status: MissionStatus | None = None,
         mission_type: MissionType | None = None,
         limit: int = 100,
+    ) -> builtins.list[MissionSummary]:
+        ...
+
+    async def list_summary_page_candidates(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        cursor: MissionCursor | None = None,
+        limit: int = 101,
     ) -> builtins.list[MissionSummary]:
         ...
 

@@ -22,6 +22,7 @@ from app.domain.provider import (
     SeatBerth,
 )
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
+from app.services.mission_pagination import MissionCursor
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -142,6 +143,32 @@ async def test_list_summaries_returns_projected_mission_fields(
     assert summaries[0].id == mission.id
     assert summaries[0].participant_count == len(mission.participant_ids)
     assert summaries[0].status is MissionStatus.waiting
+
+
+async def test_list_summary_page_candidates_use_filters_and_cursor(
+    test_session: AsyncSession,
+) -> None:
+    repository = SqlAlchemyMissionRepository(test_session)
+    mission_ids = sorted([uuid4(), uuid4(), uuid4()])
+    for mission_id in mission_ids:
+        mission = make_mission().model_copy(update={"id": mission_id})
+        mission.status = MissionStatus.waiting
+        await repository.create(mission)
+
+    first_page = await repository.list_summary_page_candidates(
+        status=MissionStatus.waiting,
+        mission_type=MissionType.TRAIN_TICKET,
+        limit=2,
+    )
+    second_page = await repository.list_summary_page_candidates(
+        status=MissionStatus.waiting,
+        mission_type=MissionType.TRAIN_TICKET,
+        cursor=MissionCursor(mission_id=first_page[-1].id),
+        limit=2,
+    )
+
+    assert [item.id for item in first_page] == mission_ids[:2]
+    assert [item.id for item in second_page] == mission_ids[2:]
 
 
 async def test_update_saves_new_status(test_session: AsyncSession) -> None:
