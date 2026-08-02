@@ -59,3 +59,12 @@ class Identity(BaseModel):
     birth_date: date
     documents: list[Document] = []
     preferences: Preferences = Preferences()
+
+
+class IdentitySummary(BaseModel):
+    id: UUID
+    display_name: str
+
+    @classmethod
+    def from_identity(cls, identity: Identity) -> "IdentitySummary":
+        return cls(id=identity.id, display_name=identity.display_name)

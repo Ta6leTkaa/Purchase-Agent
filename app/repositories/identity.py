@@ -1,7 +1,8 @@
+import builtins
 from typing import Protocol
 from uuid import UUID
 
-from app.domain.identity import Identity, Preferences
+from app.domain.identity import Identity, IdentitySummary, Preferences
 
 
 class IdentityRepository(Protocol):
@@ -13,7 +14,15 @@ class IdentityRepository(Protocol):
         *,
         query: str | None = None,
         limit: int = 100,
-    ) -> list[Identity]:
+    ) -> builtins.list[Identity]:
+        ...
+
+    async def list_summaries(
+        self,
+        *,
+        query: str | None = None,
+        limit: int = 100,
+    ) -> builtins.list[IdentitySummary]:
         ...
 
     async def get(self, identity_id: UUID) -> Identity | None:

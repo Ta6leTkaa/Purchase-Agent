@@ -77,6 +77,23 @@ async def test_list_searches_names_and_applies_limit(
     assert [identity.id for identity in literal_wildcard] == [matching.id]
 
 
+async def test_list_summaries_projects_searchable_identity_fields(
+    test_session: AsyncSession,
+) -> None:
+    repository = SqlAlchemyIdentityRepository(test_session)
+    matching = make_identity().model_copy(
+        update={"display_name": "Anna 100% Sidorova", "first_name": "Anna"}
+    )
+    await repository.create(matching)
+    await repository.create(make_identity())
+
+    summaries = await repository.list_summaries(query="100%", limit=1)
+
+    assert [summary.model_dump() for summary in summaries] == [
+        {"id": matching.id, "display_name": "Anna 100% Sidorova"}
+    ]
+
+
 async def test_preferences_are_persisted_and_restored(
     test_session: AsyncSession,
 ) -> None:

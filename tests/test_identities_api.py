@@ -115,6 +115,24 @@ def test_get_identities_applies_limit() -> None:
     assert len(response.json()) == 1
 
 
+def test_get_identity_summaries_returns_only_public_listing_fields() -> None:
+    client = TestClient(app)
+    created = client.post("/identities", json=make_identity_payload()).json()
+
+    response = client.get(
+        "/identities/summaries",
+        params={"q": "pEtRoV", "limit": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": created["id"],
+            "display_name": "Ivan Petrov",
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     "params",
     [

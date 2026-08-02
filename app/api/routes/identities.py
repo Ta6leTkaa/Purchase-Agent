@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.dependencies import get_identity_repository
-from app.domain.identity import Identity
+from app.domain.identity import Identity, IdentitySummary
 from app.repositories.identity import IdentityRepository
 from app.schemas.identity import IdentityCreate, IdentityPreferencesUpdate
 
@@ -33,6 +33,21 @@ async def list_identities(
     if normalized_query == "":
         raise HTTPException(status_code=422, detail="q must not be blank")
     return await repository.list(query=normalized_query, limit=limit)
+
+
+@router.get("/summaries")
+async def list_identity_summaries(
+    repository: IdentityRepositoryDep,
+    query: str | None = Query(default=None, alias="q", min_length=1, max_length=200),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[IdentitySummary]:
+    normalized_query = query.strip() if query is not None else None
+    if normalized_query == "":
+        raise HTTPException(status_code=422, detail="q must not be blank")
+    return await repository.list_summaries(
+        query=normalized_query,
+        limit=limit,
+    )
 
 
 @router.get("/{identity_id}")

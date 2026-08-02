@@ -1,3 +1,4 @@
+import builtins
 from uuid import UUID
 
 from sqlalchemy import delete, or_, select
@@ -10,7 +11,7 @@ from app.db.models.identity import (
     identity_from_model,
     identity_to_model,
 )
-from app.domain.identity import Identity, Preferences
+from app.domain.identity import Identity, IdentitySummary, Preferences
 from app.repositories.identity import IdentityRepository
 
 
@@ -29,22 +30,14 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         *,
         query: str | None = None,
         limit: int = 100,
-    ) -> list[Identity]:
+    ) -> builtins.list[Identity]:
         if limit <= 0:
             raise ValueError("limit must be greater than 0")
         statement = select(IdentityModel).options(
             selectinload(IdentityModel.documents)
         )
-        if query is not None:
-            normalized = query.strip()
-            if not normalized:
-                raise ValueError("query must not be blank")
-            escaped = (
-                normalized.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-            )
-            pattern = f"%{escaped}%"
+        pattern = _identity_search_pattern(query)
+        if pattern is not None:
             statement = statement.where(
                 or_(
                     IdentityModel.display_name.ilike(pattern, escape="\\"),
@@ -61,6 +54,35 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         return [
             identity_from_model(model)
             for model in result.scalars().unique().all()
+        ]
+
+    async def list_summaries(
+        self,
+        *,
+        query: str | None = None,
+        limit: int = 100,
+    ) -> builtins.list[IdentitySummary]:
+        if limit <= 0:
+            raise ValueError("limit must be greater than 0")
+        statement = select(IdentityModel.id, IdentityModel.display_name)
+        pattern = _identity_search_pattern(query)
+        if pattern is not None:
+            statement = statement.where(
+                or_(
+                    IdentityModel.display_name.ilike(pattern, escape="\\"),
+                    IdentityModel.first_name.ilike(pattern, escape="\\"),
+                    IdentityModel.last_name.ilike(pattern, escape="\\"),
+                )
+            )
+        result = await self._session.execute(
+            statement.order_by(
+                IdentityModel.created_at,
+                IdentityModel.id,
+            ).limit(limit)
+        )
+        return [
+            IdentitySummary(id=identity_id, display_name=display_name)
+            for identity_id, display_name in result.all()
         ]
 
     async def get(self, identity_id: UUID) -> Identity | None:
@@ -101,3 +123,17 @@ def get_sqlalchemy_identity_repository(
     session: AsyncSession,
 ) -> SqlAlchemyIdentityRepository:
     return SqlAlchemyIdentityRepository(session)
+
+
+def _identity_search_pattern(query: str | None) -> str | None:
+    if query is None:
+        return None
+    normalized = query.strip()
+    if not normalized:
+        raise ValueError("query must not be blank")
+    escaped = (
+        normalized.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+    return f"%{escaped}%"

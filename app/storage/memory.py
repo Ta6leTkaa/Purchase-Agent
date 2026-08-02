@@ -9,7 +9,7 @@ from app.domain.execution_attempt import (
     MissionExecutionAttempt,
     MissionExecutionAttemptStatus,
 )
-from app.domain.identity import Identity, Preferences
+from app.domain.identity import Identity, IdentitySummary, Preferences
 from app.domain.mission import Mission, MissionStatus, MissionSummary, MissionType
 from app.repositories.mission import InvalidRepositoryTimeError
 from app.services.mission_state_machine import MissionStateMachine
@@ -28,7 +28,7 @@ class InMemoryIdentityRepository:
         *,
         query: str | None = None,
         limit: int = 100,
-    ) -> list[Identity]:
+    ) -> builtins.list[Identity]:
         if limit <= 0:
             raise ValueError("limit must be greater than 0")
         normalized = query.strip().casefold() if query is not None else None
@@ -50,6 +50,15 @@ class InMemoryIdentityRepository:
 
     async def get(self, identity_id: UUID) -> Identity | None:
         return self._identities.get(identity_id)
+
+    async def list_summaries(
+        self,
+        *,
+        query: str | None = None,
+        limit: int = 100,
+    ) -> builtins.list[IdentitySummary]:
+        identities = await self.list(query=query, limit=limit)
+        return [IdentitySummary.from_identity(identity) for identity in identities]
 
     async def update_preferences(
         self,
