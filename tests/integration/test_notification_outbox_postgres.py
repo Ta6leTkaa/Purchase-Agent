@@ -77,6 +77,11 @@ async def test_notification_outbox_has_operational_indexes(
         "occurred_at",
         "id",
     ]
+    assert indexed_columns["ix_notification_outbox_retention"] == [
+        "status",
+        "delivered_at",
+        "id",
+    ]
 
 
 async def test_mission_event_creates_and_dispatches_transactional_outbox(

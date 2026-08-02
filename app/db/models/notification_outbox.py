@@ -38,6 +38,12 @@ class NotificationOutboxMessageModel(Base):
             "occurred_at",
             "id",
         ),
+        Index(
+            "ix_notification_outbox_retention",
+            "status",
+            "delivered_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)

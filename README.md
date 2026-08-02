@@ -360,7 +360,9 @@ python -m app.cli prune-notifications --retention-days 30 --limit 500
 The command deletes only records whose status is `delivered` and whose
 `delivered_at` is older than the calculated cutoff. Pending, processing, and
 failed records are always retained. Concurrent cleanup processes divide work
-with `SKIP LOCKED`; repeat the command until `deleted_count` becomes zero.
+with `SKIP LOCKED`; repeat the command until `deleted_count` becomes zero. A
+dedicated `(status, delivered_at, id)` index keeps retention scans bounded as
+the outbox grows.
 
 The same worker is available as an opt-in Compose profile:
 
