@@ -133,6 +133,47 @@ def test_get_identity_summaries_returns_only_public_listing_fields() -> None:
     ]
 
 
+def test_get_identity_summary_pages_use_exclusive_cursor() -> None:
+    client = TestClient(app)
+    created_ids = {
+        client.post(
+            "/identities",
+            json={
+                **make_identity_payload(),
+                "display_name": f"Person {index}",
+            },
+        ).json()["id"]
+        for index in range(3)
+    }
+
+    first = client.get("/identities/summaries/page", params={"limit": 2})
+
+    assert first.status_code == 200
+    assert first.json()["has_more"] is True
+    assert first.json()["next_cursor"] is not None
+    second = client.get(
+        "/identities/summaries/page",
+        params={"limit": 2, "cursor": first.json()["next_cursor"]},
+    )
+    assert second.status_code == 200
+    assert second.json()["has_more"] is False
+    assert second.json()["next_cursor"] is None
+    returned_ids = {
+        item["id"] for item in first.json()["items"] + second.json()["items"]
+    }
+    assert returned_ids == created_ids
+
+
+def test_get_identity_summary_page_rejects_invalid_cursor() -> None:
+    response = TestClient(app).get(
+        "/identities/summaries/page",
+        params={"cursor": "invalid"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_identity_cursor"
+
+
 @pytest.mark.parametrize(
     "params",
     [

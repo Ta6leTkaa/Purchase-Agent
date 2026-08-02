@@ -12,6 +12,7 @@ from app.domain.execution_attempt import (
 from app.domain.identity import Identity, IdentitySummary, Preferences
 from app.domain.mission import Mission, MissionStatus, MissionSummary, MissionType
 from app.repositories.mission import InvalidRepositoryTimeError
+from app.services.identity_pagination import IdentityCursor
 from app.services.mission_state_machine import MissionStateMachine
 
 
@@ -70,6 +71,36 @@ class InMemoryIdentityRepository:
             return None
         identity.preferences = preferences
         return identity
+
+    async def list_summary_page_candidates(
+        self,
+        *,
+        query: str | None = None,
+        cursor: IdentityCursor | None = None,
+        limit: int = 101,
+    ) -> builtins.list[IdentitySummary]:
+        if limit <= 0:
+            raise ValueError("limit must be greater than 0")
+        normalized = query.strip().casefold() if query is not None else None
+        if normalized == "":
+            raise ValueError("query must not be blank")
+        identities = sorted(self._identities.values(), key=lambda item: item.id)
+        return [
+            IdentitySummary.from_identity(identity)
+            for identity in identities
+            if (cursor is None or identity.id > cursor.identity_id)
+            and (
+                normalized is None
+                or any(
+                    normalized in value.casefold()
+                    for value in (
+                        identity.display_name,
+                        identity.first_name,
+                        identity.last_name,
+                    )
+                )
+            )
+        ][:limit]
 
     async def clear(self) -> None:
         self._identities.clear()

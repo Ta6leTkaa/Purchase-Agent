@@ -2,11 +2,24 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from app.dependencies import get_identity_repository
 from app.domain.identity import Identity, IdentitySummary
 from app.repositories.identity import IdentityRepository
 from app.schemas.identity import IdentityCreate, IdentityPreferencesUpdate
+from app.services.identity_pagination import (
+    IdentityCursor,
+    IdentityCursorCodec,
+    InvalidIdentityCursorError,
+)
+
+
+class IdentitySummaryPage(BaseModel):
+    items: list[IdentitySummary]
+    has_more: bool
+    next_cursor: str | None
+
 
 router = APIRouter(prefix="/identities", tags=["identities"])
 type IdentityRepositoryDep = Annotated[
@@ -47,6 +60,44 @@ async def list_identity_summaries(
     return await repository.list_summaries(
         query=normalized_query,
         limit=limit,
+    )
+
+
+@router.get("/summaries/page")
+async def page_identity_summaries(
+    repository: IdentityRepositoryDep,
+    query: str | None = Query(default=None, alias="q", min_length=1, max_length=200),
+    limit: int = Query(default=100, ge=1, le=500),
+    cursor: str | None = None,
+) -> IdentitySummaryPage:
+    normalized_query = query.strip() if query is not None else None
+    if normalized_query == "":
+        raise HTTPException(status_code=422, detail="q must not be blank")
+    codec = IdentityCursorCodec()
+    try:
+        decoded_cursor = codec.decode(cursor) if cursor is not None else None
+    except InvalidIdentityCursorError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_identity_cursor",
+                "message": "Identity cursor is invalid.",
+            },
+        ) from exc
+    candidates = await repository.list_summary_page_candidates(
+        query=normalized_query,
+        cursor=decoded_cursor,
+        limit=limit + 1,
+    )
+    has_more = len(candidates) > limit
+    items = candidates[:limit]
+    next_cursor = None
+    if has_more:
+        next_cursor = codec.encode(IdentityCursor(identity_id=items[-1].id))
+    return IdentitySummaryPage(
+        items=items,
+        has_more=has_more,
+        next_cursor=next_cursor,
     )
 
 

@@ -12,6 +12,7 @@ from app.domain.identity import (
     TrainPreferences,
 )
 from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
+from app.services.identity_pagination import IdentityCursor
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -92,6 +93,24 @@ async def test_list_summaries_projects_searchable_identity_fields(
     assert [summary.model_dump() for summary in summaries] == [
         {"id": matching.id, "display_name": "Anna 100% Sidorova"}
     ]
+
+
+async def test_list_summary_page_candidates_use_exclusive_id_cursor(
+    test_session: AsyncSession,
+) -> None:
+    repository = SqlAlchemyIdentityRepository(test_session)
+    identity_ids = sorted([uuid4(), uuid4(), uuid4()])
+    for identity_id in identity_ids:
+        await repository.create(make_identity(identity_id))
+
+    first_page = await repository.list_summary_page_candidates(limit=2)
+    second_page = await repository.list_summary_page_candidates(
+        cursor=IdentityCursor(identity_id=first_page[-1].id),
+        limit=2,
+    )
+
+    assert [item.id for item in first_page] == identity_ids[:2]
+    assert [item.id for item in second_page] == identity_ids[2:]
 
 
 async def test_preferences_are_persisted_and_restored(

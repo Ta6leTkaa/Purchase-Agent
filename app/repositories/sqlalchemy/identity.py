@@ -13,6 +13,7 @@ from app.db.models.identity import (
 )
 from app.domain.identity import Identity, IdentitySummary, Preferences
 from app.repositories.identity import IdentityRepository
+from app.services.identity_pagination import IdentityCursor
 
 
 class SqlAlchemyIdentityRepository(IdentityRepository):
@@ -95,6 +96,35 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         if model is None:
             return None
         return identity_from_model(model)
+
+    async def list_summary_page_candidates(
+        self,
+        *,
+        query: str | None = None,
+        cursor: IdentityCursor | None = None,
+        limit: int = 101,
+    ) -> builtins.list[IdentitySummary]:
+        if limit <= 0:
+            raise ValueError("limit must be greater than 0")
+        statement = select(IdentityModel.id, IdentityModel.display_name)
+        pattern = _identity_search_pattern(query)
+        if pattern is not None:
+            statement = statement.where(
+                or_(
+                    IdentityModel.display_name.ilike(pattern, escape="\\"),
+                    IdentityModel.first_name.ilike(pattern, escape="\\"),
+                    IdentityModel.last_name.ilike(pattern, escape="\\"),
+                )
+            )
+        if cursor is not None:
+            statement = statement.where(IdentityModel.id > cursor.identity_id)
+        result = await self._session.execute(
+            statement.order_by(IdentityModel.id).limit(limit)
+        )
+        return [
+            IdentitySummary(id=identity_id, display_name=display_name)
+            for identity_id, display_name in result.all()
+        ]
 
     async def update_preferences(
         self,

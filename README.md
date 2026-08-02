@@ -45,6 +45,7 @@ The backend includes initial Pydantic domain models for:
 - `POST /identities` creates an identity
 - `GET /identities` lists identities
 - `GET /identities/summaries` lists only identity ids and display names
+- `GET /identities/summaries/page` pages through identity summaries
 - `GET /identities/{identity_id}` returns one identity or `404`
 - `PUT /identities/{identity_id}/preferences` replaces train and notification preferences
 
@@ -52,6 +53,9 @@ Identity listing accepts `q` for case-insensitive display/first/last-name
 search and `limit` from 1 to 500. It never searches document numbers; the
 response remains a JSON array. The summary endpoint accepts the same filters
 without loading documents, birth dates, or preferences.
+The paged endpoint returns `items`, `has_more`, and an opaque `next_cursor`.
+Pass the cursor unchanged with the same `q` filter to continue the stable,
+exclusive traversal.
 
 Example:
 
