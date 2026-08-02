@@ -67,6 +67,6 @@ jobs:
       - name: Apply migrations to clean PostgreSQL
         run: alembic upgrade head
       - name: Verify migrated schema is at the expected head
-        run: test "$(alembic current | awk 'NR==1 {print $1}')" = "20260802_0023"
+        run: test "$(alembic current | awk 'NR==1 {print $1}')" = "20260802_0024"
       - name: PostgreSQL integration suite
         run: pytest -m integration -q

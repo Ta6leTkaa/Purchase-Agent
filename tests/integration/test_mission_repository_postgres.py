@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.domain.execution import ExecutionEvent
@@ -23,6 +24,45 @@ from app.domain.provider import (
 from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
+
+async def test_mission_table_has_operational_indexes(
+    test_session: AsyncSession,
+) -> None:
+    connection = await test_session.connection()
+    indexes = await connection.run_sync(
+        lambda sync_connection: inspect(sync_connection).get_indexes(
+            "missions"
+        )
+    )
+    indexed_columns = {
+        index["name"]: index["column_names"] for index in indexes
+    }
+
+    assert indexed_columns["ix_missions_created_page"] == [
+        "created_at",
+        "id",
+    ]
+    assert indexed_columns["ix_missions_status_created_page"] == [
+        "status",
+        "created_at",
+        "id",
+    ]
+    assert indexed_columns["ix_missions_type_created_page"] == [
+        "mission_type",
+        "created_at",
+        "id",
+    ]
+    assert indexed_columns["ix_missions_due_claim"] == [
+        "status",
+        "scheduled_at",
+        "id",
+    ]
+    assert indexed_columns["ix_missions_stale_claim"] == [
+        "status",
+        "claimed_at",
+        "id",
+    ]
 
 
 async def test_create_saves_mission(test_session: AsyncSession) -> None:

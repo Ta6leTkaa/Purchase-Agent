@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, Integer, String, func, text
+from sqlalchemy import DateTime, Index, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
@@ -40,6 +40,33 @@ class AwareDateTime(TypeDecorator[datetime]):
 
 class MissionModel(Base):
     __tablename__ = "missions"
+    __table_args__ = (
+        Index("ix_missions_created_page", "created_at", "id"),
+        Index(
+            "ix_missions_status_created_page",
+            "status",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_missions_type_created_page",
+            "mission_type",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_missions_due_claim",
+            "status",
+            "scheduled_at",
+            "id",
+        ),
+        Index(
+            "ix_missions_stale_claim",
+            "status",
+            "claimed_at",
+            "id",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     type: Mapped[str] = mapped_column(String, nullable=False)
