@@ -10,7 +10,7 @@ from app.domain.execution_attempt import (
     MissionExecutionAttemptStatus,
 )
 from app.domain.identity import Identity, Preferences
-from app.domain.mission import Mission, MissionStatus
+from app.domain.mission import Mission, MissionStatus, MissionType
 from app.repositories.mission import InvalidRepositoryTimeError
 from app.services.mission_state_machine import MissionStateMachine
 
@@ -54,8 +54,21 @@ class InMemoryMissionRepository:
         self._missions[mission.id] = mission
         return mission
 
-    async def list(self) -> builtins.list[Mission]:
-        return list(self._missions.values())
+    async def list(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        limit: int = 100,
+    ) -> builtins.list[Mission]:
+        if limit <= 0:
+            raise ValueError("limit must be greater than 0")
+        return [
+            mission
+            for mission in self._missions.values()
+            if (status is None or mission.status is status)
+            and (mission_type is None or mission.type is mission_type)
+        ][:limit]
 
     async def list_due(
         self,

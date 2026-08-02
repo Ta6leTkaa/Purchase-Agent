@@ -540,6 +540,72 @@ def test_get_missions_returns_created_mission() -> None:
     assert response.json()[0]["id"] == create_response.json()["id"]
 
 
+def test_get_missions_filters_by_status() -> None:
+    client = TestClient(app)
+    first = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+    second = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+    client.post(
+        f"/missions/{second.json()['id']}/cancel",
+        headers={"Idempotency-Key": "cancel-for-list-filter"},
+    )
+
+    response = client.get("/missions", params={"status": "cancelled"})
+
+    assert response.status_code == 200
+    assert [mission["id"] for mission in response.json()] == [
+        second.json()["id"]
+    ]
+    assert first.json()["id"] not in {
+        mission["id"] for mission in response.json()
+    }
+
+
+def test_get_missions_filters_by_type_and_applies_limit() -> None:
+    client = TestClient(app)
+    for _ in range(2):
+        client.post(
+            "/missions",
+            json=make_mission_payload(
+                participant_ids=make_existing_participant_ids(client)
+            ),
+        )
+
+    response = client.get(
+        "/missions",
+        params={"type": "train_ticket", "limit": 1},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"status": "unknown"},
+        {"type": "unknown"},
+        {"limit": 0},
+        {"limit": 501},
+    ],
+)
+def test_get_missions_rejects_invalid_filters(
+    params: dict[str, object],
+) -> None:
+    response = TestClient(app).get("/missions", params=params)
+
+    assert response.status_code == 422
+
+
 def test_get_mission_by_id_returns_created_mission() -> None:
     client = TestClient(app)
     payload = make_mission_payload(

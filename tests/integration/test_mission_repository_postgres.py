@@ -64,6 +64,26 @@ async def test_list_returns_multiple_missions(
     }
 
 
+async def test_list_filters_status_and_applies_limit(
+    test_session: AsyncSession,
+) -> None:
+    repository = SqlAlchemyMissionRepository(test_session)
+    waiting = make_mission()
+    waiting.status = MissionStatus.waiting
+    cancelled = make_mission()
+    cancelled.status = MissionStatus.cancelled
+    await repository.create(waiting)
+    await repository.create(cancelled)
+
+    waiting_missions = await repository.list(
+        status=MissionStatus.waiting,
+        mission_type=MissionType.TRAIN_TICKET,
+        limit=1,
+    )
+
+    assert [mission.id for mission in waiting_missions] == [waiting.id]
+
+
 async def test_update_saves_new_status(test_session: AsyncSession) -> None:
     repository = SqlAlchemyMissionRepository(test_session)
     mission = make_mission()

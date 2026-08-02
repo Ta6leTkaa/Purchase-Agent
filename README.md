@@ -75,6 +75,10 @@ curl -X POST http://127.0.0.1:8000/identities \
 - `POST /missions/{mission_id}/pause` pauses an unstarted mission
 - `POST /missions/{mission_id}/resume` resumes a paused mission
 
+Mission listing accepts optional `status`, `type`, and `limit` query
+parameters. `limit` defaults to `100` and is capped at `500`; the response
+remains a JSON array for compatibility.
+
 Example:
 
 ```bash

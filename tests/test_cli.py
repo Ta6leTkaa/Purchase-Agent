@@ -631,7 +631,14 @@ class BrokenMissionRepository:
     async def create(self, mission: Mission) -> Mission:
         raise NotImplementedError
 
-    async def list(self) -> builtins.list[Mission]:
+    async def list(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        limit: int = 100,
+    ) -> builtins.list[Mission]:
+        del status, mission_type, limit
         raise NotImplementedError
 
     async def list_due(

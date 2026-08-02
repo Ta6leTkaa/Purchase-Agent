@@ -19,7 +19,7 @@ from app.domain.execution_attempt import (
     MissionExecutionAttempt,
     MissionExecutionAttemptStatus,
 )
-from app.domain.mission import Mission, MissionStatus
+from app.domain.mission import Mission, MissionStatus, MissionType
 from app.repositories.mission import (
     InvalidRepositoryTimeError,
     MissionRepository,
@@ -61,9 +61,26 @@ class SqlAlchemyMissionRepository(MissionRepository):
         await self._session.flush()
         return mission_from_model(model)
 
-    async def list(self) -> builtins.list[Mission]:
+    async def list(
+        self,
+        *,
+        status: MissionStatus | None = None,
+        mission_type: MissionType | None = None,
+        limit: int = 100,
+    ) -> builtins.list[Mission]:
+        _validate_list_limit(limit)
+        statement = select(MissionModel)
+        if status is not None:
+            statement = statement.where(MissionModel.status == status.value)
+        if mission_type is not None:
+            statement = statement.where(
+                MissionModel.mission_type == mission_type.value
+            )
         result = await self._session.execute(
-            select(MissionModel).order_by(MissionModel.created_at)
+            statement.order_by(
+                MissionModel.created_at,
+                MissionModel.id,
+            ).limit(limit)
         )
         return [
             mission_from_model(model)
@@ -500,6 +517,11 @@ def _validate_list_due_arguments(
         raise InvalidRepositoryTimeError(
             "current_time must be timezone-aware"
         )
+    if limit <= 0:
+        raise ValueError("limit must be greater than 0")
+
+
+def _validate_list_limit(limit: int) -> None:
     if limit <= 0:
         raise ValueError("limit must be greater than 0")
 
