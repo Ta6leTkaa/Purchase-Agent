@@ -73,6 +73,9 @@ class InMemoryIdentityRepository:
         identity.preferences = preferences
         return identity
 
+    async def delete(self, identity_id: UUID) -> bool:
+        return self._identities.pop(identity_id, None) is not None
+
     async def list_summary_page_candidates(
         self,
         *,
@@ -116,6 +119,12 @@ class InMemoryMissionRepository:
     async def create(self, mission: Mission) -> Mission:
         self._missions[mission.id] = mission
         return mission
+
+    async def references_identity(self, identity_id: UUID) -> bool:
+        return any(
+            identity_id in mission.participant_ids
+            for mission in self._missions.values()
+        )
 
     async def list(
         self,

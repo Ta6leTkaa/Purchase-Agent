@@ -143,6 +143,20 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         await self._session.flush()
         return identity_from_model(model)
 
+    async def delete(self, identity_id: UUID) -> bool:
+        await self._session.execute(
+            delete(DocumentModel).where(
+                DocumentModel.identity_id == identity_id
+            )
+        )
+        result = await self._session.execute(
+            delete(IdentityModel)
+            .where(IdentityModel.id == identity_id)
+            .returning(IdentityModel.id)
+        )
+        await self._session.flush()
+        return result.scalar_one_or_none() is not None
+
     async def clear(self) -> None:
         await self._session.execute(delete(DocumentModel))
         await self._session.execute(delete(IdentityModel))

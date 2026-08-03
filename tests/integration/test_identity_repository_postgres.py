@@ -137,6 +137,20 @@ async def test_clear_deletes_all_identities(test_session: AsyncSession) -> None:
     assert await repository.list() == []
 
 
+async def test_delete_removes_identity_and_documents(
+    test_session: AsyncSession,
+) -> None:
+    repository = SqlAlchemyIdentityRepository(test_session)
+    identity = make_identity()
+    await repository.create(identity)
+
+    deleted = await repository.delete(identity.id)
+
+    assert deleted is True
+    assert await repository.get(identity.id) is None
+    assert await repository.delete(identity.id) is False
+
+
 async def test_data_is_available_in_new_session_after_external_commit(
     test_engine: AsyncEngine,
     clean_database: None,

@@ -1,13 +1,14 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from app.api.dependencies.auth import require_api_key
-from app.dependencies import get_identity_repository
+from app.dependencies import get_identity_repository, get_mission_repository
 from app.domain.identity import Identity, IdentitySummary
 from app.repositories.identity import IdentityRepository
+from app.repositories.mission import MissionRepository
 from app.schemas.identity import IdentityCreate, IdentityPreferencesUpdate
 from app.services.identity_pagination import (
     IdentityCursor,
@@ -30,6 +31,10 @@ router = APIRouter(
 type IdentityRepositoryDep = Annotated[
     IdentityRepository,
     Depends(get_identity_repository),
+]
+type MissionRepositoryDep = Annotated[
+    MissionRepository,
+    Depends(get_mission_repository),
 ]
 
 
@@ -130,3 +135,22 @@ async def update_identity_preferences(
     if identity is None:
         raise HTTPException(status_code=404, detail="Identity not found")
     return identity
+
+
+@router.delete("/{identity_id}", status_code=204)
+async def delete_identity(
+    identity_id: UUID,
+    identity_repository: IdentityRepositoryDep,
+    mission_repository: MissionRepositoryDep,
+) -> Response:
+    if await mission_repository.references_identity(identity_id):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "identity_in_use",
+                "message": "Identity is referenced by one or more missions.",
+            },
+        )
+    if not await identity_repository.delete(identity_id):
+        raise HTTPException(status_code=404, detail="Identity not found")
+    return Response(status_code=204)

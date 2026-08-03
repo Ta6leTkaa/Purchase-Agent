@@ -233,3 +233,58 @@ def test_put_identity_preferences_updates_notification_settings() -> None:
     assert notifications["enabled"] is True
     assert set(notifications["channels"]) == {"telegram", "webhook"}
     assert notifications["external_recipient_id"] == "chat:12345"
+
+
+def test_delete_identity_removes_unreferenced_identity() -> None:
+    client = TestClient(app)
+    identity_id = client.post(
+        "/identities",
+        json=make_identity_payload(),
+    ).json()["id"]
+
+    response = client.delete(f"/identities/{identity_id}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert client.get(f"/identities/{identity_id}").status_code == 404
+
+
+def test_delete_identity_rejects_identity_used_by_mission() -> None:
+    client = TestClient(app)
+    identity_id = client.post(
+        "/identities",
+        json=make_identity_payload(),
+    ).json()["id"]
+    mission_response = client.post(
+        "/missions",
+        json={
+            "type": "train_trip",
+            "title": "Moscow to Saint Petersburg",
+            "participant_ids": [identity_id],
+            "provider": "mock_train",
+            "payload": {
+                "origin": "Moscow",
+                "destination": "Saint Petersburg",
+                "departure_date": "2026-08-10",
+            },
+            "constraints": {
+                "from_city": "Moscow",
+                "to_city": "Saint Petersburg",
+                "travel_date": "2026-08-10",
+                "passengers_count": 1,
+            },
+        },
+    )
+    assert mission_response.status_code == 200
+
+    response = client.delete(f"/identities/{identity_id}")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "identity_in_use"
+    assert client.get(f"/identities/{identity_id}").status_code == 200
+
+
+def test_delete_unknown_identity_returns_404() -> None:
+    response = TestClient(app).delete(f"/identities/{uuid4()}")
+
+    assert response.status_code == 404

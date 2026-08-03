@@ -99,6 +99,9 @@ class MissionRepository(Protocol):
     async def exists(self, mission_id: UUID) -> bool:
         ...
 
+    async def references_identity(self, identity_id: UUID) -> bool:
+        ...
+
     async def update(self, mission: Mission) -> Mission:
         ...
 

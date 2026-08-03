@@ -428,6 +428,16 @@ class SqlAlchemyMissionRepository(MissionRepository):
         )
         return result.scalar_one_or_none() is not None
 
+    async def references_identity(self, identity_id: UUID) -> bool:
+        result = await self._session.execute(
+            select(MissionModel.id)
+            .where(
+                MissionModel.participant_ids.contains([str(identity_id)])
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def update(self, mission: Mission) -> Mission:
         updated_model = mission_to_model(mission)
         result = await self._session.execute(

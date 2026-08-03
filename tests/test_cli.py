@@ -707,6 +707,9 @@ class BrokenMissionRepository:
     async def exists(self, mission_id: UUID) -> bool:
         raise NotImplementedError
 
+    async def references_identity(self, identity_id: UUID) -> bool:
+        raise NotImplementedError
+
     async def list_execution_attempts(
         self,
         mission_id: UUID,

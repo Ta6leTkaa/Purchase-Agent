@@ -171,6 +171,19 @@ async def test_list_summary_page_candidates_use_filters_and_cursor(
     assert [item.id for item in second_page] == mission_ids[2:]
 
 
+async def test_references_identity_checks_json_participants(
+    test_session: AsyncSession,
+) -> None:
+    repository = SqlAlchemyMissionRepository(test_session)
+    referenced_identity_id = uuid4()
+    await repository.create(
+        make_mission(participant_ids=[referenced_identity_id])
+    )
+
+    assert await repository.references_identity(referenced_identity_id) is True
+    assert await repository.references_identity(uuid4()) is False
+
+
 async def test_update_saves_new_status(test_session: AsyncSession) -> None:
     repository = SqlAlchemyMissionRepository(test_session)
     mission = make_mission()
