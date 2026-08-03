@@ -21,6 +21,18 @@ def test_settings_contains_database_url() -> None:
     assert settings.notification_retry_initial_seconds == 30
     assert settings.notification_retry_max_seconds == 900
     assert settings.notification_max_delivery_attempts == 5
+    assert settings.max_request_body_bytes == 1_048_576
+
+
+@pytest.mark.parametrize("value", ["1023", "104857601"])
+def test_request_body_limit_rejects_unsafe_bounds(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+) -> None:
+    monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", value)
+
+    with pytest.raises(ValidationError):
+        Settings()
 
 
 def test_notification_retry_maximum_must_cover_initial_delay(

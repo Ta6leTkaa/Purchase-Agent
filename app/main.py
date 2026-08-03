@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.exception_handlers import (
     register_provider_resolution_exception_handlers,
 )
+from app.api.middleware.request_body_limit import RequestBodyLimitMiddleware
 from app.api.middleware.request_context import request_context_middleware
 from app.api.routes.admin import router as admin_router
 from app.api.routes.health import router as health_router
@@ -15,6 +16,10 @@ from app.core.config import Settings, settings
 
 def create_app(config: Settings = settings) -> FastAPI:
     application = FastAPI(title=config.app_name)
+    application.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_body_bytes=config.max_request_body_bytes,
+    )
     application.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_allowed_origins,

@@ -47,6 +47,12 @@ the wildcard form follow HTTP cache-validation semantics. Detail responses use
 `Cache-Control: private, no-cache` so shared caches do not retain participant
 or mission data and browsers revalidate before reuse.
 
+Request bodies are capped at 1 MiB by default, before JSON parsing or route
+execution. Set `MAX_REQUEST_BODY_BYTES` to a value from 1024 bytes through
+100 MiB when a deployment needs a different bound. Both declared
+`Content-Length` and incrementally received bodies are enforced; oversized
+requests return `413 request_body_too_large` with the configured byte limit.
+
 Every HTTP response includes an `X-Request-ID`. A caller-provided identifier is
 preserved when it contains only safe correlation characters and is at most 128
 characters; otherwise the API generates a UUID. Each request produces a JSON
