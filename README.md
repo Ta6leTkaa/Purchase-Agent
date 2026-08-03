@@ -36,6 +36,13 @@ characters; otherwise the API generates a UUID. Each request produces a JSON
 log record with this identifier, method, path, status, and duration. Headers,
 query strings, API keys, and request bodies are deliberately excluded.
 
+`GET /admin/http-statistics` exposes process-local aggregate traffic counters
+under the admin API key: completed and in-flight requests, method and status
+class counts, and average/maximum latency. It deliberately omits paths, query
+strings, headers, and bodies to avoid high-cardinality data and secret leakage.
+Counters reset when the API process restarts and should be aggregated per
+replica by deployment-level monitoring.
+
 ## Continuous integration
 
 The repository includes a GitHub Actions workflow in

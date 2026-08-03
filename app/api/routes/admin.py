@@ -31,6 +31,7 @@ from app.services.due_mission_processor import (
     DueMissionProcessingResult,
     process_due_missions,
 )
+from app.services.http_metrics import HttpMetricsSnapshot, http_metrics
 from app.services.mission_errors import MissionNotFoundError
 from app.services.mission_event_projection import (
     MissionEventProjectionVerification,
@@ -144,6 +145,17 @@ class NotificationOutboxPage(BaseModel):
     items: list[NotificationOutboxMessageSummary]
     has_more: bool
     next_cursor: str | None
+
+
+@router.get(
+    "/http-statistics",
+    response_model=HttpMetricsSnapshot,
+    summary="Summarize HTTP traffic handled by this API process",
+)
+async def http_statistics_endpoint(
+    _admin_api_key: AdminApiKeyDep,
+) -> HttpMetricsSnapshot:
+    return http_metrics.snapshot()
 
 
 def _notification_outbox_repository(

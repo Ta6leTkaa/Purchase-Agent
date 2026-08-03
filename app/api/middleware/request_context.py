@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from fastapi import Request, Response
 
+from app.services.http_metrics import http_metrics
+
 REQUEST_ID_HEADER = "X-Request-ID"
 _REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
@@ -33,6 +35,7 @@ async def request_context_middleware(
     request.state.request_id = request_id
     token = _request_id.set(request_id)
     started_at = perf_counter()
+    http_metrics.start_request()
     try:
         response = await call_next(request)
     except Exception:
@@ -54,9 +57,15 @@ def _log_request(
     *,
     failed: bool = False,
 ) -> None:
+    duration_ms = (perf_counter() - started_at) * 1000
+    http_metrics.finish_request(
+        method=request.method,
+        status_code=status_code,
+        duration_ms=duration_ms,
+    )
     message = json.dumps(
         {
-            "duration_ms": round((perf_counter() - started_at) * 1000, 3),
+            "duration_ms": round(duration_ms, 3),
             "method": request.method,
             "path": request.url.path,
             "request_id": request_id,
