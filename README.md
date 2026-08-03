@@ -29,6 +29,10 @@ Client-facing Identity, Mission, and Provider endpoints require the configured
 key in the `X-API-Key` header. Liveness and readiness probes remain public.
 Local development without `API_KEY` preserves unauthenticated access. Admin
 endpoints use the separate `X-Admin-API-Key` header.
+Both keys are published as distinct OpenAPI security schemes, so Swagger UI
+and generated clients can authenticate without treating secrets as ordinary
+request parameters. Missing configured keys return an `ApiKey`
+`WWW-Authenticate` challenge.
 
 Browser clients on another origin require an explicit JSON allowlist, for
 example `CORS_ALLOWED_ORIGINS=["http://localhost:3000"]`. Wildcards,

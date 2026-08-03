@@ -59,6 +59,7 @@ def test_admin_endpoint_returns_401_when_header_is_missing(
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Admin API key is required"
+    assert response.headers["www-authenticate"] == 'ApiKey realm="admin"'
 
 
 @pytest.mark.parametrize("endpoint", ADMIN_ENDPOINTS)

@@ -41,6 +41,7 @@ def test_client_endpoint_requires_configured_api_key(endpoint: str) -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"] == "API key is required"
+    assert response.headers["www-authenticate"] == 'ApiKey realm="client"'
 
 
 @pytest.mark.parametrize("endpoint", PROTECTED_ENDPOINTS)
