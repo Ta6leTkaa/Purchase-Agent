@@ -6,6 +6,10 @@ from app.domain.identity import Identity, IdentitySummary, Preferences
 from app.services.identity_pagination import IdentityCursor
 
 
+class IdentityVersionConflictError(Exception):
+    pass
+
+
 class IdentityRepository(Protocol):
     async def create(self, identity: Identity) -> Identity:
         ...
@@ -42,13 +46,18 @@ class IdentityRepository(Protocol):
         self,
         identity_id: UUID,
         preferences: "Preferences",
+        expected_version: int,
     ) -> Identity | None:
         ...
 
-    async def update(self, identity: Identity) -> Identity | None:
+    async def update(
+        self,
+        identity: Identity,
+        expected_version: int,
+    ) -> Identity | None:
         ...
 
-    async def delete(self, identity_id: UUID) -> bool:
+    async def delete(self, identity_id: UUID, expected_version: int) -> bool:
         ...
 
     async def clear(self) -> None:

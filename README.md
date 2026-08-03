@@ -73,6 +73,11 @@ Profile updates are partial: omitted fields stay unchanged, while a supplied
 `documents` array replaces the complete document collection with newly
 generated document ids. Empty updates, nulls, blank names, and unknown fields
 are rejected.
+Individual Identity responses include an `ETag` backed by a persisted numeric
+version. `PATCH`, preference replacement, and deletion require the latest
+quoted value in `If-Match`; missing preconditions return `428`, while stale
+versions return `412 identity_version_conflict`. Successful updates increment
+both the response `version` and `ETag`.
 The paged endpoint returns `items`, `has_more`, and an opaque `next_cursor`.
 Pass the cursor unchanged with the same `q` filter to continue the stable,
 exclusive traversal.

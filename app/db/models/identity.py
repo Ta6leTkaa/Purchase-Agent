@@ -2,7 +2,17 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import CHAR, JSON, Date, DateTime, ForeignKey, String, func, text
+from sqlalchemy import (
+    CHAR,
+    JSON,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -54,6 +64,12 @@ class IdentityModel(Base):
     __tablename__ = "identities"
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     display_name: Mapped[str] = mapped_column(String, nullable=False)
     first_name: Mapped[str] = mapped_column(String, nullable=False)
     last_name: Mapped[str] = mapped_column(String, nullable=False)
@@ -88,7 +104,7 @@ class DocumentModel(Base):
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     identity_id: Mapped[UUID] = mapped_column(
         GUID(),
-        ForeignKey("identities.id"),
+        ForeignKey("identities.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -107,6 +123,7 @@ class DocumentModel(Base):
 def identity_to_model(identity: Identity) -> IdentityModel:
     return IdentityModel(
         id=identity.id,
+        version=identity.version,
         display_name=identity.display_name,
         first_name=identity.first_name,
         last_name=identity.last_name,
@@ -127,6 +144,7 @@ def identity_to_model(identity: Identity) -> IdentityModel:
 def identity_from_model(model: IdentityModel) -> Identity:
     return Identity(
         id=model.id,
+        version=model.version,
         display_name=model.display_name,
         first_name=model.first_name,
         last_name=model.last_name,

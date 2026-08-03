@@ -53,6 +53,7 @@ class Preferences(BaseModel):
 
 class Identity(BaseModel):
     id: UUID
+    version: int = 0
     display_name: str
     first_name: str
     last_name: str

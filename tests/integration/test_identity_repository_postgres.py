@@ -11,6 +11,7 @@ from app.domain.identity import (
     Preferences,
     TrainPreferences,
 )
+from app.repositories.identity import IdentityVersionConflictError
 from app.repositories.sqlalchemy.identity import SqlAlchemyIdentityRepository
 from app.services.identity_pagination import IdentityCursor
 
@@ -144,11 +145,11 @@ async def test_delete_removes_identity_and_documents(
     identity = make_identity()
     await repository.create(identity)
 
-    deleted = await repository.delete(identity.id)
+    deleted = await repository.delete(identity.id, identity.version)
 
     assert deleted is True
     assert await repository.get(identity.id) is None
-    assert await repository.delete(identity.id) is False
+    assert await repository.delete(identity.id, identity.version) is False
 
 
 async def test_update_replaces_profile_fields_and_documents(
@@ -172,13 +173,29 @@ async def test_update_replaces_profile_fields_and_documents(
         }
     )
 
-    updated = await repository.update(changed)
+    updated = await repository.update(changed, identity.version)
     loaded = await repository.get(identity.id)
 
-    assert updated == changed
-    assert loaded == changed
+    expected = changed.model_copy(update={"version": 1})
+    assert updated == expected
+    assert loaded == expected
     assert loaded is not None
     assert loaded.preferences == identity.preferences
+
+
+async def test_update_rejects_stale_identity_version(
+    test_session: AsyncSession,
+) -> None:
+    repository = SqlAlchemyIdentityRepository(test_session)
+    identity = make_identity()
+    await repository.create(identity)
+    first_change = identity.model_copy(update={"display_name": "First"})
+    stale_change = identity.model_copy(update={"display_name": "Stale"})
+
+    await repository.update(first_change, expected_version=0)
+
+    with pytest.raises(IdentityVersionConflictError):
+        await repository.update(stale_change, expected_version=0)
 
 
 async def test_data_is_available_in_new_session_after_external_commit(

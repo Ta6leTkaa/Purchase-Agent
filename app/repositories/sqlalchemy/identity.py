@@ -1,7 +1,7 @@
 import builtins
 from uuid import UUID
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,7 +12,10 @@ from app.db.models.identity import (
     identity_to_model,
 )
 from app.domain.identity import Identity, IdentitySummary, Preferences
-from app.repositories.identity import IdentityRepository
+from app.repositories.identity import (
+    IdentityRepository,
+    IdentityVersionConflictError,
+)
 from app.services.identity_pagination import IdentityCursor
 
 
@@ -91,6 +94,7 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
             select(IdentityModel)
             .where(IdentityModel.id == identity_id)
             .options(selectinload(IdentityModel.documents))
+            .execution_options(populate_existing=True)
         )
         model = result.scalar_one_or_none()
         if model is None:
@@ -130,57 +134,90 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         self,
         identity_id: UUID,
         preferences: Preferences,
+        expected_version: int,
     ) -> Identity | None:
         result = await self._session.execute(
             select(IdentityModel)
             .where(IdentityModel.id == identity_id)
             .options(selectinload(IdentityModel.documents))
+            .execution_options(populate_existing=True)
         )
         model = result.scalar_one_or_none()
         if model is None:
             return None
+        if model.version != expected_version:
+            raise IdentityVersionConflictError
+        version_result = await self._session.execute(
+            update(IdentityModel)
+            .where(IdentityModel.id == identity_id)
+            .where(IdentityModel.version == expected_version)
+            .values(
+                preferences=preferences.model_dump(mode="json"),
+                version=expected_version + 1,
+            )
+            .returning(IdentityModel.version)
+        )
+        new_version = version_result.scalar_one_or_none()
+        if new_version is None:
+            raise IdentityVersionConflictError
         model.preferences = preferences.model_dump(mode="json")
+        model.version = new_version
         await self._session.flush()
         return identity_from_model(model)
 
-    async def update(self, identity: Identity) -> Identity | None:
+    async def update(
+        self,
+        identity: Identity,
+        expected_version: int,
+    ) -> Identity | None:
         result = await self._session.execute(
-            select(IdentityModel)
+            update(IdentityModel)
             .where(IdentityModel.id == identity.id)
-            .options(selectinload(IdentityModel.documents))
+            .where(IdentityModel.version == expected_version)
+            .values(
+                display_name=identity.display_name,
+                first_name=identity.first_name,
+                last_name=identity.last_name,
+                birth_date=identity.birth_date,
+                version=expected_version + 1,
+            )
+            .returning(IdentityModel.id)
         )
-        model = result.scalar_one_or_none()
-        if model is None:
-            return None
-        model.display_name = identity.display_name
-        model.first_name = identity.first_name
-        model.last_name = identity.last_name
-        model.birth_date = identity.birth_date
-        model.documents = [
+        if result.scalar_one_or_none() is None:
+            if await self.get(identity.id) is None:
+                return None
+            raise IdentityVersionConflictError
+        await self._session.execute(
+            delete(DocumentModel).where(
+                DocumentModel.identity_id == identity.id
+            )
+        )
+        self._session.add_all([
             DocumentModel(
                 id=document.id,
+                identity_id=identity.id,
                 type=document.type.value,
                 number=document.number,
                 expires_at=document.expires_at,
             )
             for document in identity.documents
-        ]
+        ])
         await self._session.flush()
-        return identity_from_model(model)
+        return identity.model_copy(update={"version": expected_version + 1})
 
-    async def delete(self, identity_id: UUID) -> bool:
-        await self._session.execute(
-            delete(DocumentModel).where(
-                DocumentModel.identity_id == identity_id
-            )
-        )
+    async def delete(self, identity_id: UUID, expected_version: int) -> bool:
         result = await self._session.execute(
             delete(IdentityModel)
             .where(IdentityModel.id == identity_id)
+            .where(IdentityModel.version == expected_version)
             .returning(IdentityModel.id)
         )
         await self._session.flush()
-        return result.scalar_one_or_none() is not None
+        if result.scalar_one_or_none() is not None:
+            return True
+        if await self.get(identity_id) is None:
+            return False
+        raise IdentityVersionConflictError
 
     async def clear(self) -> None:
         await self._session.execute(delete(DocumentModel))

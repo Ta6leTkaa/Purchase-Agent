@@ -11,6 +11,7 @@ from app.domain.execution_attempt import (
 )
 from app.domain.identity import Identity, IdentitySummary, Preferences
 from app.domain.mission import Mission, MissionStatus, MissionSummary, MissionType
+from app.repositories.identity import IdentityVersionConflictError
 from app.repositories.mission import InvalidRepositoryTimeError
 from app.services.identity_pagination import IdentityCursor
 from app.services.mission_pagination import MissionCursor
@@ -66,21 +67,39 @@ class InMemoryIdentityRepository:
         self,
         identity_id: UUID,
         preferences: Preferences,
+        expected_version: int,
     ) -> Identity | None:
         identity = self._identities.get(identity_id)
         if identity is None:
             return None
+        if identity.version != expected_version:
+            raise IdentityVersionConflictError
         identity.preferences = preferences
+        identity.version += 1
         return identity
 
-    async def update(self, identity: Identity) -> Identity | None:
-        if identity.id not in self._identities:
+    async def update(
+        self,
+        identity: Identity,
+        expected_version: int,
+    ) -> Identity | None:
+        current = self._identities.get(identity.id)
+        if current is None:
             return None
-        self._identities[identity.id] = identity
-        return identity
+        if current.version != expected_version:
+            raise IdentityVersionConflictError
+        updated = identity.model_copy(update={"version": expected_version + 1})
+        self._identities[identity.id] = updated
+        return updated
 
-    async def delete(self, identity_id: UUID) -> bool:
-        return self._identities.pop(identity_id, None) is not None
+    async def delete(self, identity_id: UUID, expected_version: int) -> bool:
+        identity = self._identities.get(identity_id)
+        if identity is None:
+            return False
+        if identity.version != expected_version:
+            raise IdentityVersionConflictError
+        del self._identities[identity_id]
+        return True
 
     async def list_summary_page_candidates(
         self,

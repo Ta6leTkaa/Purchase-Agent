@@ -213,7 +213,8 @@ def test_get_unknown_identity_returns_404() -> None:
 
 def test_put_identity_preferences_updates_notification_settings() -> None:
     client = TestClient(app)
-    created = client.post("/identities", json=make_identity_payload()).json()
+    create_response = client.post("/identities", json=make_identity_payload())
+    created = create_response.json()
 
     response = client.put(
         f"/identities/{created['id']}/preferences",
@@ -226,6 +227,7 @@ def test_put_identity_preferences_updates_notification_settings() -> None:
                 }
             }
         },
+        headers={"If-Match": create_response.headers["etag"]},
     )
 
     assert response.status_code == 200
@@ -233,14 +235,17 @@ def test_put_identity_preferences_updates_notification_settings() -> None:
     assert notifications["enabled"] is True
     assert set(notifications["channels"]) == {"telegram", "webhook"}
     assert notifications["external_recipient_id"] == "chat:12345"
+    assert response.headers["etag"] == '"1"'
+    assert response.json()["version"] == 1
 
 
 def test_patch_identity_updates_profile_and_preserves_preferences() -> None:
     client = TestClient(app)
-    created = client.post(
+    create_response = client.post(
         "/identities",
         json=make_identity_payload(),
-    ).json()
+    )
+    created = create_response.json()
 
     response = client.patch(
         f"/identities/{created['id']}",
@@ -256,6 +261,7 @@ def test_patch_identity_updates_profile_and_preserves_preferences() -> None:
                 }
             ],
         },
+        headers={"If-Match": create_response.headers["etag"]},
     )
 
     assert response.status_code == 200
@@ -319,12 +325,16 @@ def test_create_identity_rejects_blank_names(field: str, value: str) -> None:
 
 def test_delete_identity_removes_unreferenced_identity() -> None:
     client = TestClient(app)
-    identity_id = client.post(
+    create_response = client.post(
         "/identities",
         json=make_identity_payload(),
-    ).json()["id"]
+    )
+    identity_id = create_response.json()["id"]
 
-    response = client.delete(f"/identities/{identity_id}")
+    response = client.delete(
+        f"/identities/{identity_id}",
+        headers={"If-Match": create_response.headers["etag"]},
+    )
 
     assert response.status_code == 204
     assert response.content == b""
@@ -333,10 +343,11 @@ def test_delete_identity_removes_unreferenced_identity() -> None:
 
 def test_delete_identity_rejects_identity_used_by_mission() -> None:
     client = TestClient(app)
-    identity_id = client.post(
+    create_response = client.post(
         "/identities",
         json=make_identity_payload(),
-    ).json()["id"]
+    )
+    identity_id = create_response.json()["id"]
     mission_response = client.post(
         "/missions",
         json={
@@ -359,7 +370,10 @@ def test_delete_identity_rejects_identity_used_by_mission() -> None:
     )
     assert mission_response.status_code == 200
 
-    response = client.delete(f"/identities/{identity_id}")
+    response = client.delete(
+        f"/identities/{identity_id}",
+        headers={"If-Match": create_response.headers["etag"]},
+    )
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "identity_in_use"
@@ -370,3 +384,43 @@ def test_delete_unknown_identity_returns_404() -> None:
     response = TestClient(app).delete(f"/identities/{uuid4()}")
 
     assert response.status_code == 404
+
+
+def test_identity_etag_prevents_lost_updates() -> None:
+    client = TestClient(app)
+    created = client.post("/identities", json=make_identity_payload())
+    identity_id = created.json()["id"]
+
+    assert created.headers["etag"] == '"0"'
+    first_update = client.patch(
+        f"/identities/{identity_id}",
+        json={"display_name": "First update"},
+        headers={"If-Match": created.headers["etag"]},
+    )
+    stale_update = client.patch(
+        f"/identities/{identity_id}",
+        json={"display_name": "Stale update"},
+        headers={"If-Match": created.headers["etag"]},
+    )
+
+    assert first_update.status_code == 200
+    assert first_update.headers["etag"] == '"1"'
+    assert first_update.json()["version"] == 1
+    assert stale_update.status_code == 412
+    assert stale_update.json()["detail"]["code"] == "identity_version_conflict"
+    loaded = client.get(f"/identities/{identity_id}")
+    assert loaded.json()["display_name"] == "First update"
+    assert loaded.headers["etag"] == '"1"'
+
+
+def test_identity_mutation_requires_if_match() -> None:
+    client = TestClient(app)
+    created = client.post("/identities", json=make_identity_payload()).json()
+
+    response = client.patch(
+        f"/identities/{created['id']}",
+        json={"display_name": "Changed"},
+    )
+
+    assert response.status_code == 428
+    assert response.json()["detail"]["code"] == "identity_version_required"
