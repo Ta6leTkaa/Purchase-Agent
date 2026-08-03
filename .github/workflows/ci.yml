@@ -32,6 +32,7 @@ jobs:
         run: test "$(alembic heads | wc -l | tr -d ' ')" = "1"
       - name: Validate Compose model
         env:
+          API_KEY: ci-client-key
           ADMIN_API_KEY: ci-admin-key
         run: docker compose config --quiet
       - name: Build container

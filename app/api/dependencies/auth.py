@@ -12,6 +12,27 @@ AdminApiKeyHeader = Annotated[
         description="API key for local administrative endpoints.",
     ),
 ]
+ApiKeyHeader = Annotated[
+    str | None,
+    Header(
+        alias="X-API-Key",
+        description="API key for client-facing endpoints.",
+    ),
+]
+
+
+async def require_api_key(provided_key: ApiKeyHeader = None) -> None:
+    """Protect client-facing resources when an API key is configured."""
+    expected_key = settings.api_key
+    if expected_key is None:
+        return
+    if provided_key is None:
+        raise HTTPException(status_code=401, detail="API key is required")
+    if not secrets.compare_digest(
+        provided_key,
+        expected_key.get_secret_value(),
+    ):
+        raise HTTPException(status_code=403, detail="Invalid API key")
 
 
 async def require_admin_api_key(

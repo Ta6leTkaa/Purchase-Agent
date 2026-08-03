@@ -7,7 +7,8 @@ APIs for provider resolution history.
 
 ## Local Compose deployment
 
-Set a non-empty `ADMIN_API_KEY` in `.env`, then start the full backend:
+Set non-empty `API_KEY` and `ADMIN_API_KEY` values in `.env`, then start the
+full backend:
 
 ```bash
 docker compose up --build
@@ -21,6 +22,11 @@ traffic is considered safe. Scheduled execution and notification delivery remain
 ```bash
 docker compose --profile worker --profile notifications up --build
 ```
+
+Client-facing Identity, Mission, and Provider endpoints require the configured
+key in the `X-API-Key` header. Liveness and readiness probes remain public.
+Local development without `API_KEY` preserves unauthenticated access. Admin
+endpoints use the separate `X-Admin-API-Key` header.
 
 ## Continuous integration
 

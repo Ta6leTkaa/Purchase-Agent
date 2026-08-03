@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.api.dependencies.auth import require_api_key
 from app.dependencies import get_identity_repository
 from app.domain.identity import Identity, IdentitySummary
 from app.repositories.identity import IdentityRepository
@@ -21,7 +22,11 @@ class IdentitySummaryPage(BaseModel):
     next_cursor: str | None
 
 
-router = APIRouter(prefix="/identities", tags=["identities"])
+router = APIRouter(
+    prefix="/identities",
+    tags=["identities"],
+    dependencies=[Depends(require_api_key)],
+)
 type IdentityRepositoryDep = Annotated[
     IdentityRepository,
     Depends(get_identity_repository),

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://purchase_agent:purchase_agent@localhost:5432/"
         "purchase_agent"
     )
+    api_key: SecretStr | None = None
     admin_api_key: SecretStr | None = None
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)

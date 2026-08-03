@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Resp
 from pydantic import BaseModel
 
 from app.adapters import ProviderRegistry
+from app.api.dependencies.auth import require_api_key
 from app.dependencies import (
     get_identity_repository,
     get_mission_command_idempotency_store,
@@ -118,7 +119,11 @@ class MissionSummaryPage(BaseModel):
     has_more: bool
     next_cursor: str | None
 
-router = APIRouter(prefix="/missions", tags=["missions"])
+router = APIRouter(
+    prefix="/missions",
+    tags=["missions"],
+    dependencies=[Depends(require_api_key)],
+)
 type MissionRepositoryDep = Annotated[
     MissionRepository,
     Depends(get_mission_repository),

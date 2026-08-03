@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 
 from app.adapters.base import ProviderAdapter
 from app.adapters.registry import ProviderRegistry, UnknownProviderError
+from app.api.dependencies.auth import require_api_key
 from app.dependencies import get_provider_registry
 from app.domain.mission import MissionExecutionMode, MissionType
 from app.domain.provider_id import normalize_provider_id
@@ -13,7 +14,11 @@ from app.schemas.provider import (
     SupportingProviderListResponse,
 )
 
-router = APIRouter(prefix="/providers", tags=["providers"])
+router = APIRouter(
+    prefix="/providers",
+    tags=["providers"],
+    dependencies=[Depends(require_api_key)],
+)
 ProviderRegistryDep = Annotated[
     ProviderRegistry,
     Depends(get_provider_registry),

@@ -38,6 +38,7 @@ services:
     environment:
       STORAGE_BACKEND: database
       DATABASE_URL: postgresql+asyncpg://purchase_agent:purchase_agent@postgres:5432/purchase_agent
+      API_KEY: ${API_KEY:?Set API_KEY in .env before starting the API}
       ADMIN_API_KEY: ${ADMIN_API_KEY:?Set ADMIN_API_KEY in .env before starting the API}
       APP_DEBUG: ${APP_DEBUG:-false}
     depends_on:
