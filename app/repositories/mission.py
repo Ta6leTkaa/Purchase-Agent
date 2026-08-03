@@ -8,6 +8,7 @@ from uuid import UUID
 from app.domain.execution_attempt import MissionExecutionAttempt
 from app.domain.mission import Mission, MissionStatus, MissionSummary, MissionType
 from app.services.mission_pagination import MissionCursor
+from app.services.mission_statistics import MissionStatistics
 
 
 class RepositoryEntityNotFoundError(Exception):
@@ -16,6 +17,15 @@ class RepositoryEntityNotFoundError(Exception):
 
 class InvalidRepositoryTimeError(ValueError):
     pass
+
+
+class MissionStatisticsRepository(Protocol):
+    async def get_statistics(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+    ) -> MissionStatistics:
+        ...
 
 
 class MissionRepository(Protocol):

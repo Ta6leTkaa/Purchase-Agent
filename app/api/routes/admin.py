@@ -23,7 +23,7 @@ from app.domain.notification import (
     NotificationOutboxStatus,
 )
 from app.repositories.identity import IdentityRepository
-from app.repositories.mission import MissionRepository
+from app.repositories.mission import MissionRepository, MissionStatisticsRepository
 from app.repositories.sqlalchemy.notification_outbox import (
     SqlAlchemyNotificationOutboxRepository,
 )
@@ -37,6 +37,7 @@ from app.services.mission_event_projection import (
     MissionEventProjectionVerification,
     VerifyMissionEventProjection,
 )
+from app.services.mission_statistics import MissionStatistics
 from app.services.notification_outbox_pagination import (
     InvalidNotificationOutboxCursorError,
     NotificationOutboxCursor,
@@ -51,6 +52,10 @@ from app.services.provider_resolver import ProviderResolver
 router = APIRouter(prefix="/admin", tags=["admin"])
 type MissionRepositoryDep = Annotated[
     MissionRepository,
+    Depends(get_mission_repository),
+]
+type MissionStatisticsRepositoryDep = Annotated[
+    MissionStatisticsRepository,
     Depends(get_mission_repository),
 ]
 type IdentityRepositoryDep = Annotated[
@@ -156,6 +161,23 @@ async def http_statistics_endpoint(
     _admin_api_key: AdminApiKeyDep,
 ) -> HttpMetricsSnapshot:
     return http_metrics.snapshot()
+
+
+@router.get(
+    "/mission-statistics",
+    response_model=MissionStatistics,
+    summary="Summarize the mission queue and worker health",
+)
+async def mission_statistics_endpoint(
+    _admin_api_key: AdminApiKeyDep,
+    mission_repository: MissionStatisticsRepositoryDep,
+    current_time: CurrentTimeDep,
+    claim_timeout_seconds: int = Query(default=900, ge=1, le=86400),
+) -> MissionStatistics:
+    return await mission_repository.get_statistics(
+        current_time,
+        timedelta(seconds=claim_timeout_seconds),
+    )
 
 
 def _notification_outbox_repository(

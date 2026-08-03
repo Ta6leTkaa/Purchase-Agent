@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import CursorResult, delete, select, update
+from sqlalchemy import CursorResult, case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.mission import (
@@ -40,6 +40,7 @@ from app.repositories.sqlalchemy.provider_history import (
 from app.services.mission_event_store import mission_json_event_store
 from app.services.mission_pagination import MissionCursor
 from app.services.mission_state_machine import MissionStateMachine
+from app.services.mission_statistics import MissionStatistics
 from app.services.notification_outbox import NOTIFICATION_EVENT_TYPES
 from app.services.provider_history_projection import (
     execution_event_to_provider_projection,
@@ -53,6 +54,99 @@ class MissionEventSequenceConflictError(Exception):
 class SqlAlchemyMissionRepository(MissionRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def get_statistics(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+    ) -> MissionStatistics:
+        _validate_stale_processing_arguments(current_time, claim_timeout, 1)
+        status_result = await self._session.execute(
+            select(MissionModel.status, func.count(MissionModel.id)).group_by(
+                MissionModel.status
+            )
+        )
+        missions_by_status = {
+            MissionStatus(status): count for status, count in status_result.all()
+        }
+        pending_statuses = [
+            MissionStatus.created.value,
+            MissionStatus.waiting.value,
+            MissionStatus.paused.value,
+        ]
+        stale_before = current_time - claim_timeout
+        counters = (
+            await self._session.execute(
+                select(
+                    func.count(MissionModel.id),
+                    func.sum(
+                        case(
+                            (
+                                (MissionModel.status == MissionStatus.waiting.value)
+                                & MissionModel.scheduled_at.is_not(None)
+                                & (MissionModel.scheduled_at <= current_time)
+                                & (
+                                    MissionModel.expires_at.is_(None)
+                                    | (MissionModel.expires_at > current_time)
+                                )
+                                & (
+                                    MissionModel.execution_attempts
+                                    < MissionModel.max_execution_attempts
+                                ),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    func.sum(
+                        case(
+                            (
+                                MissionModel.status.in_(pending_statuses)
+                                & MissionModel.expires_at.is_not(None)
+                                & (MissionModel.expires_at <= current_time),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    func.sum(
+                        case(
+                            (
+                                (MissionModel.status == MissionStatus.processing.value)
+                                & MissionModel.claimed_at.is_not(None)
+                                & (MissionModel.claimed_at <= stale_before),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    func.sum(
+                        case(
+                            (
+                                (MissionModel.status == MissionStatus.waiting.value)
+                                & (
+                                    MissionModel.execution_attempts
+                                    >= MissionModel.max_execution_attempts
+                                ),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                )
+            )
+        ).one()
+        total, due, expired_pending, stale_processing, exhausted_waiting = counters
+        return MissionStatistics(
+            generated_at=current_time,
+            total_missions=total,
+            missions_by_status=missions_by_status,
+            due_missions=due or 0,
+            expired_pending_missions=expired_pending or 0,
+            stale_processing_missions=stale_processing or 0,
+            exhausted_waiting_missions=exhausted_waiting or 0,
+            claim_timeout_seconds=int(claim_timeout.total_seconds()),
+        )
 
     async def create(self, mission: Mission) -> Mission:
         model = mission_to_model(mission)

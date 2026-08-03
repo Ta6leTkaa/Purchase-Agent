@@ -151,6 +151,48 @@ async def test_admin_recover_stale_persists_postgres_updates(
     assert persisted_fresh_mission.claimed_at == fresh_mission.claimed_at
 
 
+async def test_admin_mission_statistics_aggregates_postgres_queue(
+    admin_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    due = make_mission()
+    exhausted = make_mission()
+    exhausted.execution_attempts = exhausted.max_execution_attempts
+    expired = make_mission(status=MissionStatus.paused)
+    expired.expires_at = CURRENT_TIME - timedelta(minutes=1)
+    expired.scheduled_at = CURRENT_TIME - timedelta(hours=1)
+    stale = make_mission(
+        status=MissionStatus.processing,
+        claimed_at=CURRENT_TIME - timedelta(minutes=16),
+    )
+    repository = SqlAlchemyMissionRepository(test_session)
+    for mission in (due, exhausted, expired, stale):
+        await repository.create(mission)
+    await test_session.commit()
+
+    response = await admin_client.get(
+        "/admin/mission-statistics",
+        params={"claim_timeout_seconds": 900},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "generated_at": "2026-08-01T10:00:00Z",
+        "total_missions": 4,
+        "missions_by_status": {
+            "waiting": 2,
+            "paused": 1,
+            "processing": 1,
+        },
+        "due_missions": 1,
+        "expired_pending_missions": 1,
+        "stale_processing_missions": 1,
+        "exhausted_waiting_missions": 1,
+        "claim_timeout_seconds": 900,
+    }
+
+
 async def create_execution_data(
     session: AsyncSession,
     identities: list[Identity],

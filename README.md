@@ -43,6 +43,12 @@ strings, headers, and bodies to avoid high-cardinality data and secret leakage.
 Counters reset when the API process restarts and should be aggregated per
 replica by deployment-level monitoring.
 
+`GET /admin/mission-statistics` provides an operator-facing snapshot of the
+mission queue for both memory and PostgreSQL storage. It reports totals by
+status together with due, expired-but-not-yet-processed, stale-processing, and
+attempt-exhausted waiting counts. The optional `claim_timeout_seconds` query
+parameter controls when a processing claim is considered stale.
+
 ## Continuous integration
 
 The repository includes a GitHub Actions workflow in

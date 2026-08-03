@@ -16,6 +16,7 @@ from app.repositories.mission import InvalidRepositoryTimeError
 from app.services.identity_pagination import IdentityCursor
 from app.services.mission_pagination import MissionCursor
 from app.services.mission_state_machine import MissionStateMachine
+from app.services.mission_statistics import MissionStatistics
 
 
 class InMemoryIdentityRepository:
@@ -140,6 +141,60 @@ class InMemoryMissionRepository:
         self._missions: dict[UUID, Mission] = {}
         self._execution_attempts: dict[UUID, list[MissionExecutionAttempt]] = {}
         self._claim_lock = asyncio.Lock()
+
+    async def get_statistics(
+        self,
+        current_time: datetime,
+        claim_timeout: timedelta,
+    ) -> MissionStatistics:
+        _validate_stale_processing_arguments(current_time, claim_timeout, 1)
+        missions_by_status = {
+            status: sum(
+                mission.status is status for mission in self._missions.values()
+            )
+            for status in MissionStatus
+        }
+        missions_by_status = {
+            status: count
+            for status, count in missions_by_status.items()
+            if count > 0
+        }
+        pending_statuses = {
+            MissionStatus.created,
+            MissionStatus.waiting,
+            MissionStatus.paused,
+        }
+        return MissionStatistics(
+            generated_at=current_time,
+            total_missions=len(self._missions),
+            missions_by_status=missions_by_status,
+            due_missions=sum(
+                mission.status is MissionStatus.waiting
+                and mission.scheduled_at is not None
+                and mission.scheduled_at <= current_time
+                and (mission.expires_at is None or mission.expires_at > current_time)
+                and not mission.has_exhausted_attempts
+                for mission in self._missions.values()
+            ),
+            expired_pending_missions=sum(
+                mission.status in pending_statuses
+                and mission.expires_at is not None
+                and mission.expires_at <= current_time
+                for mission in self._missions.values()
+            ),
+            stale_processing_missions=sum(
+                mission.status is MissionStatus.processing
+                and mission.claimed_at is not None
+                and mission.claimed_at <= current_time - claim_timeout
+                for mission in self._missions.values()
+            ),
+            exhausted_waiting_missions=sum(
+                mission.status is MissionStatus.waiting
+                and mission.has_exhausted_attempts
+                for mission in self._missions.values()
+            ),
+            claim_timeout_seconds=int(claim_timeout.total_seconds()),
+        )
 
     async def create(self, mission: Mission) -> Mission:
         self._missions[mission.id] = mission

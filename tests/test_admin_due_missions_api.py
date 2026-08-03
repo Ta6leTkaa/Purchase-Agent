@@ -57,6 +57,64 @@ def test_process_due_returns_empty_result_without_due_missions() -> None:
     }
 
 
+def test_mission_statistics_reports_actionable_worker_backlog() -> None:
+    participant_ids = create_identities(4)
+    due = create_mission(participant_ids, scheduled_at=CURRENT_TIME)
+    exhausted = create_mission(
+        participant_ids,
+        scheduled_at=CURRENT_TIME - timedelta(minutes=2),
+    )
+    exhausted.execution_attempts = exhausted.max_execution_attempts
+    expired = create_mission(
+        participant_ids,
+        scheduled_at=CURRENT_TIME - timedelta(hours=2),
+    )
+    expired.status = MissionStatus.paused
+    expired.expires_at = CURRENT_TIME - timedelta(hours=1)
+    stale = create_mission(
+        participant_ids,
+        scheduled_at=CURRENT_TIME - timedelta(minutes=30),
+    )
+    stale.status = MissionStatus.processing
+    stale.claimed_at = CURRENT_TIME - timedelta(minutes=16)
+
+    response = TestClient(app).get(
+        "/admin/mission-statistics",
+        params={"claim_timeout_seconds": 900},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "generated_at": "2026-08-01T10:00:00Z",
+        "total_missions": 4,
+        "missions_by_status": {
+            "waiting": 2,
+            "paused": 1,
+            "processing": 1,
+        },
+        "due_missions": 1,
+        "expired_pending_missions": 1,
+        "stale_processing_missions": 1,
+        "exhausted_waiting_missions": 1,
+        "claim_timeout_seconds": 900,
+    }
+    assert due.status is MissionStatus.waiting
+
+
+@pytest.mark.parametrize("claim_timeout_seconds", [0, 86401])
+def test_mission_statistics_rejects_invalid_claim_timeout(
+    claim_timeout_seconds: int,
+) -> None:
+    response = TestClient(app).get(
+        "/admin/mission-statistics",
+        params={"claim_timeout_seconds": claim_timeout_seconds},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 422
+
+
 @pytest.mark.parametrize(
     "path",
     [
