@@ -124,6 +124,19 @@ for one Identity creation and one Mission creation. PostgreSQL persists
 receipts across API restarts; concurrent unfinished retries receive
 `409 idempotent_request_in_progress`.
 
+Completed creation receipts can be retained for a bounded period and then
+removed in batches without touching in-progress requests:
+
+```bash
+python -m app.cli prune-creation-receipts \
+  --retention-days 30 \
+  --limit 500 \
+  --dry-run
+```
+
+Remove `--dry-run` to commit the deletion. A partial PostgreSQL index covers
+only completed receipts and keeps retention scans bounded.
+
 Mission listing accepts optional `status`, `type`, and `limit` query
 parameters. `limit` defaults to `100` and is capped at `500`; the response
 remains a JSON array for compatibility. Composite indexes cover general,

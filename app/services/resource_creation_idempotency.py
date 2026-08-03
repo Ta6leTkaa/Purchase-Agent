@@ -4,12 +4,19 @@ from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ResourceCreationScope(StrEnum):
     IDENTITY = "identity"
     MISSION = "mission"
+
+
+class ResourceCreationReceiptKey(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    scope: ResourceCreationScope
+    idempotency_key: str
 
 
 class ResourceCreationConflictError(Exception):

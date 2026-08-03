@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +9,7 @@ from app.db.models.resource_creation_receipt import ResourceCreationReceiptModel
 from app.services.resource_creation_idempotency import (
     ResourceCreationConflictError,
     ResourceCreationInProgressError,
+    ResourceCreationReceiptKey,
     ResourceCreationScope,
 )
 
@@ -81,3 +83,60 @@ class SqlAlchemyResourceCreationIdempotencyStore:
                 ResourceCreationReceiptModel.resource_id.is_(None),
             )
         )
+
+    async def prune_completed_before(
+        self,
+        cutoff: datetime,
+        limit: int,
+        *,
+        dry_run: bool = False,
+    ) -> list[ResourceCreationReceiptKey]:
+        if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+            raise ValueError("cutoff must be timezone-aware")
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        candidates = (
+            select(
+                ResourceCreationReceiptModel.scope,
+                ResourceCreationReceiptModel.idempotency_key,
+            )
+            .where(
+                ResourceCreationReceiptModel.resource_id.is_not(None),
+                ResourceCreationReceiptModel.created_at < cutoff,
+            )
+            .order_by(
+                ResourceCreationReceiptModel.created_at,
+                ResourceCreationReceiptModel.scope,
+                ResourceCreationReceiptModel.idempotency_key,
+            )
+            .limit(limit)
+        )
+        if dry_run:
+            result = await self._session.execute(candidates)
+        else:
+            candidate_rows = candidates.cte("creation_receipt_prune_candidates")
+            result = await self._session.execute(
+                delete(ResourceCreationReceiptModel)
+                .where(
+                    tuple_(
+                        ResourceCreationReceiptModel.scope,
+                        ResourceCreationReceiptModel.idempotency_key,
+                    ).in_(
+                        select(
+                            candidate_rows.c.scope,
+                            candidate_rows.c.idempotency_key,
+                        )
+                    )
+                )
+                .returning(
+                    ResourceCreationReceiptModel.scope,
+                    ResourceCreationReceiptModel.idempotency_key,
+                )
+            )
+        return [
+            ResourceCreationReceiptKey(
+                scope=ResourceCreationScope(scope),
+                idempotency_key=idempotency_key,
+            )
+            for scope, idempotency_key in result.all()
+        ]

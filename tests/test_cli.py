@@ -102,6 +102,42 @@ def test_prune_notifications_command_passes_retention_and_limit(
     assert calls == [(timedelta(days=45), 250, True)]
 
 
+def test_prune_creation_receipts_passes_retention_and_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[timedelta, int, bool]] = []
+
+    async def fake_prune_creation_receipts_command(
+        retention: timedelta,
+        limit: int,
+        *,
+        dry_run: bool = False,
+    ) -> int:
+        calls.append((retention, limit, dry_run))
+        return 0
+
+    monkeypatch.setattr(
+        cli,
+        "prune_creation_receipts_command",
+        fake_prune_creation_receipts_command,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(
+            [
+                "prune-creation-receipts",
+                "--retention-days",
+                "60",
+                "--limit",
+                "200",
+                "--dry-run",
+            ]
+        )
+
+    assert exc_info.value.code == 0
+    assert calls == [(timedelta(days=60), 200, True)]
+
+
 @pytest.mark.parametrize("retention_days", ["0", "3651", "invalid"])
 def test_prune_notifications_rejects_invalid_retention(
     retention_days: str,

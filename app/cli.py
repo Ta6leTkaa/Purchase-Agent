@@ -23,6 +23,9 @@ from app.repositories.sqlalchemy.mission import SqlAlchemyMissionRepository
 from app.repositories.sqlalchemy.notification_outbox import (
     SqlAlchemyNotificationOutboxRepository,
 )
+from app.repositories.sqlalchemy.resource_creation_idempotency import (
+    SqlAlchemyResourceCreationIdempotencyStore,
+)
 from app.services.clock import utc_now
 from app.services.due_mission_processor import (
     DueMissionProcessingResult,
@@ -52,6 +55,7 @@ from app.services.provider_history_rebuild import (
     RebuildProviderHistoryProjection,
 )
 from app.services.provider_resolver import ProviderResolver
+from app.services.resource_creation_idempotency import ResourceCreationReceiptKey
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,9 @@ class CliDependencies:
     notification_maintenance_repository_factory: Callable[
         [AsyncSession], SqlAlchemyNotificationOutboxRepository
     ] = SqlAlchemyNotificationOutboxRepository
+    creation_receipt_maintenance_factory: Callable[
+        [AsyncSession], SqlAlchemyResourceCreationIdempotencyStore
+    ] = SqlAlchemyResourceCreationIdempotencyStore
     provider_resolver: ProviderResolver = ProviderResolver(provider_registry)
     clock: Callable[[], datetime] = utc_now
 
@@ -84,6 +91,14 @@ class NotificationPruneResult(BaseModel):
     matched_count: int
     deleted_count: int
     message_ids: list[UUID]
+
+
+class CreationReceiptPruneResult(BaseModel):
+    cutoff: datetime
+    dry_run: bool
+    matched_count: int
+    deleted_count: int
+    receipts: list[ResourceCreationReceiptKey]
 
 
 def get_cli_dependencies() -> CliDependencies:
@@ -308,6 +323,45 @@ async def prune_notifications_command(
     return 0
 
 
+async def prune_creation_receipts_command(
+    retention: timedelta,
+    limit: int,
+    *,
+    dry_run: bool = False,
+    dependencies: CliDependencies | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    if retention <= timedelta(0):
+        raise ValueError("retention must be greater than zero")
+    resolved = dependencies or get_cli_dependencies()
+    output = stdout or sys.stdout
+    error_output = stderr or sys.stderr
+    cutoff = resolved.clock() - retention
+    try:
+        async with resolved.session_maker() as session:
+            receipts = await resolved.creation_receipt_maintenance_factory(
+                session
+            ).prune_completed_before(cutoff, limit, dry_run=dry_run)
+            if not dry_run:
+                await session.commit()
+    except Exception:
+        error_output.write("Infrastructure error while pruning creation receipts.\n")
+        return 1
+    output.write(
+        CreationReceiptPruneResult(
+            cutoff=cutoff,
+            dry_run=dry_run,
+            matched_count=len(receipts),
+            deleted_count=0 if dry_run else len(receipts),
+            receipts=receipts,
+        ).model_dump_json()
+        + "\n"
+    )
+    output.flush()
+    return 0
+
+
 async def worker_command(
     poll_interval: timedelta,
     limit: int,
@@ -404,6 +458,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(
             asyncio.run(
                 prune_notifications_command(
+                    timedelta(days=args.retention_days),
+                    args.limit,
+                    dry_run=args.dry_run,
+                )
+            )
+        )
+    if args.command == "prune-creation-receipts":
+        raise SystemExit(
+            asyncio.run(
+                prune_creation_receipts_command(
                     timedelta(days=args.retention_days),
                     args.limit,
                     dry_run=args.dry_run,
@@ -644,6 +708,27 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="List matching records without locking or deleting them.",
+    )
+    prune_creation_receipts_parser = subparsers.add_parser(
+        "prune-creation-receipts",
+        help="Delete an oldest batch of completed creation receipts.",
+    )
+    prune_creation_receipts_parser.add_argument(
+        "--retention-days",
+        type=_parse_retention_days,
+        default=30,
+        help="Delete completed receipts older than this many days, from 1 to 3650.",
+    )
+    prune_creation_receipts_parser.add_argument(
+        "--limit",
+        type=_parse_limit,
+        default=500,
+        help="Maximum number of completed receipts to delete, from 1 to 500.",
+    )
+    prune_creation_receipts_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List matching receipts without deleting them.",
     )
     subparsers.add_parser(
         "rebuild-mission-events",
