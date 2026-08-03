@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.schema import EXPECTED_SCHEMA_REVISION
 from app.dependencies import get_storage_session
 
 router = APIRouter()
@@ -25,10 +26,27 @@ async def readiness_check(
     if session is None:
         return {"status": "ready", "storage_backend": "memory"}
     try:
-        await session.execute(text("SELECT 1"))
+        result = await session.execute(
+            text("SELECT version_num FROM alembic_version")
+        )
+        current_revisions = sorted(result.scalars().all())
     except Exception as exc:
         raise HTTPException(
             status_code=503,
             detail="Database is not ready",
         ) from exc
-    return {"status": "ready", "storage_backend": "database"}
+    if current_revisions != [EXPECTED_SCHEMA_REVISION]:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "database_schema_not_ready",
+                "message": "Database schema revision does not match the API.",
+                "expected_revision": EXPECTED_SCHEMA_REVISION,
+                "current_revisions": current_revisions,
+            },
+        )
+    return {
+        "status": "ready",
+        "storage_backend": "database",
+        "schema_revision": EXPECTED_SCHEMA_REVISION,
+    }

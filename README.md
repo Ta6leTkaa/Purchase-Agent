@@ -17,7 +17,9 @@ docker compose up --build
 Compose starts PostgreSQL, runs `alembic upgrade head` once, and only then
 starts the API at `http://localhost:8000`. `GET /health` is a liveness check;
 `GET /ready` also verifies the configured storage and is used by Compose before
-traffic is considered safe. Scheduled execution and notification delivery remain opt-in:
+traffic is considered safe. Database readiness includes an exact Alembic head
+check, so an instance with missing, outdated, or split schema revisions does
+not receive traffic. Scheduled execution and notification delivery remain opt-in:
 
 ```bash
 docker compose --profile worker --profile notifications up --build
