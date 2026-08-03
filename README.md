@@ -30,6 +30,12 @@ key in the `X-API-Key` header. Liveness and readiness probes remain public.
 Local development without `API_KEY` preserves unauthenticated access. Admin
 endpoints use the separate `X-Admin-API-Key` header.
 
+Browser clients on another origin require an explicit JSON allowlist, for
+example `CORS_ALLOWED_ORIGINS=["http://localhost:3000"]`. Wildcards,
+credentials, paths, and insecure non-local origins are rejected. Preflight
+requests allow the API key, admin key, idempotency, concurrency, and request-ID
+headers; browser code may read `ETag` and `X-Request-ID` response headers.
+
 Every HTTP response includes an `X-Request-ID`. A caller-provided identifier is
 preserved when it contains only safe correlation characters and is at most 128
 characters; otherwise the API generates a UUID. Each request produces a JSON

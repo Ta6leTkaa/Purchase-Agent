@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     )
     api_key: SecretStr | None = None
     admin_api_key: SecretStr | None = None
+    cors_allowed_origins: list[str] = Field(default_factory=list)
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
     worker_claim_timeout_seconds: int = Field(default=900, ge=1, le=86400)
@@ -65,6 +66,37 @@ class Settings(BaseSettings):
         gt=0,
         le=120,
     )
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def validate_cors_allowed_origins(cls, values: list[str]) -> list[str]:
+        normalized_origins: list[str] = []
+        for value in values:
+            normalized = value.strip().rstrip("/")
+            if not normalized or normalized == "*":
+                raise ValueError("cors_allowed_origins must not contain wildcards")
+            parsed = TypeAdapter(AnyHttpUrl).validate_python(normalized)
+            if (
+                parsed.path not in {None, "", "/"}
+                or parsed.query is not None
+                or parsed.fragment is not None
+                or parsed.username is not None
+                or parsed.password is not None
+            ):
+                raise ValueError("CORS origins must not contain paths or credentials")
+            if parsed.scheme != "https" and parsed.host not in {
+                "localhost",
+                "127.0.0.1",
+                "::1",
+                "[::1]",
+            }:
+                raise ValueError(
+                    "CORS origins must use HTTPS for non-local hosts"
+                )
+            if normalized in normalized_origins:
+                raise ValueError("cors_allowed_origins must not contain duplicates")
+            normalized_origins.append(normalized)
+        return normalized_origins
 
     @field_validator("notification_webhook_url", mode="before")
     @classmethod
