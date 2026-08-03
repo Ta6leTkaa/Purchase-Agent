@@ -28,6 +28,12 @@ key in the `X-API-Key` header. Liveness and readiness probes remain public.
 Local development without `API_KEY` preserves unauthenticated access. Admin
 endpoints use the separate `X-Admin-API-Key` header.
 
+Every HTTP response includes an `X-Request-ID`. A caller-provided identifier is
+preserved when it contains only safe correlation characters and is at most 128
+characters; otherwise the API generates a UUID. Each request produces a JSON
+log record with this identifier, method, path, status, and duration. Headers,
+query strings, API keys, and request bodies are deliberately excluded.
+
 ## Continuous integration
 
 The repository includes a GitHub Actions workflow in
