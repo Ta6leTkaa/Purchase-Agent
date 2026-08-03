@@ -53,6 +53,12 @@ execution. Set `MAX_REQUEST_BODY_BYTES` to a value from 1024 bytes through
 `Content-Length` and incrementally received bodies are enforced; oversized
 requests return `413 request_body_too_large` with the configured byte limit.
 
+Every HTTP request also has a 60-second processing deadline, configurable with
+`REQUEST_TIMEOUT_SECONDS` from above 30 seconds through 15 minutes. The lower
+bound leaves room for the API's supported 30-second long polls. A deadline
+cancels in-flight application work so dependency cleanup and database rollback
+can run, then returns `504 request_timeout` if the response has not started.
+
 Every HTTP response includes an `X-Request-ID`. A caller-provided identifier is
 preserved when it contains only safe correlation characters and is at most 128
 characters; otherwise the API generates a UUID. Each request produces a JSON

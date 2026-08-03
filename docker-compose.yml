@@ -43,6 +43,7 @@ services:
       APP_DEBUG: ${APP_DEBUG:-false}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-[]}
       MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1048576}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-60}
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -34,6 +34,7 @@ class Settings(BaseSettings):
         ge=1_024,
         le=100 * 1_048_576,
     )
+    request_timeout_seconds: float = Field(default=60.0, gt=30, le=900)
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
     worker_claim_timeout_seconds: int = Field(default=900, ge=1, le=86400)

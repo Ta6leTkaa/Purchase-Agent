@@ -6,6 +6,7 @@ from app.api.exception_handlers import (
 )
 from app.api.middleware.request_body_limit import RequestBodyLimitMiddleware
 from app.api.middleware.request_context import request_context_middleware
+from app.api.middleware.request_timeout import RequestTimeoutMiddleware
 from app.api.routes.admin import router as admin_router
 from app.api.routes.health import router as health_router
 from app.api.routes.identities import router as identities_router
@@ -19,6 +20,10 @@ def create_app(config: Settings = settings) -> FastAPI:
     application.add_middleware(
         RequestBodyLimitMiddleware,
         max_body_bytes=config.max_request_body_bytes,
+    )
+    application.add_middleware(
+        RequestTimeoutMiddleware,
+        timeout_seconds=config.request_timeout_seconds,
     )
     application.add_middleware(
         CORSMiddleware,
