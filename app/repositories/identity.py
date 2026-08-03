@@ -45,6 +45,9 @@ class IdentityRepository(Protocol):
     ) -> Identity | None:
         ...
 
+    async def update(self, identity: Identity) -> Identity | None:
+        ...
+
     async def delete(self, identity_id: UUID) -> bool:
         ...
 

@@ -9,7 +9,11 @@ from app.dependencies import get_identity_repository, get_mission_repository
 from app.domain.identity import Identity, IdentitySummary
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
-from app.schemas.identity import IdentityCreate, IdentityPreferencesUpdate
+from app.schemas.identity import (
+    IdentityCreate,
+    IdentityPreferencesUpdate,
+    IdentityUpdate,
+)
 from app.services.identity_pagination import (
     IdentityCursor,
     IdentityCursorCodec,
@@ -135,6 +139,21 @@ async def update_identity_preferences(
     if identity is None:
         raise HTTPException(status_code=404, detail="Identity not found")
     return identity
+
+
+@router.patch("/{identity_id}")
+async def update_identity(
+    identity_id: UUID,
+    request: IdentityUpdate,
+    repository: IdentityRepositoryDep,
+) -> Identity:
+    identity = await repository.get(identity_id)
+    if identity is None:
+        raise HTTPException(status_code=404, detail="Identity not found")
+    updated = await repository.update(request.apply(identity))
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Identity not found")
+    return updated
 
 
 @router.delete("/{identity_id}", status_code=204)

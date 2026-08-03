@@ -235,6 +235,88 @@ def test_put_identity_preferences_updates_notification_settings() -> None:
     assert notifications["external_recipient_id"] == "chat:12345"
 
 
+def test_patch_identity_updates_profile_and_preserves_preferences() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/identities",
+        json=make_identity_payload(),
+    ).json()
+
+    response = client.patch(
+        f"/identities/{created['id']}",
+        json={
+            "display_name": "  Anna Sidorova  ",
+            "first_name": "Anna",
+            "last_name": "Sidorova",
+            "documents": [
+                {
+                    "type": "international_passport",
+                    "number": "  987654321  ",
+                    "expires_at": "2035-01-01",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["display_name"] == "Anna Sidorova"
+    assert updated["birth_date"] == created["birth_date"]
+    assert updated["preferences"] == created["preferences"]
+    assert updated["documents"][0]["number"] == "987654321"
+    assert updated["documents"][0]["id"] != created["documents"][0]["id"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"display_name": "   "},
+        {"first_name": None},
+        {"documents": None},
+        {"unknown": "value"},
+    ],
+)
+def test_patch_identity_rejects_invalid_changes(
+    payload: dict[str, object],
+) -> None:
+    client = TestClient(app)
+    identity_id = client.post(
+        "/identities",
+        json=make_identity_payload(),
+    ).json()["id"]
+
+    response = client.patch(f"/identities/{identity_id}", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_patch_unknown_identity_returns_404() -> None:
+    response = TestClient(app).patch(
+        f"/identities/{uuid4()}",
+        json={"display_name": "Unknown"},
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("display_name", "   "),
+        ("first_name", ""),
+        ("last_name", "   "),
+    ],
+)
+def test_create_identity_rejects_blank_names(field: str, value: str) -> None:
+    response = TestClient(app).post(
+        "/identities",
+        json={**make_identity_payload(), field: value},
+    )
+
+    assert response.status_code == 422
+
+
 def test_delete_identity_removes_unreferenced_identity() -> None:
     client = TestClient(app)
     identity_id = client.post(

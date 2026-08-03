@@ -59,6 +59,7 @@ The backend includes initial Pydantic domain models for:
 - `GET /identities/summaries` lists only identity ids and display names
 - `GET /identities/summaries/page` pages through identity summaries
 - `GET /identities/{identity_id}` returns one identity or `404`
+- `PATCH /identities/{identity_id}` updates profile fields and documents
 - `PUT /identities/{identity_id}/preferences` replaces train and notification preferences
 - `DELETE /identities/{identity_id}` removes an unused identity and its documents
 
@@ -68,6 +69,10 @@ response remains a JSON array. The summary endpoint accepts the same filters
 without loading documents, birth dates, or preferences.
 An identity referenced by a Mission cannot be deleted: the API returns
 `409 identity_in_use` and keeps the participant record intact.
+Profile updates are partial: omitted fields stay unchanged, while a supplied
+`documents` array replaces the complete document collection with newly
+generated document ids. Empty updates, nulls, blank names, and unknown fields
+are rejected.
 The paged endpoint returns `items`, `has_more`, and an opaque `next_cursor`.
 Pass the cursor unchanged with the same `q` filter to continue the stable,
 exclusive traversal.

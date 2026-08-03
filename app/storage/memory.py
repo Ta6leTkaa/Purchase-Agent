@@ -73,6 +73,12 @@ class InMemoryIdentityRepository:
         identity.preferences = preferences
         return identity
 
+    async def update(self, identity: Identity) -> Identity | None:
+        if identity.id not in self._identities:
+            return None
+        self._identities[identity.id] = identity
+        return identity
+
     async def delete(self, identity_id: UUID) -> bool:
         return self._identities.pop(identity_id, None) is not None
 

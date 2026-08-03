@@ -143,6 +143,31 @@ class SqlAlchemyIdentityRepository(IdentityRepository):
         await self._session.flush()
         return identity_from_model(model)
 
+    async def update(self, identity: Identity) -> Identity | None:
+        result = await self._session.execute(
+            select(IdentityModel)
+            .where(IdentityModel.id == identity.id)
+            .options(selectinload(IdentityModel.documents))
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            return None
+        model.display_name = identity.display_name
+        model.first_name = identity.first_name
+        model.last_name = identity.last_name
+        model.birth_date = identity.birth_date
+        model.documents = [
+            DocumentModel(
+                id=document.id,
+                type=document.type.value,
+                number=document.number,
+                expires_at=document.expires_at,
+            )
+            for document in identity.documents
+        ]
+        await self._session.flush()
+        return identity_from_model(model)
+
     async def delete(self, identity_id: UUID) -> bool:
         await self._session.execute(
             delete(DocumentModel).where(

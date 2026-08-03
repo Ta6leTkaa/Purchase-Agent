@@ -151,6 +151,36 @@ async def test_delete_removes_identity_and_documents(
     assert await repository.delete(identity.id) is False
 
 
+async def test_update_replaces_profile_fields_and_documents(
+    test_session: AsyncSession,
+) -> None:
+    repository = SqlAlchemyIdentityRepository(test_session)
+    identity = make_identity()
+    await repository.create(identity)
+    replacement_document = Document(
+        id=uuid4(),
+        type=DocumentType.international_passport,
+        number="987654321",
+        expires_at=date(2035, 1, 1),
+    )
+    changed = identity.model_copy(
+        update={
+            "display_name": "Anna Sidorova",
+            "first_name": "Anna",
+            "last_name": "Sidorova",
+            "documents": [replacement_document],
+        }
+    )
+
+    updated = await repository.update(changed)
+    loaded = await repository.get(identity.id)
+
+    assert updated == changed
+    assert loaded == changed
+    assert loaded is not None
+    assert loaded.preferences == identity.preferences
+
+
 async def test_data_is_available_in_new_session_after_external_commit(
     test_engine: AsyncEngine,
     clean_database: None,
