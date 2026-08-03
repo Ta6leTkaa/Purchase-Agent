@@ -5,15 +5,17 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.dependencies import identity_repository
+from app.dependencies import identity_repository, resource_creation_idempotency_store
 from app.main import app
 
 
 @pytest.fixture(autouse=True)
 def clear_repository() -> Iterator[None]:
     asyncio.run(identity_repository.clear())
+    asyncio.run(resource_creation_idempotency_store.clear())
     yield
     asyncio.run(identity_repository.clear())
+    asyncio.run(resource_creation_idempotency_store.clear())
 
 
 def make_identity_payload() -> dict[str, object]:
@@ -62,6 +64,35 @@ def test_post_identities_with_id_returns_422() -> None:
     response = client.post("/identities", json=payload)
 
     assert response.status_code == 422
+
+
+def test_post_identities_replays_same_idempotent_creation() -> None:
+    client = TestClient(app)
+    headers = {"Idempotency-Key": "create-identity-once"}
+
+    first = client.post("/identities", json=make_identity_payload(), headers=headers)
+    replay = client.post("/identities", json=make_identity_payload(), headers=headers)
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    assert replay.headers["etag"] == first.headers["etag"]
+    assert len(client.get("/identities").json()) == 1
+
+
+def test_post_identities_rejects_idempotency_key_payload_conflict() -> None:
+    client = TestClient(app)
+    headers = {"Idempotency-Key": "conflicting-identity-create"}
+    client.post("/identities", json=make_identity_payload(), headers=headers)
+
+    response = client.post(
+        "/identities",
+        json={**make_identity_payload(), "display_name": "Another Person"},
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "idempotency_key_conflict"
 
 
 def test_get_identities_returns_created_identity() -> None:

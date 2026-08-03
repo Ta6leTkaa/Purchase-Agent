@@ -10,6 +10,7 @@ from app.dependencies import (
     identity_repository,
     mission_command_idempotency_store,
     mission_repository,
+    resource_creation_idempotency_store,
 )
 from app.main import app
 
@@ -19,10 +20,12 @@ def clear_repositories() -> Iterator[None]:
     asyncio.run(identity_repository.clear())
     asyncio.run(mission_repository.clear())
     asyncio.run(mission_command_idempotency_store.clear())
+    asyncio.run(resource_creation_idempotency_store.clear())
     yield
     asyncio.run(identity_repository.clear())
     asyncio.run(mission_repository.clear())
     asyncio.run(mission_command_idempotency_store.clear())
+    asyncio.run(resource_creation_idempotency_store.clear())
 
 
 def make_mission_payload(
@@ -76,6 +79,41 @@ def test_post_missions_creates_mission() -> None:
     assert response.status_code == 200
     assert response.json()["id"] is not None
     assert response.json()["status"] == "created"
+
+
+def test_post_missions_replays_same_idempotent_creation() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+    headers = {"Idempotency-Key": "create-mission-once"}
+
+    first = client.post("/missions", json=payload, headers=headers)
+    replay = client.post("/missions", json=payload, headers=headers)
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    assert replay.headers["etag"] == first.headers["etag"]
+    assert len(client.get("/missions").json()) == 1
+
+
+def test_post_missions_rejects_idempotency_key_payload_conflict() -> None:
+    client = TestClient(app)
+    payload = make_mission_payload(
+        participant_ids=make_existing_participant_ids(client)
+    )
+    headers = {"Idempotency-Key": "conflicting-mission-create"}
+    client.post("/missions", json=payload, headers=headers)
+
+    response = client.post(
+        "/missions",
+        json={**payload, "title": "Another trip"},
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "idempotency_key_conflict"
 
 
 def test_post_missions_without_id_generates_uuid() -> None:

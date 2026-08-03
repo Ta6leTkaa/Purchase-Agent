@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from app.api.dependencies.auth import require_api_key
-from app.dependencies import get_identity_repository, get_mission_repository
+from app.dependencies import (
+    get_identity_repository,
+    get_mission_repository,
+    get_resource_creation_idempotency_store,
+)
 from app.domain.identity import Identity, IdentitySummary
 from app.repositories.identity import (
     IdentityRepository,
@@ -21,6 +25,13 @@ from app.services.identity_pagination import (
     IdentityCursor,
     IdentityCursorCodec,
     InvalidIdentityCursorError,
+)
+from app.services.resource_creation_idempotency import (
+    ResourceCreationConflictError,
+    ResourceCreationIdempotencyStore,
+    ResourceCreationInProgressError,
+    ResourceCreationScope,
+    creation_fingerprint,
 )
 
 
@@ -43,15 +54,63 @@ type MissionRepositoryDep = Annotated[
     MissionRepository,
     Depends(get_mission_repository),
 ]
+type ResourceCreationIdempotencyStoreDep = Annotated[
+    ResourceCreationIdempotencyStore,
+    Depends(get_resource_creation_idempotency_store),
+]
 
 
 @router.post("")
 async def create_identity(
     identity: IdentityCreate,
     repository: IdentityRepositoryDep,
+    idempotency_store: ResourceCreationIdempotencyStoreDep,
     response: Response,
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", min_length=1, max_length=255),
+    ] = None,
 ) -> Identity:
-    created = await repository.create(identity.to_domain())
+    if idempotency_key is None:
+        created = await repository.create(identity.to_domain())
+        _set_identity_etag(response, created)
+        return created
+    fingerprint = creation_fingerprint(identity)
+    try:
+        previous_id = await idempotency_store.begin(
+            scope=ResourceCreationScope.IDENTITY,
+            key=idempotency_key,
+            fingerprint=fingerprint,
+        )
+        if previous_id is not None:
+            previous = await repository.get(previous_id)
+            if previous is None:
+                raise HTTPException(
+                    status_code=410,
+                    detail={
+                        "code": "idempotent_resource_gone",
+                        "message": "The previously created Identity was deleted.",
+                    },
+                )
+            _set_identity_etag(response, previous)
+            return previous
+        created = await repository.create(identity.to_domain())
+        await idempotency_store.complete(
+            scope=ResourceCreationScope.IDENTITY,
+            key=idempotency_key,
+            resource_id=created.id,
+        )
+    except ResourceCreationConflictError as exc:
+        raise _creation_conflict() from exc
+    except ResourceCreationInProgressError as exc:
+        raise _creation_in_progress() from exc
+    except BaseException:
+        await idempotency_store.abort(
+            scope=ResourceCreationScope.IDENTITY,
+            key=idempotency_key,
+            fingerprint=fingerprint,
+        )
+        raise
     _set_identity_etag(response, created)
     return created
 
@@ -260,3 +319,23 @@ def _identity_version_conflict() -> HTTPException:
 
 def _set_identity_etag(response: Response, identity: Identity) -> None:
     response.headers["ETag"] = f'"{identity.version}"'
+
+
+def _creation_conflict() -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "idempotency_key_conflict",
+            "message": "Idempotency-Key was already used with another request.",
+        },
+    )
+
+
+def _creation_in_progress() -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "idempotent_request_in_progress",
+            "message": "A request with this Idempotency-Key is in progress.",
+        },
+    )

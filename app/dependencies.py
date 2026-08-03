@@ -22,6 +22,9 @@ from app.repositories.sqlalchemy.mission_event import (
 from app.repositories.sqlalchemy.provider_history import (
     SqlAlchemyProviderHistoryProjectionRepository,
 )
+from app.repositories.sqlalchemy.resource_creation_idempotency import (
+    SqlAlchemyResourceCreationIdempotencyStore,
+)
 from app.services.clock import utc_now
 from app.services.mission_event_history import (
     AsyncWaiter as MissionEventAsyncWaiter,
@@ -54,6 +57,9 @@ from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionReposi
 from app.storage.mission_command_idempotency import (
     InMemoryMissionCommandIdempotencyStore,
 )
+from app.storage.resource_creation_idempotency import (
+    InMemoryResourceCreationIdempotencyStore,
+)
 
 identity_repository = InMemoryIdentityRepository()
 mission_repository = InMemoryMissionRepository()
@@ -61,6 +67,7 @@ provider_resolver = ProviderResolver(provider_registry)
 provider_history_waiter = AsyncioWaiter()
 mission_event_history_waiter = AsyncioWaiter()
 mission_command_idempotency_store = InMemoryMissionCommandIdempotencyStore()
+resource_creation_idempotency_store = InMemoryResourceCreationIdempotencyStore()
 
 
 async def get_storage_session() -> AsyncIterator[AsyncSession | None]:
@@ -149,6 +156,13 @@ def get_mission_command_idempotency_store(session: StorageSessionDep) -> object:
         assert session is not None
         return SqlAlchemyMissionCommandIdempotencyStore(session)
     return mission_command_idempotency_store
+
+
+def get_resource_creation_idempotency_store(session: StorageSessionDep) -> object:
+    if settings.storage_backend == "database":
+        assert session is not None
+        return SqlAlchemyResourceCreationIdempotencyStore(session)
+    return resource_creation_idempotency_store
 
 
 def get_mission_read_repository_factory() -> MissionReadRepositoryFactory:

@@ -18,6 +18,7 @@ from app.dependencies import (
     get_mission_repository,
     get_provider_registry,
     get_provider_resolver,
+    get_resource_creation_idempotency_store,
     get_set_mission_provider,
     get_wait_for_mission_event_history,
 )
@@ -112,6 +113,13 @@ from app.services.provider_resolution_preview import (
     PreviewMissionProviderResolution,
 )
 from app.services.provider_resolver import ProviderResolver
+from app.services.resource_creation_idempotency import (
+    ResourceCreationConflictError,
+    ResourceCreationIdempotencyStore,
+    ResourceCreationInProgressError,
+    ResourceCreationScope,
+    creation_fingerprint,
+)
 
 
 class MissionSummaryPage(BaseModel):
@@ -160,6 +168,10 @@ type MissionCommandIdempotencyStoreDep = Annotated[
     MissionCommandIdempotencyStore,
     Depends(get_mission_command_idempotency_store),
 ]
+type ResourceCreationIdempotencyStoreDep = Annotated[
+    ResourceCreationIdempotencyStore,
+    Depends(get_resource_creation_idempotency_store),
+]
 type MissionEventProjectionReaderDep = Annotated[
     SqlAlchemyMissionEventProjectionRepository | None,
     Depends(get_mission_event_projection_reader),
@@ -175,7 +187,12 @@ async def create_mission(
     mission: MissionCreate,
     mission_repository: MissionRepositoryDep,
     identity_repository: IdentityRepositoryDep,
+    idempotency_store: ResourceCreationIdempotencyStoreDep,
     response: Response,
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", min_length=1, max_length=255),
+    ] = None,
 ) -> Mission:
     unknown_participant_ids: list[str] = []
     for participant_id in mission.participant_ids:
@@ -193,7 +210,53 @@ async def create_mission(
             },
         )
 
-    created = await mission_repository.create(mission.to_domain())
+    if idempotency_key is None:
+        created = await mission_repository.create(mission.to_domain())
+        _set_mission_etag(response, created)
+        return created
+    fingerprint = creation_fingerprint(mission)
+    try:
+        previous_id = await idempotency_store.begin(
+            scope=ResourceCreationScope.MISSION,
+            key=idempotency_key,
+            fingerprint=fingerprint,
+        )
+        if previous_id is not None:
+            previous = await mission_repository.get(previous_id)
+            assert previous is not None
+            _set_mission_etag(response, previous)
+            return previous
+        created = await mission_repository.create(mission.to_domain())
+        await idempotency_store.complete(
+            scope=ResourceCreationScope.MISSION,
+            key=idempotency_key,
+            resource_id=created.id,
+        )
+    except ResourceCreationConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_key_conflict",
+                "message": (
+                    "Idempotency-Key was already used with another request."
+                ),
+            },
+        ) from exc
+    except ResourceCreationInProgressError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotent_request_in_progress",
+                "message": "A request with this Idempotency-Key is in progress.",
+            },
+        ) from exc
+    except BaseException:
+        await idempotency_store.abort(
+            scope=ResourceCreationScope.MISSION,
+            key=idempotency_key,
+            fingerprint=fingerprint,
+        )
+        raise
     _set_mission_etag(response, created)
     return created
 

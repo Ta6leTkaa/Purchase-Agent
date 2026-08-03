@@ -5,6 +5,7 @@ from app.db.models.mission_event import MissionEventModel
 from app.db.models.mission_execution_attempt import MissionExecutionAttemptModel
 from app.db.models.notification_outbox import NotificationOutboxMessageModel
 from app.db.models.provider_history import MissionProviderHistoryEventModel
+from app.db.models.resource_creation_receipt import ResourceCreationReceiptModel
 
 __all__ = [
     "DocumentModel",
@@ -15,4 +16,5 @@ __all__ = [
     "MissionEventModel",
     "NotificationOutboxMessageModel",
     "MissionProviderHistoryEventModel",
+    "ResourceCreationReceiptModel",
 ]

@@ -65,6 +65,11 @@ The backend includes initial Pydantic domain models for:
 - `PUT /identities/{identity_id}/preferences` replaces train and notification preferences
 - `DELETE /identities/{identity_id}` removes an unused identity and its documents
 
+Creation accepts an optional `Idempotency-Key` header (1–255 characters).
+Repeating the same validated payload under that key returns the original
+Identity without creating another record. Reusing it with a different payload
+returns `409 idempotency_key_conflict`.
+
 Identity listing accepts `q` for case-insensitive display/first/last-name
 search and `limit` from 1 to 500. It never searches document numbers; the
 response remains a JSON array. The summary endpoint accepts the same filters
@@ -112,6 +117,12 @@ curl -X POST http://127.0.0.1:8000/identities \
 - `PATCH /missions/{mission_id}` changes safe planning fields
 - `POST /missions/{mission_id}/pause` pauses an unstarted mission
 - `POST /missions/{mission_id}/resume` resumes a paused mission
+
+Mission creation supports the same optional `Idempotency-Key` contract. Keys
+are scoped by resource type, so a client may use the same value independently
+for one Identity creation and one Mission creation. PostgreSQL persists
+receipts across API restarts; concurrent unfinished retries receive
+`409 idempotent_request_in_progress`.
 
 Mission listing accepts optional `status`, `type`, and `limit` query
 parameters. `limit` defaults to `100` and is capped at `500`; the response
