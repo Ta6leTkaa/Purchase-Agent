@@ -17,7 +17,8 @@ def test_configured_browser_origin_can_preflight_protected_request() -> None:
             "Origin": "http://localhost:3000",
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": (
-                "content-type,idempotency-key,if-match,x-api-key,x-request-id"
+                "content-type,idempotency-key,if-match,if-none-match,"
+                "x-api-key,x-request-id"
             ),
         },
     )
@@ -28,6 +29,9 @@ def test_configured_browser_origin_can_preflight_protected_request() -> None:
     )
     assert "POST" in response.headers["access-control-allow-methods"]
     assert "x-api-key" in response.headers["access-control-allow-headers"].lower()
+    assert "if-none-match" in (
+        response.headers["access-control-allow-headers"].lower()
+    )
     assert "access-control-allow-credentials" not in response.headers
 
 

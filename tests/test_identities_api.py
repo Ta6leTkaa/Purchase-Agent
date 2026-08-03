@@ -234,6 +234,38 @@ def test_get_identity_by_id_returns_created_identity() -> None:
     assert response.json()["id"] == identity_id
 
 
+def test_get_identity_returns_not_modified_for_current_etag() -> None:
+    client = TestClient(app)
+    created = client.post("/identities", json=make_identity_payload())
+    identity_id = created.json()["id"]
+
+    response = client.get(
+        f"/identities/{identity_id}",
+        headers={"If-None-Match": created.headers["etag"]},
+    )
+
+    assert response.status_code == 304
+    assert response.content == b""
+    assert response.headers["etag"] == created.headers["etag"]
+    assert response.headers["cache-control"] == "private, no-cache"
+
+
+def test_get_identity_returns_payload_for_stale_etag() -> None:
+    client = TestClient(app)
+    created = client.post("/identities", json=make_identity_payload())
+    identity_id = created.json()["id"]
+
+    response = client.get(
+        f"/identities/{identity_id}",
+        headers={"If-None-Match": '"999"'},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == identity_id
+    assert response.headers["etag"] == created.headers["etag"]
+    assert response.headers["cache-control"] == "private, no-cache"
+
+
 def test_get_unknown_identity_returns_404() -> None:
     client = TestClient(app)
 

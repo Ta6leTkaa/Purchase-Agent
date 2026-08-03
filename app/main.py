@@ -24,6 +24,7 @@ def create_app(config: Settings = settings) -> FastAPI:
             "Content-Type",
             "Idempotency-Key",
             "If-Match",
+            "If-None-Match",
             "X-Admin-API-Key",
             "X-API-Key",
             "X-Request-ID",

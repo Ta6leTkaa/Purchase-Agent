@@ -734,6 +734,53 @@ def test_get_mission_by_id_returns_created_mission() -> None:
     assert response.json()["id"] == mission_id
 
 
+def test_get_mission_returns_not_modified_for_current_etag() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+    mission_id = created.json()["id"]
+
+    response = client.get(
+        f"/missions/{mission_id}",
+        headers={"If-None-Match": f'W/"unrelated", {created.headers["etag"]}'},
+    )
+
+    assert response.status_code == 304
+    assert response.content == b""
+    assert response.headers["etag"] == created.headers["etag"]
+    assert response.headers["cache-control"] == "private, no-cache"
+
+
+def test_get_existing_mission_accepts_if_none_match_wildcard() -> None:
+    client = TestClient(app)
+    created = client.post(
+        "/missions",
+        json=make_mission_payload(
+            participant_ids=make_existing_participant_ids(client)
+        ),
+    )
+
+    response = client.get(
+        f"/missions/{created.json()['id']}",
+        headers={"If-None-Match": "*"},
+    )
+
+    assert response.status_code == 304
+
+
+def test_get_unknown_mission_ignores_if_none_match_wildcard() -> None:
+    response = TestClient(app).get(
+        f"/missions/{uuid4()}",
+        headers={"If-None-Match": "*"},
+    )
+
+    assert response.status_code == 404
+
+
 def test_get_unknown_mission_returns_404() -> None:
     client = TestClient(app)
 

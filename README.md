@@ -36,6 +36,13 @@ credentials, paths, and insecure non-local origins are rejected. Preflight
 requests allow the API key, admin key, idempotency, concurrency, and request-ID
 headers; browser code may read `ETag` and `X-Request-ID` response headers.
 
+Individual Identity and Mission reads support `If-None-Match`. Send the ETag
+from the previous response to receive `304 Not Modified` without another JSON
+payload when the resource version has not changed. Weak tags, tag lists, and
+the wildcard form follow HTTP cache-validation semantics. Detail responses use
+`Cache-Control: private, no-cache` so shared caches do not retain participant
+or mission data and browsers revalidate before reuse.
+
 Every HTTP response includes an `X-Request-ID`. A caller-provided identifier is
 preserved when it contains only safe correlation characters and is at most 128
 characters; otherwise the API generates a UUID. Each request produces a JSON

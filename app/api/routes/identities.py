@@ -21,6 +21,10 @@ from app.schemas.identity import (
     IdentityPreferencesUpdate,
     IdentityUpdate,
 )
+from app.services.http_preconditions import (
+    PRIVATE_REVALIDATION_CACHE_CONTROL,
+    if_none_match_matches,
+)
 from app.services.identity_pagination import (
     IdentityCursor,
     IdentityCursorCodec,
@@ -180,16 +184,31 @@ async def page_identity_summaries(
     )
 
 
-@router.get("/{identity_id}")
+@router.get(
+    "/{identity_id}",
+    response_model=Identity,
+    responses={304: {"description": "Identity has not changed"}},
+)
 async def get_identity(
     identity_id: UUID,
     repository: IdentityRepositoryDep,
     response: Response,
-) -> Identity:
+    if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
+) -> Identity | Response:
     identity = await repository.get(identity_id)
     if identity is None:
         raise HTTPException(status_code=404, detail="Identity not found")
-    _set_identity_etag(response, identity)
+    etag = _identity_etag(identity)
+    if if_none_match_matches(if_none_match, etag):
+        return Response(
+            status_code=304,
+            headers={
+                "Cache-Control": PRIVATE_REVALIDATION_CACHE_CONTROL,
+                "ETag": etag,
+            },
+        )
+    response.headers["Cache-Control"] = PRIVATE_REVALIDATION_CACHE_CONTROL
+    response.headers["ETag"] = etag
     return identity
 
 
@@ -318,7 +337,11 @@ def _identity_version_conflict() -> HTTPException:
 
 
 def _set_identity_etag(response: Response, identity: Identity) -> None:
-    response.headers["ETag"] = f'"{identity.version}"'
+    response.headers["ETag"] = _identity_etag(identity)
+
+
+def _identity_etag(identity: Identity) -> str:
+    return f'"{identity.version}"'
 
 
 def _creation_conflict() -> HTTPException:

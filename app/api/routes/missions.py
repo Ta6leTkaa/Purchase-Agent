@@ -40,6 +40,10 @@ from app.schemas.mission import (
     ScheduleMissionRequest,
     SetMissionProviderRequest,
 )
+from app.services.http_preconditions import (
+    PRIVATE_REVALIDATION_CACHE_CONTROL,
+    if_none_match_matches,
+)
 from app.services.mission_command_idempotency import (
     MissionCommandIdempotencyConflictError,
     MissionCommandIdempotencyStore,
@@ -335,16 +339,31 @@ async def page_mission_summaries(
     )
 
 
-@router.get("/{mission_id}")
+@router.get(
+    "/{mission_id}",
+    response_model=Mission,
+    responses={304: {"description": "Mission has not changed"}},
+)
 async def get_mission(
     mission_id: UUID,
     repository: MissionRepositoryDep,
     response: Response,
-) -> Mission:
+    if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
+) -> Mission | Response:
     mission = await repository.get(mission_id)
     if mission is None:
         raise HTTPException(status_code=404, detail="Mission not found")
-    _set_mission_etag(response, mission)
+    etag = _mission_etag(mission)
+    if if_none_match_matches(if_none_match, etag):
+        return Response(
+            status_code=304,
+            headers={
+                "Cache-Control": PRIVATE_REVALIDATION_CACHE_CONTROL,
+                "ETag": etag,
+            },
+        )
+    response.headers["Cache-Control"] = PRIVATE_REVALIDATION_CACHE_CONTROL
+    response.headers["ETag"] = etag
     return mission
 
 
@@ -1109,4 +1128,8 @@ async def _ensure_mission_version(
 
 
 def _set_mission_etag(response: Response, mission: Mission) -> None:
-    response.headers["ETag"] = f'"{mission.last_event_sequence}"'
+    response.headers["ETag"] = _mission_etag(mission)
+
+
+def _mission_etag(mission: Mission) -> str:
+    return f'"{mission.last_event_sequence}"'
