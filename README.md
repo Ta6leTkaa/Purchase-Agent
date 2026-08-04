@@ -14,6 +14,12 @@ full backend:
 docker compose up --build
 ```
 
+The Compose API runs with `ENVIRONMENT=production` and fails closed unless it
+uses database storage, disables debug and public API docs, and receives two
+different API keys of at least 32 characters each. Direct local development
+keeps `ENVIRONMENT=local` defaults. This prevents an incomplete secret or an
+accidentally enabled development surface from reaching production traffic.
+
 Compose starts PostgreSQL, runs `alembic upgrade head` once, and only then
 starts the API at `http://localhost:8000`. `GET /health` is a liveness check;
 `GET /ready` also verifies the configured storage and is used by Compose before

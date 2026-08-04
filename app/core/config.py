@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Purchase Agent API"
-    environment: str = "local"
+    environment: Literal["local", "test", "production"] = "local"
     debug: bool = Field(default=False, validation_alias="APP_DEBUG")
     storage_backend: Literal["memory", "database"] = "memory"
     database_url: str = (
@@ -141,6 +141,37 @@ class Settings(BaseSettings):
             raise ValueError(
                 "notification_retry_max_seconds must not be less than "
                 "notification_retry_initial_seconds"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_safety(self) -> "Settings":
+        if self.environment != "production":
+            return self
+        violations: list[str] = []
+        if self.storage_backend != "database":
+            violations.append("STORAGE_BACKEND must be database")
+        if self.debug:
+            violations.append("APP_DEBUG must be false")
+        if self.api_docs_enabled:
+            violations.append("API_DOCS_ENABLED must be false")
+        client_key = (
+            self.api_key.get_secret_value() if self.api_key is not None else ""
+        )
+        admin_key = (
+            self.admin_api_key.get_secret_value()
+            if self.admin_api_key is not None
+            else ""
+        )
+        if len(client_key) < 32:
+            violations.append("API_KEY must contain at least 32 characters")
+        if len(admin_key) < 32:
+            violations.append("ADMIN_API_KEY must contain at least 32 characters")
+        if client_key and admin_key and client_key == admin_key:
+            violations.append("API_KEY and ADMIN_API_KEY must be different")
+        if violations:
+            raise ValueError(
+                "Unsafe production configuration: " + "; ".join(violations)
             )
         return self
 
