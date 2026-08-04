@@ -21,5 +21,10 @@ def test_ci_workflow_checks_quality_and_container_build() -> None:
     assert "purchase-agent:smoke python -m app.cli smoke-api" in content
     assert "purchase-agent:smoke python -m app.cli smoke-flow" in content
     assert "Run PostgreSQL-backed Mission lifecycle" in content
+    assert "Start background workers" in content
+    assert "python -m app.cli notification-worker" in content
+    assert "Verify background worker heartbeats" in content
+    assert "--worker-kind mission --instance-id ci-mission-worker" in content
+    assert "--instance-id ci-notification-worker" in content
     assert "http://localhost:8000/openapi.json" in content
-    assert "docker rm --force purchase-agent-smoke-api" in content
+    assert "purchase-agent-smoke-notification-worker 2>/dev/null || true" in content

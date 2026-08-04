@@ -191,7 +191,9 @@ starts PostgreSQL 16, applies migrations to an empty database, verifies the
 migration head, and runs the complete integration suite. The final gate builds
 the image again, migrates a clean PostgreSQL database through that image,
 starts the API with fail-closed production settings, waits for readiness, runs
-the non-mutating smoke command, and confirms that public OpenAPI is disabled.
+the non-mutating smoke command, executes a PostgreSQL-backed Mission lifecycle,
+starts both background workers, verifies their persistent heartbeats, and
+confirms that public OpenAPI is disabled.
 
 ## External train provider
 
