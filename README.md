@@ -138,6 +138,30 @@ the image again, migrates a clean PostgreSQL database through that image,
 starts the API with fail-closed production settings, waits for readiness, runs
 the non-mutating smoke command, and confirms that public OpenAPI is disabled.
 
+## External train provider
+
+The deterministic `mock_train` provider remains available for development.
+Set `TRAIN_PROVIDER_BASE_URL` to register the production `http_train` adapter
+alongside it, then select `provider_id: "http_train"` on a Mission. Non-local
+provider URLs must use HTTPS. Optional `TRAIN_PROVIDER_BEARER_TOKEN` is sent as
+a bearer credential and `TRAIN_PROVIDER_TIMEOUT_SECONDS` defaults to 15.
+
+The upstream gateway contract consists of four JSON endpoints:
+
+- `POST /v1/train/options/search` receives the Mission route, constraints, and
+  typed passenger records and returns `{ "options": [...] }`;
+- `POST /v1/train/reservations` receives the selected option;
+- `POST /v1/train/reservations/{id}/confirm` confirms the hold;
+- `POST /v1/train/reservations/{id}/cancel` releases it.
+
+All reservation mutations receive the engine's `Idempotency-Key`. Responses
+use the existing `ProviderOption`, `ReservationResult`, `ConfirmationResult`,
+and `CancellationResult` schemas. The adapter never records upstream response
+bodies in raised errors; timeouts, network failures, `429`, and `5xx` responses
+are retryable, while other `4xx` responses are terminal. Passenger identity and
+document data crosses this boundary, so the configured gateway must be trusted
+and must not log request bodies.
+
 ## Domain models
 
 The backend includes initial Pydantic domain models for:

@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     api_rate_limit_requests: int = Field(default=120, ge=1, le=100_000)
     api_rate_limit_window_seconds: float = Field(default=60.0, gt=0, le=3600)
     api_rate_limit_max_clients: int = Field(default=10_000, ge=1, le=1_000_000)
+    train_provider_base_url: str | None = None
+    train_provider_bearer_token: SecretStr | None = None
+    train_provider_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
     worker_claim_timeout_seconds: int = Field(default=900, ge=1, le=86400)
@@ -134,6 +137,38 @@ class Settings(BaseSettings):
             )
         if parsed.fragment is not None:
             raise ValueError("notification_webhook_url must not contain a fragment")
+        return normalized
+
+    @field_validator("train_provider_base_url", mode="before")
+    @classmethod
+    def validate_train_provider_base_url(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("train_provider_base_url must be a string")
+        normalized = value.strip().rstrip("/")
+        if not normalized:
+            return None
+        parsed = TypeAdapter(AnyHttpUrl).validate_python(normalized)
+        if parsed.scheme != "https" and parsed.host not in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            "[::1]",
+        }:
+            raise ValueError(
+                "train_provider_base_url must use HTTPS for non-local hosts"
+            )
+        if (
+            parsed.query is not None
+            or parsed.fragment is not None
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError(
+                "train_provider_base_url must not contain credentials, query, "
+                "or fragment"
+            )
         return normalized
 
     @model_validator(mode="after")

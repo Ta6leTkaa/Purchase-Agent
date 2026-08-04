@@ -46,6 +46,9 @@ def test_docker_compose_defines_api_and_database_migration_gate() -> None:
     assert "API_RATE_LIMIT_REQUESTS" in content
     assert "API_RATE_LIMIT_WINDOW_SECONDS" in content
     assert "API_RATE_LIMIT_MAX_CLIENTS" in content
+    assert "TRAIN_PROVIDER_BASE_URL" in content
+    assert "TRAIN_PROVIDER_BEARER_TOKEN" in content
+    assert "TRAIN_PROVIDER_TIMEOUT_SECONDS" in content
     assert "http://localhost:8000/ready" in content
 
 

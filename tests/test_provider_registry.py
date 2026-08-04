@@ -5,9 +5,11 @@ from app.adapters import (
     InvalidProviderIdError,
     ProviderRegistry,
     UnknownProviderError,
+    build_provider_registry,
 )
 from app.adapters.base import ProviderAdapter
 from app.adapters.mock_train import MockTrainAdapter
+from app.core.config import Settings
 from app.dependencies import get_provider_registry
 from app.domain.identity import Identity
 from app.domain.mission import Mission, MissionType
@@ -154,3 +156,14 @@ def test_provider_registry_dependency_returns_mock_train_singleton() -> None:
     adapter = registry.get("mock_train")
     assert isinstance(adapter, MockTrainAdapter)
     assert adapter.supports(MissionType.TRAIN_TICKET) is True
+
+
+def test_configured_registry_adds_external_train_provider() -> None:
+    registry = build_provider_registry(
+        Settings(train_provider_base_url="https://trains.example.test/gateway")
+    )
+
+    assert [adapter.provider_id for adapter in registry.list_all()] == [
+        "mock_train",
+        "http_train",
+    ]

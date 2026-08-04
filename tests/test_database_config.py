@@ -83,6 +83,36 @@ def test_blank_notification_webhook_url_disables_webhook(
     assert Settings().notification_webhook_url is None
 
 
+def test_external_train_provider_defaults_to_disabled() -> None:
+    configured = Settings()
+
+    assert configured.train_provider_base_url is None
+    assert configured.train_provider_bearer_token is None
+    assert configured.train_provider_timeout_seconds == 15
+
+
+def test_external_train_provider_normalizes_secure_url() -> None:
+    configured = Settings(
+        train_provider_base_url="  https://trains.example.test/api/  "
+    )
+
+    assert configured.train_provider_base_url == "https://trains.example.test/api"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://trains.example.test",
+        "https://trains.example.test?secret=value",
+        "https://trains.example.test#fragment",
+        "https://user:password@trains.example.test",
+    ],
+)
+def test_external_train_provider_rejects_unsafe_url(url: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(train_provider_base_url=url)
+
+
 @pytest.mark.parametrize(
     "url",
     [
