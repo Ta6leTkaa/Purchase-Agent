@@ -32,8 +32,8 @@ jobs:
         run: test "$(alembic heads | wc -l | tr -d ' ')" = "1"
       - name: Validate Compose model
         env:
-          API_KEY: ci-client-key
-          ADMIN_API_KEY: ci-admin-key
+          API_KEY: ci-client-key-with-at-least-32-chars
+          ADMIN_API_KEY: ci-admin-key-with-at-least-32-chars
         run: docker compose config --quiet
       - name: Build container
         run: docker build -t purchase-agent:ci .
@@ -68,6 +68,74 @@ jobs:
       - name: Apply migrations to clean PostgreSQL
         run: alembic upgrade head
       - name: Verify migrated schema is at the expected head
-        run: test "$(alembic current | awk 'NR==1 {print $1}')" = "20260802_0024"
+        run: >-
+          test "$(alembic current | awk 'NR==1 {print $1}')" =
+          "$(python -c 'from app.db.schema import EXPECTED_SCHEMA_REVISION;
+          print(EXPECTED_SCHEMA_REVISION)')"
       - name: PostgreSQL integration suite
         run: pytest -m integration -q
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    needs: [quality, integration]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: purchase_agent_smoke
+          POSTGRES_USER: purchase_agent
+          POSTGRES_PASSWORD: purchase_agent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U purchase_agent -d purchase_agent_smoke"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      SMOKE_DATABASE_URL: postgresql+asyncpg://purchase_agent:purchase_agent@localhost:5432/purchase_agent_smoke
+      SMOKE_API_KEY: ci-smoke-client-key-with-32-characters
+      SMOKE_ADMIN_API_KEY: ci-smoke-admin-key-with-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build -t purchase-agent:smoke .
+      - name: Apply migrations through the production image
+        run: >-
+          docker run --rm --network host
+          -e STORAGE_BACKEND=database
+          -e DATABASE_URL="$SMOKE_DATABASE_URL"
+          purchase-agent:smoke alembic upgrade head
+      - name: Start production-configured API container
+        run: >-
+          docker run -d --name purchase-agent-smoke-api --network host
+          -e ENVIRONMENT=production
+          -e STORAGE_BACKEND=database
+          -e DATABASE_URL="$SMOKE_DATABASE_URL"
+          -e API_KEY="$SMOKE_API_KEY"
+          -e ADMIN_API_KEY="$SMOKE_ADMIN_API_KEY"
+          -e API_DOCS_ENABLED=false
+          purchase-agent:smoke
+      - name: Wait for container readiness
+        run: >-
+          for attempt in $(seq 1 30); do
+          curl --fail --silent http://localhost:8000/ready && exit 0;
+          sleep 1;
+          done;
+          docker logs purchase-agent-smoke-api;
+          exit 1
+      - name: Run non-mutating deployment smoke check
+        run: >-
+          docker run --rm --network host
+          -e API_KEY="$SMOKE_API_KEY"
+          -e ADMIN_API_KEY="$SMOKE_ADMIN_API_KEY"
+          purchase-agent:smoke python -m app.cli smoke-api
+          --base-url http://localhost:8000
+      - name: Verify production documentation is closed
+        run: >-
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}'
+          http://localhost:8000/openapi.json)" = "404"
+      - name: Show API logs on failure
+        if: failure()
+        run: docker logs purchase-agent-smoke-api
+      - name: Stop smoke API
+        if: always()
+        run: docker rm --force purchase-agent-smoke-api 2>/dev/null || true

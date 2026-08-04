@@ -121,7 +121,10 @@ The repository includes a GitHub Actions workflow in
 compilation, verifies that Alembic has exactly one head, validates Compose, and
 builds the production image on every push and pull request. A separate job
 starts PostgreSQL 16, applies migrations to an empty database, verifies the
-migration head, and runs the complete integration suite.
+migration head, and runs the complete integration suite. The final gate builds
+the image again, migrates a clean PostgreSQL database through that image,
+starts the API with fail-closed production settings, waits for readiness, runs
+the non-mutating smoke command, and confirms that public OpenAPI is disabled.
 
 ## Domain models
 
