@@ -21,6 +21,7 @@ from app.domain.mission import (
     TrainConstraints,
 )
 from app.repositories.mission import MissionRepository
+from app.services.deployment_flow import DeploymentFlowResult
 from app.services.deployment_smoke import (
     DeploymentSmokeCheck,
     DeploymentSmokeResult,
@@ -102,6 +103,70 @@ def test_smoke_api_command_writes_report_and_failure_exit_code(
 
     assert exit_code == 1
     assert json.loads(stdout.getvalue())["checks"][0]["name"] == "readiness"
+
+
+def test_smoke_flow_cli_passes_mutating_flow_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str | None, str, float]] = []
+
+    async def fake_smoke_flow_command(
+        base_url: str,
+        api_key: str | None,
+        provider_id: str,
+        timeout_seconds: float,
+    ) -> int:
+        calls.append((base_url, api_key, provider_id, timeout_seconds))
+        return 0
+
+    monkeypatch.setattr(cli, "smoke_flow_command", fake_smoke_flow_command)
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(
+            [
+                "smoke-flow",
+                "--base-url",
+                "https://api.example.test",
+                "--api-key",
+                "client-key",
+                "--provider-id",
+                "mock_train",
+                "--timeout-seconds",
+                "20",
+            ]
+        )
+
+    assert exc_info.value.code == 0
+    assert calls == [
+        ("https://api.example.test", "client-key", "mock_train", 20.0)
+    ]
+
+
+def test_smoke_flow_command_writes_result_and_failure_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_run_deployment_flow(**kwargs: object) -> DeploymentFlowResult:
+        return DeploymentFlowResult(
+            ok=False,
+            stage="run_mission",
+            message="Mission did not reach confirmation state.",
+        )
+
+    monkeypatch.setattr(cli, "run_deployment_flow", fake_run_deployment_flow)
+    stdout = io.StringIO()
+
+    exit_code = asyncio.run(
+        cli.smoke_flow_command(
+            "https://api.example.test",
+            "client-key",
+            "mock_train",
+            15,
+            stdout=stdout,
+        )
+    )
+
+    assert exit_code == 1
+    assert json.loads(stdout.getvalue())["stage"] == "run_mission"
 
 
 def test_process_due_command_uses_default_limit(

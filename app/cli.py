@@ -27,6 +27,7 @@ from app.repositories.sqlalchemy.resource_creation_idempotency import (
     SqlAlchemyResourceCreationIdempotencyStore,
 )
 from app.services.clock import utc_now
+from app.services.deployment_flow import run_deployment_flow
 from app.services.deployment_smoke import run_deployment_smoke
 from app.services.due_mission_processor import (
     DueMissionProcessingResult,
@@ -127,6 +128,34 @@ async def smoke_api_command(
         )
     except ValueError as exc:
         error_output.write(f"Invalid smoke check configuration: {exc}\n")
+        return 2
+    output.write(result.model_dump_json() + "\n")
+    return 0 if result.ok else 1
+
+
+async def smoke_flow_command(
+    base_url: str,
+    api_key: str | None,
+    provider_id: str,
+    timeout_seconds: float,
+    *,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    output = stdout or sys.stdout
+    error_output = stderr or sys.stderr
+    if not api_key:
+        error_output.write("API_KEY is required for the deployment flow.\n")
+        return 2
+    try:
+        result = await run_deployment_flow(
+            base_url=base_url,
+            api_key=api_key,
+            provider_id=provider_id,
+            timeout_seconds=timeout_seconds,
+        )
+    except ValueError as exc:
+        error_output.write(f"Invalid deployment flow configuration: {exc}\n")
         return 2
     output.write(result.model_dump_json() + "\n")
     return 0 if result.ok else 1
@@ -472,6 +501,17 @@ def main(argv: Sequence[str] | None = None) -> None:
                 )
             )
         )
+    if args.command == "smoke-flow":
+        raise SystemExit(
+            asyncio.run(
+                smoke_flow_command(
+                    args.base_url,
+                    args.api_key,
+                    args.provider_id,
+                    args.timeout_seconds,
+                )
+            )
+        )
     if args.command == "process-due":
         raise SystemExit(asyncio.run(process_due_command(args.limit)))
     if args.command == "worker":
@@ -679,6 +719,26 @@ def _build_parser() -> argparse.ArgumentParser:
         "--timeout-seconds",
         type=_parse_smoke_timeout_seconds,
         default=10.0,
+    )
+    flow_parser = subparsers.add_parser(
+        "smoke-flow",
+        help="Run a mutating end-to-end Mission flow against a deployed API.",
+    )
+    flow_parser.add_argument("--base-url", required=True)
+    flow_parser.add_argument(
+        "--api-key",
+        default=(
+            settings.api_key.get_secret_value()
+            if settings.api_key is not None
+            else None
+        ),
+        help="Client key; defaults to API_KEY.",
+    )
+    flow_parser.add_argument("--provider-id", default="mock_train")
+    flow_parser.add_argument(
+        "--timeout-seconds",
+        type=_parse_smoke_timeout_seconds,
+        default=15.0,
     )
 
     process_due_parser = subparsers.add_parser(

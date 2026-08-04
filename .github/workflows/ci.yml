@@ -130,6 +130,13 @@ jobs:
           -e ADMIN_API_KEY="$SMOKE_ADMIN_API_KEY"
           purchase-agent:smoke python -m app.cli smoke-api
           --base-url http://localhost:8000
+      - name: Run PostgreSQL-backed Mission lifecycle
+        run: >-
+          docker run --rm --network host
+          -e API_KEY="$SMOKE_API_KEY"
+          purchase-agent:smoke python -m app.cli smoke-flow
+          --base-url http://localhost:8000
+          --provider-id mock_train
       - name: Verify production documentation is closed
         run: >-
           test "$(curl --silent --output /dev/null --write-out '%{http_code}'

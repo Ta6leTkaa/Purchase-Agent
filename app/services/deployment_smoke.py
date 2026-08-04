@@ -31,7 +31,7 @@ async def run_deployment_smoke(
     timeout_seconds: float = 10,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> DeploymentSmokeResult:
-    normalized_base_url = _validate_base_url(base_url)
+    normalized_base_url = validate_deployment_base_url(base_url)
     async with httpx.AsyncClient(
         base_url=normalized_base_url,
         timeout=timeout_seconds,
@@ -102,7 +102,7 @@ async def _run_check(
     )
 
 
-def _validate_base_url(base_url: str) -> str:
+def validate_deployment_base_url(base_url: str) -> str:
     normalized = base_url.strip().rstrip("/")
     try:
         url = httpx.URL(normalized)

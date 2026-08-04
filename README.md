@@ -36,6 +36,18 @@ API_KEY=... ADMIN_API_KEY=... python -m app.cli smoke-api \
   --base-url https://purchase-agent.example.com
 ```
 
+On a disposable or staging database, validate the complete mutating lifecycle:
+
+```bash
+API_KEY=... python -m app.cli smoke-flow \
+  --base-url https://purchase-agent.example.com \
+  --provider-id mock_train
+```
+
+This creates a synthetic passenger and Mission, then searches, reserves,
+confirms, and verifies a successful terminal outcome. It deliberately persists
+those audit records and must not be used as a read-only production probe.
+
 ```bash
 docker compose --profile worker --profile notifications up --build
 ```
