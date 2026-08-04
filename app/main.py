@@ -2,11 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.exception_handlers import (
-    register_provider_resolution_exception_handlers,
+    register_api_exception_handlers,
 )
 from app.api.middleware.request_body_limit import RequestBodyLimitMiddleware
 from app.api.middleware.request_context import request_context_middleware
 from app.api.middleware.request_timeout import RequestTimeoutMiddleware
+from app.api.openapi import configure_openapi
 from app.api.routes.admin import router as admin_router
 from app.api.routes.health import router as health_router
 from app.api.routes.identities import router as identities_router
@@ -42,12 +43,13 @@ def create_app(config: Settings = settings) -> FastAPI:
         expose_headers=["ETag", "X-Request-ID"],
     )
     application.middleware("http")(request_context_middleware)
-    register_provider_resolution_exception_handlers(application)
+    register_api_exception_handlers(application)
     application.include_router(health_router)
     application.include_router(identities_router)
     application.include_router(missions_router)
     application.include_router(providers_router)
     application.include_router(admin_router)
+    configure_openapi(application)
     return application
 
 

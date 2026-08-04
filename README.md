@@ -34,6 +34,12 @@ and generated clients can authenticate without treating secrets as ordinary
 request parameters. Missing configured keys return an `ApiKey`
 `WWW-Authenticate` challenge.
 
+Framework-level request validation failures use a stable
+`422 request_validation_error` envelope. Each issue contains only its location,
+type, and safe message; rejected input values are deliberately omitted. The
+envelope includes the request ID so clients can correlate a validation failure
+with structured server logs. Domain errors retain their more specific codes.
+
 Browser clients on another origin require an explicit JSON allowlist, for
 example `CORS_ALLOWED_ORIGINS=["http://localhost:3000"]`. Wildcards,
 credentials, paths, and insecure non-local origins are rejected. Preflight

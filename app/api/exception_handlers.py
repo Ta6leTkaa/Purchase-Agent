@@ -2,9 +2,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.adapters.registry import UnknownProviderError
+from app.api.middleware.request_context import get_request_id
 from app.repositories.sqlalchemy.mission import MissionEventSequenceConflictError
 from app.services.provider_errors import (
     UnsupportedExecutionModeError,
@@ -85,7 +87,42 @@ def map_provider_resolution_error(
     )
 
 
-def register_provider_resolution_exception_handlers(app: FastAPI) -> None:
+def register_api_exception_handlers(app: FastAPI) -> None:
+    async def handle_request_validation_error(
+        request: Request,
+        error: Exception,
+    ) -> JSONResponse:
+        if not isinstance(error, RequestValidationError):
+            raise error
+        request_id = (
+            getattr(request.state, "request_id", None)
+            or get_request_id()
+            or "unavailable"
+        )
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "code": "request_validation_error",
+                    "message": "Request validation failed.",
+                    "request_id": request_id,
+                    "errors": [
+                        {
+                            "location": list(item["loc"]),
+                            "message": item["msg"],
+                            "type": item["type"],
+                        }
+                        for item in error.errors()
+                    ],
+                }
+            },
+        )
+
+    app.add_exception_handler(
+        RequestValidationError,
+        handle_request_validation_error,
+    )
+
     async def handle_provider_resolution_error(
         request: Request,
         error: Exception,
