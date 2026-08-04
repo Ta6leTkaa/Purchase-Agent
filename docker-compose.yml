@@ -83,6 +83,8 @@ services:
       WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-5}
       WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-100}
       WORKER_CLAIM_TIMEOUT_SECONDS: ${WORKER_CLAIM_TIMEOUT_SECONDS:-900}
+      WORKER_INSTANCE_ID: ${MISSION_WORKER_INSTANCE_ID:-mission-worker-1}
+      WORKER_HEARTBEAT_MAX_AGE_SECONDS: ${WORKER_HEARTBEAT_MAX_AGE_SECONDS:-60}
       TRAIN_PROVIDER_BASE_URL: ${TRAIN_PROVIDER_BASE_URL:-}
       TRAIN_PROVIDER_BEARER_TOKEN: ${TRAIN_PROVIDER_BEARER_TOKEN:-}
       TRAIN_PROVIDER_TIMEOUT_SECONDS: ${TRAIN_PROVIDER_TIMEOUT_SECONDS:-15}
@@ -90,6 +92,19 @@ services:
       migrate:
         condition: service_completed_successfully
     stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -m
+        - app.cli
+        - worker-health
+        - --worker-kind
+        - mission
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   notification-worker:
     profiles: ["notifications"]
@@ -114,10 +129,25 @@ services:
       NOTIFICATION_WEBHOOK_BEARER_TOKEN: ${NOTIFICATION_WEBHOOK_BEARER_TOKEN:-}
       NOTIFICATION_WEBHOOK_SIGNING_SECRET: ${NOTIFICATION_WEBHOOK_SIGNING_SECRET:-}
       NOTIFICATION_WEBHOOK_TIMEOUT_SECONDS: ${NOTIFICATION_WEBHOOK_TIMEOUT_SECONDS:-10}
+      WORKER_INSTANCE_ID: ${NOTIFICATION_WORKER_INSTANCE_ID:-notification-worker-1}
+      WORKER_HEARTBEAT_MAX_AGE_SECONDS: ${WORKER_HEARTBEAT_MAX_AGE_SECONDS:-60}
     depends_on:
       migrate:
         condition: service_completed_successfully
     stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -m
+        - app.cli
+        - worker-health
+        - --worker-kind
+        - notification
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
 volumes:
   purchase_agent_postgres_data:

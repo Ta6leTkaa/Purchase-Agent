@@ -767,6 +767,15 @@ continues after an isolated infrastructure failure, and stops gracefully on
 to stdout; safe infrastructure diagnostics go to stderr without including
 connection details.
 
+Each successful or failed cycle persists a heartbeat keyed by worker kind and
+instance ID. Compose checks it inside each worker container and marks the
+service unhealthy when the heartbeat is stale or its latest cycle failed.
+Inspect all replicas through `GET /admin/worker-health`; the response contains
+timestamps, age, and consecutive failure counts without job payloads.
+`WORKER_HEARTBEAT_MAX_AGE_SECONDS` defaults to 60 seconds and should remain
+above the poll interval. Override `MISSION_WORKER_INSTANCE_ID` and
+`NOTIFICATION_WORKER_INSTANCE_ID` for multiple named replicas.
+
 The worker is also available as an opt-in Docker Compose profile. Apply
 migrations before starting it:
 

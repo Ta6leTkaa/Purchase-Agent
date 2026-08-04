@@ -1,3 +1,4 @@
+import socket
 from typing import Literal
 
 from pydantic import (
@@ -46,6 +47,12 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
     worker_claim_timeout_seconds: int = Field(default=900, ge=1, le=86400)
+    worker_instance_id: str = Field(
+        default_factory=socket.gethostname,
+        min_length=1,
+        max_length=255,
+    )
+    worker_heartbeat_max_age_seconds: int = Field(default=60, ge=5, le=3600)
     notification_worker_poll_interval_seconds: float = Field(
         default=5.0,
         gt=0,
@@ -171,6 +178,14 @@ class Settings(BaseSettings):
             )
         return normalized
 
+    @field_validator("worker_instance_id")
+    @classmethod
+    def normalize_worker_instance_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("worker_instance_id must not be blank")
+        return normalized
+
     @model_validator(mode="after")
     def validate_notification_retry_delays(self) -> "Settings":
         if (
@@ -180,6 +195,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "notification_retry_max_seconds must not be less than "
                 "notification_retry_initial_seconds"
+            )
+        if self.worker_heartbeat_max_age_seconds <= max(
+            self.worker_poll_interval_seconds,
+            self.notification_worker_poll_interval_seconds,
+        ):
+            raise ValueError(
+                "worker_heartbeat_max_age_seconds must exceed all worker poll "
+                "intervals"
             )
         return self
 

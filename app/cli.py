@@ -15,6 +15,7 @@ from app.adapters import provider_registry
 from app.core.config import settings
 from app.db.session import async_session_maker
 from app.domain.mission import Mission, MissionStatus
+from app.domain.worker_health import WorkerKind, evaluate_worker_health
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository
 from app.repositories.notification_outbox import NotificationOutboxRepository
@@ -25,6 +26,9 @@ from app.repositories.sqlalchemy.notification_outbox import (
 )
 from app.repositories.sqlalchemy.resource_creation_idempotency import (
     SqlAlchemyResourceCreationIdempotencyStore,
+)
+from app.repositories.sqlalchemy.worker_heartbeat import (
+    SqlAlchemyWorkerHeartbeatRepository,
 )
 from app.services.clock import utc_now
 from app.services.deployment_flow import run_deployment_flow
@@ -80,6 +84,9 @@ class CliDependencies:
     ] = SqlAlchemyResourceCreationIdempotencyStore
     provider_resolver: ProviderResolver = ProviderResolver(provider_registry)
     clock: Callable[[], datetime] = utc_now
+    worker_heartbeat_repository_factory: Callable[
+        [AsyncSession], SqlAlchemyWorkerHeartbeatRepository
+    ] | None = None
 
 
 class StaleMissionRecoveryResult(BaseModel):
@@ -162,7 +169,63 @@ async def smoke_flow_command(
 
 
 def get_cli_dependencies() -> CliDependencies:
-    return CliDependencies(session_maker=async_session_maker)
+    return CliDependencies(
+        session_maker=async_session_maker,
+        worker_heartbeat_repository_factory=SqlAlchemyWorkerHeartbeatRepository,
+    )
+
+
+async def worker_health_command(
+    worker_kind: WorkerKind,
+    instance_id: str,
+    max_age: timedelta,
+    *,
+    dependencies: CliDependencies | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    resolved = dependencies or get_cli_dependencies()
+    output = stdout or sys.stdout
+    error_output = stderr or sys.stderr
+    factory = resolved.worker_heartbeat_repository_factory
+    if factory is None:
+        error_output.write("Worker heartbeat storage is unavailable.\n")
+        return 2
+    try:
+        async with resolved.session_maker() as session:
+            heartbeat = await factory(session).get(worker_kind, instance_id)
+        if heartbeat is None:
+            error_output.write("Worker heartbeat has not been recorded.\n")
+            return 1
+        health = evaluate_worker_health(heartbeat, resolved.clock(), max_age)
+    except Exception:
+        error_output.write("Infrastructure error while checking worker health.\n")
+        return 1
+    output.write(health.model_dump_json() + "\n")
+    return 0 if health.healthy else 1
+
+
+async def _record_worker_heartbeat(
+    dependencies: CliDependencies,
+    worker_kind: WorkerKind,
+    *,
+    success: bool,
+) -> bool:
+    factory = dependencies.worker_heartbeat_repository_factory
+    if factory is None:
+        return True
+    try:
+        async with dependencies.session_maker() as session:
+            await factory(session).record(
+                worker_kind=worker_kind,
+                instance_id=settings.worker_instance_id,
+                current_time=dependencies.clock(),
+                success=success,
+            )
+            await session.commit()
+    except Exception:
+        return False
+    return True
 
 
 async def process_due_command(
@@ -329,11 +392,23 @@ async def notification_worker_command(
     async def write_result(result: NotificationWorkerCycleResult) -> None:
         output.write(result.model_dump_json() + "\n")
         output.flush()
+        if not await _record_worker_heartbeat(
+            resolved,
+            WorkerKind.NOTIFICATION,
+            success=True,
+        ):
+            error_output.write("Unable to persist notification worker heartbeat.\n")
+            error_output.flush()
 
     async def write_error(error: Exception) -> None:
         del error
         error_output.write("Infrastructure error during notification worker cycle.\n")
         error_output.flush()
+        await _record_worker_heartbeat(
+            resolved,
+            WorkerKind.NOTIFICATION,
+            success=False,
+        )
 
     await run_mission_worker(
         process_cycle,
@@ -470,11 +545,23 @@ async def worker_command(
     async def write_result(result: MissionWorkerCycleResult) -> None:
         output.write(result.model_dump_json() + "\n")
         output.flush()
+        if not await _record_worker_heartbeat(
+            resolved_dependencies,
+            WorkerKind.MISSION,
+            success=True,
+        ):
+            error_output.write("Unable to persist Mission worker heartbeat.\n")
+            error_output.flush()
 
     async def write_error(error: Exception) -> None:
         del error
         error_output.write("Infrastructure error during Mission worker cycle.\n")
         error_output.flush()
+        await _record_worker_heartbeat(
+            resolved_dependencies,
+            WorkerKind.MISSION,
+            success=False,
+        )
 
     await run_mission_worker(
         process_cycle,
@@ -509,6 +596,16 @@ def main(argv: Sequence[str] | None = None) -> None:
                     args.api_key,
                     args.provider_id,
                     args.timeout_seconds,
+                )
+            )
+        )
+    if args.command == "worker-health":
+        raise SystemExit(
+            asyncio.run(
+                worker_health_command(
+                    WorkerKind(args.worker_kind),
+                    args.instance_id,
+                    timedelta(seconds=args.max_age_seconds),
                 )
             )
         )
@@ -740,6 +837,24 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_parse_smoke_timeout_seconds,
         default=15.0,
     )
+    worker_health_parser = subparsers.add_parser(
+        "worker-health",
+        help="Fail unless a worker instance has a fresh database heartbeat.",
+    )
+    worker_health_parser.add_argument(
+        "--worker-kind",
+        choices=[kind.value for kind in WorkerKind],
+        required=True,
+    )
+    worker_health_parser.add_argument(
+        "--instance-id",
+        default=settings.worker_instance_id,
+    )
+    worker_health_parser.add_argument(
+        "--max-age-seconds",
+        type=_parse_worker_heartbeat_max_age,
+        default=settings.worker_heartbeat_max_age_seconds,
+    )
 
     process_due_parser = subparsers.add_parser(
         "process-due",
@@ -921,6 +1036,18 @@ def _parse_smoke_timeout_seconds(value: str) -> float:
             "timeout-seconds must be greater than 0 and at most 60"
         )
     return timeout
+
+
+def _parse_worker_heartbeat_max_age(value: str) -> int:
+    try:
+        max_age = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("max-age-seconds must be an integer") from exc
+    if max_age < 5 or max_age > 3600:
+        raise argparse.ArgumentTypeError(
+            "max-age-seconds must be between 5 and 3600"
+        )
+    return max_age
 
 
 def _parse_retention_days(value: str) -> int:

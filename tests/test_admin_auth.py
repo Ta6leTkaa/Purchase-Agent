@@ -121,6 +121,20 @@ def test_health_does_not_require_admin_key() -> None:
     assert response.status_code == 200
 
 
+def test_worker_health_requires_database_storage() -> None:
+    settings.admin_api_key = SecretStr(ADMIN_KEY)
+
+    response = TestClient(app).get(
+        "/admin/worker-health",
+        headers={"X-Admin-API-Key": ADMIN_KEY},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Worker health requires the database storage backend"
+    )
+
+
 @pytest.mark.parametrize("path", ["/identities", "/missions"])
 def test_public_collection_endpoints_do_not_require_admin_key(path: str) -> None:
     settings.admin_api_key = SecretStr(ADMIN_KEY)

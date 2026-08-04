@@ -6,7 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.dependencies import get_identity_repository, get_mission_repository
+from app.dependencies import get_storage_session
 from app.domain.identity import (
     Document,
     DocumentType,
@@ -30,40 +30,29 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 @pytest.fixture()
 async def mission_execution_client(
-    test_session: AsyncSession,
+    test_engine: AsyncEngine,
 ) -> AsyncIterator[tuple[AsyncClient, list[str]]]:
     transaction_events: list[str] = []
-
-    async def override_identity_repository() -> AsyncIterator[
-        SqlAlchemyIdentityRepository
-    ]:
-        try:
-            yield SqlAlchemyIdentityRepository(test_session)
-            await test_session.commit()
-            transaction_events.append("identity_commit")
-        except Exception:
-            await test_session.rollback()
-            transaction_events.append("identity_rollback")
-            raise
-
-    async def override_mission_repository() -> AsyncIterator[
-        SqlAlchemyMissionRepository
-    ]:
-        try:
-            yield SqlAlchemyMissionRepository(test_session)
-            await test_session.commit()
-            transaction_events.append("mission_commit")
-        except Exception:
-            await test_session.rollback()
-            transaction_events.append("mission_rollback")
-            raise
-
-    app.dependency_overrides[get_identity_repository] = (
-        override_identity_repository
+    sessions = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
     )
-    app.dependency_overrides[get_mission_repository] = (
-        override_mission_repository
-    )
+
+    async def override_storage_session() -> AsyncIterator[AsyncSession]:
+        async with sessions() as session:
+            try:
+                yield session
+                await session.commit()
+                transaction_events.append("identity_commit")
+                transaction_events.append("mission_commit")
+            except Exception:
+                await session.rollback()
+                transaction_events.append("identity_rollback")
+                transaction_events.append("mission_rollback")
+                raise
+
+    app.dependency_overrides[get_storage_session] = override_storage_session
     transport = ASGITransport(app=app)
 
     try:

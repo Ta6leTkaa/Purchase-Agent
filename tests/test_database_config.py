@@ -61,6 +61,16 @@ def test_notification_retry_maximum_must_cover_initial_delay(
         Settings()
 
 
+def test_worker_heartbeat_age_must_exceed_poll_intervals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WORKER_POLL_INTERVAL_SECONDS", "60")
+    monkeypatch.setenv("WORKER_HEARTBEAT_MAX_AGE_SECONDS", "60")
+
+    with pytest.raises(ValidationError, match="must exceed all worker poll"):
+        Settings()
+
+
 def test_notification_retry_settings_load_from_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

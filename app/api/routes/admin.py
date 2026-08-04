@@ -22,10 +22,14 @@ from app.domain.notification import (
     NotificationOutboxStatistics,
     NotificationOutboxStatus,
 )
+from app.domain.worker_health import WorkerHealth, evaluate_worker_health
 from app.repositories.identity import IdentityRepository
 from app.repositories.mission import MissionRepository, MissionStatisticsRepository
 from app.repositories.sqlalchemy.notification_outbox import (
     SqlAlchemyNotificationOutboxRepository,
+)
+from app.repositories.sqlalchemy.worker_heartbeat import (
+    SqlAlchemyWorkerHeartbeatRepository,
 )
 from app.services.due_mission_processor import (
     DueMissionProcessingResult,
@@ -224,6 +228,30 @@ def _notification_outbox_repository(
             detail="Notification outbox requires the database storage backend",
         )
     return SqlAlchemyNotificationOutboxRepository(session)
+
+
+@router.get(
+    "/worker-health",
+    response_model=list[WorkerHealth],
+    summary="Inspect persistent worker heartbeats",
+)
+async def worker_health_endpoint(
+    _admin_api_key: AdminApiKeyDep,
+    session: StorageSessionDep,
+    current_time: CurrentTimeDep,
+    max_age_seconds: int = Query(default=60, ge=5, le=3600),
+) -> list[WorkerHealth]:
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Worker health requires the database storage backend",
+        )
+    heartbeats = await SqlAlchemyWorkerHeartbeatRepository(session).list_all()
+    max_age = timedelta(seconds=max_age_seconds)
+    return [
+        evaluate_worker_health(heartbeat, current_time, max_age)
+        for heartbeat in heartbeats
+    ]
 
 
 @router.get(

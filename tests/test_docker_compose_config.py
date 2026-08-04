@@ -24,6 +24,10 @@ def test_docker_compose_defines_opt_in_worker() -> None:
     assert "WORKER_POLL_INTERVAL_SECONDS" in content
     assert "WORKER_BATCH_SIZE" in content
     assert "WORKER_CLAIM_TIMEOUT_SECONDS" in content
+    assert "WORKER_INSTANCE_ID" in content
+    assert "WORKER_HEARTBEAT_MAX_AGE_SECONDS" in content
+    assert "worker-health" in content
+    assert "--worker-kind" in content
     assert "condition: service_healthy" in content
 
 
@@ -63,3 +67,4 @@ def test_docker_compose_defines_opt_in_notification_worker() -> None:
     assert "NOTIFICATION_RETRY_INITIAL_SECONDS" in content
     assert "NOTIFICATION_RETRY_MAX_SECONDS" in content
     assert "NOTIFICATION_MAX_DELIVERY_ATTEMPTS" in content
+    assert "notification-worker-1" in content
