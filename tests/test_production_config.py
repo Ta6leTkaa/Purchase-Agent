@@ -14,6 +14,7 @@ def production_settings(**overrides: object) -> Settings:
         "api_key": SecretStr(CLIENT_KEY),
         "admin_api_key": SecretStr(ADMIN_KEY),
         "api_docs_enabled": False,
+        "api_rate_limit_enabled": True,
         "APP_DEBUG": False,
     }
     values.update(overrides)
@@ -27,6 +28,7 @@ def test_safe_production_configuration_is_accepted() -> None:
     assert configured.storage_backend == "database"
     assert not configured.debug
     assert not configured.api_docs_enabled
+    assert configured.api_rate_limit_enabled
 
 
 @pytest.mark.parametrize(
@@ -35,6 +37,10 @@ def test_safe_production_configuration_is_accepted() -> None:
         ({"storage_backend": "memory"}, "STORAGE_BACKEND must be database"),
         ({"APP_DEBUG": True}, "APP_DEBUG must be false"),
         ({"api_docs_enabled": True}, "API_DOCS_ENABLED must be false"),
+        (
+            {"api_rate_limit_enabled": False},
+            "API_RATE_LIMIT_ENABLED must be true",
+        ),
         ({"api_key": None}, "API_KEY must contain at least 32 characters"),
         (
             {"admin_api_key": SecretStr("short")},
@@ -61,6 +67,7 @@ def test_local_environment_keeps_development_defaults() -> None:
     assert configured.api_key is None
     assert configured.admin_api_key is None
     assert configured.api_docs_enabled
+    assert not configured.api_rate_limit_enabled
 
 
 def test_unknown_environment_is_rejected() -> None:

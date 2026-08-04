@@ -113,6 +113,7 @@ jobs:
           -e API_KEY="$SMOKE_API_KEY"
           -e ADMIN_API_KEY="$SMOKE_ADMIN_API_KEY"
           -e API_DOCS_ENABLED=false
+          -e API_RATE_LIMIT_ENABLED=true
           purchase-agent:smoke
       - name: Wait for container readiness
         run: >-

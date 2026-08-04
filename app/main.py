@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.exception_handlers import (
     register_api_exception_handlers,
 )
+from app.api.middleware.rate_limit import RateLimitMiddleware
 from app.api.middleware.request_body_limit import RequestBodyLimitMiddleware
 from app.api.middleware.request_context import request_context_middleware
 from app.api.middleware.request_timeout import RequestTimeoutMiddleware
@@ -32,6 +33,13 @@ def create_app(config: Settings = settings) -> FastAPI:
         RequestTimeoutMiddleware,
         timeout_seconds=config.request_timeout_seconds,
     )
+    if config.api_rate_limit_enabled:
+        application.add_middleware(
+            RateLimitMiddleware,
+            request_limit=config.api_rate_limit_requests,
+            window_seconds=config.api_rate_limit_window_seconds,
+            max_clients=config.api_rate_limit_max_clients,
+        )
     application.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_allowed_origins,

@@ -36,6 +36,10 @@ class Settings(BaseSettings):
         le=100 * 1_048_576,
     )
     request_timeout_seconds: float = Field(default=60.0, gt=30, le=900)
+    api_rate_limit_enabled: bool = False
+    api_rate_limit_requests: int = Field(default=120, ge=1, le=100_000)
+    api_rate_limit_window_seconds: float = Field(default=60.0, gt=0, le=3600)
+    api_rate_limit_max_clients: int = Field(default=10_000, ge=1, le=1_000_000)
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
     worker_claim_timeout_seconds: int = Field(default=900, ge=1, le=86400)
@@ -155,6 +159,8 @@ class Settings(BaseSettings):
             violations.append("APP_DEBUG must be false")
         if self.api_docs_enabled:
             violations.append("API_DOCS_ENABLED must be false")
+        if not self.api_rate_limit_enabled:
+            violations.append("API_RATE_LIMIT_ENABLED must be true")
         client_key = (
             self.api_key.get_secret_value() if self.api_key is not None else ""
         )

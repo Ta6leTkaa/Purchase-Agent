@@ -87,6 +87,18 @@ bound leaves room for the API's supported 30-second long polls. A deadline
 cancels in-flight application work so dependency cleanup and database rollback
 can run, then returns `504 request_timeout` if the response has not started.
 
+Production API traffic is limited to 120 requests per rolling 60-second
+window by default. Compose enables the limiter with
+`API_RATE_LIMIT_ENABLED=true`; production configuration fails closed if it is
+disabled, while direct local/test applications keep it opt-in. Client and
+admin API keys receive independent buckets; keys
+are represented internally only by SHA-256 digests. Unauthenticated traffic is
+bucketed by peer address, while health probes and CORS preflight remain exempt.
+Rejected requests return `429 rate_limit_exceeded` with `Retry-After` and
+`RateLimit-*` headers. Tune `API_RATE_LIMIT_REQUESTS`,
+`API_RATE_LIMIT_WINDOW_SECONDS`, and the bounded
+`API_RATE_LIMIT_MAX_CLIENTS` registry for each replica's capacity.
+
 Every HTTP response includes an `X-Request-ID`. A caller-provided identifier is
 preserved when it contains only safe correlation characters and is at most 128
 characters; otherwise the API generates a UUID. Each request produces a JSON
