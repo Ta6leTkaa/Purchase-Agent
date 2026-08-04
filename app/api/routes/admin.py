@@ -48,6 +48,7 @@ from app.services.provider_history_verification import (
     VerifyMissionProviderHistoryProjection,
 )
 from app.services.provider_resolver import ProviderResolver
+from app.services.runtime_state import RuntimeStateSnapshot, runtime_state
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 type MissionRepositoryDep = Annotated[
@@ -150,6 +151,40 @@ class NotificationOutboxPage(BaseModel):
     items: list[NotificationOutboxMessageSummary]
     has_more: bool
     next_cursor: str | None
+
+
+@router.get(
+    "/runtime-status",
+    response_model=RuntimeStateSnapshot,
+    summary="Inspect whether this API process is accepting traffic",
+)
+async def runtime_status_endpoint(
+    _admin_api_key: AdminApiKeyDep,
+) -> RuntimeStateSnapshot:
+    return runtime_state.snapshot()
+
+
+@router.post(
+    "/runtime/drain",
+    response_model=RuntimeStateSnapshot,
+    summary="Remove this API process from readiness traffic",
+)
+async def drain_runtime_endpoint(
+    _admin_api_key: AdminApiKeyDep,
+    current_time: CurrentTimeDep,
+) -> RuntimeStateSnapshot:
+    return runtime_state.begin_draining(current_time)
+
+
+@router.post(
+    "/runtime/resume",
+    response_model=RuntimeStateSnapshot,
+    summary="Return this API process to readiness traffic",
+)
+async def resume_runtime_endpoint(
+    _admin_api_key: AdminApiKeyDep,
+) -> RuntimeStateSnapshot:
+    return runtime_state.resume()
 
 
 @router.get(

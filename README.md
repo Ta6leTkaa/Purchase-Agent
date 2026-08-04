@@ -91,6 +91,14 @@ status together with due, expired-but-not-yet-processed, stale-processing, and
 attempt-exhausted waiting counts. The optional `claim_timeout_seconds` query
 parameter controls when a processing claim is considered stale.
 
+Before restarting an API replica, call `POST /admin/runtime/drain` with the
+admin key. The process immediately reports `503 instance_draining` from
+`/ready` while `/health` and already accepted work remain available. Repeated
+drain calls are idempotent and preserve the original timestamp. Inspect the
+state through `GET /admin/runtime-status`; use `POST /admin/runtime/resume` to
+return a replica to readiness if the restart is cancelled. Drain state is
+process-local and resets when the process restarts.
+
 ## Continuous integration
 
 The repository includes a GitHub Actions workflow in

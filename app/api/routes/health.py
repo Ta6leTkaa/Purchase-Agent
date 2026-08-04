@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.schema import EXPECTED_SCHEMA_REVISION
 from app.dependencies import get_storage_session
+from app.services.runtime_state import runtime_state
 
 router = APIRouter()
 
@@ -23,6 +24,18 @@ async def readiness_check(
     session: Annotated[AsyncSession | None, Depends(get_storage_session)],
 ) -> dict[str, str]:
     """Report whether this API instance can serve its configured storage."""
+    runtime_snapshot = runtime_state.snapshot()
+    if not runtime_snapshot.accepting_traffic:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "instance_draining",
+                "message": "API instance is draining and not accepting traffic.",
+                "draining_since": runtime_snapshot.model_dump(mode="json")[
+                    "draining_since"
+                ],
+            },
+        )
     if session is None:
         return {"status": "ready", "storage_backend": "memory"}
     try:
