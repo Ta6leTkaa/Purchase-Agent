@@ -36,6 +36,8 @@ def test_timeout_response_keeps_cors_and_request_id() -> None:
     assert response.headers["access-control-allow-origin"] == (
         "http://localhost:3000"
     )
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.asyncio

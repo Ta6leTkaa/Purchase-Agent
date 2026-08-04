@@ -37,6 +37,7 @@ def test_docker_compose_defines_api_and_database_migration_gate() -> None:
     assert "service_completed_successfully" in content
     assert "API_KEY" in content
     assert "ADMIN_API_KEY" in content
+    assert "API_DOCS_ENABLED" in content
     assert "CORS_ALLOWED_ORIGINS" in content
     assert "MAX_REQUEST_BODY_BYTES" in content
     assert "REQUEST_TIMEOUT_SECONDS" in content

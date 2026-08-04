@@ -7,6 +7,7 @@ from app.api.exception_handlers import (
 from app.api.middleware.request_body_limit import RequestBodyLimitMiddleware
 from app.api.middleware.request_context import request_context_middleware
 from app.api.middleware.request_timeout import RequestTimeoutMiddleware
+from app.api.middleware.security_headers import SecurityHeadersMiddleware
 from app.api.openapi import configure_openapi
 from app.api.routes.admin import router as admin_router
 from app.api.routes.health import router as health_router
@@ -17,7 +18,12 @@ from app.core.config import Settings, settings
 
 
 def create_app(config: Settings = settings) -> FastAPI:
-    application = FastAPI(title=config.app_name)
+    application = FastAPI(
+        title=config.app_name,
+        docs_url="/docs" if config.api_docs_enabled else None,
+        redoc_url="/redoc" if config.api_docs_enabled else None,
+        openapi_url="/openapi.json" if config.api_docs_enabled else None,
+    )
     application.add_middleware(
         RequestBodyLimitMiddleware,
         max_body_bytes=config.max_request_body_bytes,
@@ -42,6 +48,7 @@ def create_app(config: Settings = settings) -> FastAPI:
         ],
         expose_headers=["ETag", "X-Request-ID"],
     )
+    application.add_middleware(SecurityHeadersMiddleware)
     application.middleware("http")(request_context_middleware)
     register_api_exception_handlers(application)
     application.include_router(health_router)

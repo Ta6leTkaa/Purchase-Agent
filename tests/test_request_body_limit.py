@@ -39,6 +39,8 @@ def test_oversized_declared_body_is_rejected_before_routing() -> None:
     assert response.headers["access-control-allow-origin"] == (
         "http://localhost:3000"
     )
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_body_at_configured_limit_reaches_routing() -> None:

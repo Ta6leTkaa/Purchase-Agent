@@ -12,6 +12,7 @@ def test_settings_contains_database_url() -> None:
     settings = Settings()
 
     assert settings.database_url
+    assert settings.api_docs_enabled
     assert settings.worker_poll_interval_seconds == 5
     assert settings.worker_batch_size == 100
     assert settings.worker_claim_timeout_seconds == 900

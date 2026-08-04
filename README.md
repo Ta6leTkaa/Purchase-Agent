@@ -40,6 +40,13 @@ type, and safe message; rejected input values are deliberately omitted. The
 envelope includes the request ID so clients can correlate a validation failure
 with structured server logs. Domain errors retain their more specific codes.
 
+All API responses set `nosniff`, deny framing, suppress referrer information,
+and disable camera, microphone, and geolocation browser capabilities. Error
+responses default to `Cache-Control: no-store`. Interactive docs remain enabled
+for direct local development; Compose disables `/docs`, `/redoc`, and
+`/openapi.json` by default. Set `API_DOCS_ENABLED=true` only where public API
+documentation is intended.
+
 Browser clients on another origin require an explicit JSON allowlist, for
 example `CORS_ALLOWED_ORIGINS=["http://localhost:3000"]`. Wildcards,
 credentials, paths, and insecure non-local origins are rejected. Preflight

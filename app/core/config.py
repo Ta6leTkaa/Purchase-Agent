@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     )
     api_key: SecretStr | None = None
     admin_api_key: SecretStr | None = None
+    api_docs_enabled: bool = True
     cors_allowed_origins: list[str] = Field(default_factory=list)
     max_request_body_bytes: int = Field(
         default=1_048_576,
