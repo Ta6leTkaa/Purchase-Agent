@@ -27,6 +27,7 @@ from app.repositories.sqlalchemy.resource_creation_idempotency import (
     SqlAlchemyResourceCreationIdempotencyStore,
 )
 from app.services.clock import utc_now
+from app.services.deployment_smoke import run_deployment_smoke
 from app.services.due_mission_processor import (
     DueMissionProcessingResult,
     process_due_missions,
@@ -99,6 +100,36 @@ class CreationReceiptPruneResult(BaseModel):
     matched_count: int
     deleted_count: int
     receipts: list[ResourceCreationReceiptKey]
+
+
+async def smoke_api_command(
+    base_url: str,
+    api_key: str | None,
+    admin_api_key: str | None,
+    timeout_seconds: float,
+    *,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    output = stdout or sys.stdout
+    error_output = stderr or sys.stderr
+    if not api_key or not admin_api_key:
+        error_output.write(
+            "API_KEY and ADMIN_API_KEY are required for the smoke check.\n"
+        )
+        return 2
+    try:
+        result = await run_deployment_smoke(
+            base_url=base_url,
+            api_key=api_key,
+            admin_api_key=admin_api_key,
+            timeout_seconds=timeout_seconds,
+        )
+    except ValueError as exc:
+        error_output.write(f"Invalid smoke check configuration: {exc}\n")
+        return 2
+    output.write(result.model_dump_json() + "\n")
+    return 0 if result.ok else 1
 
 
 def get_cli_dependencies() -> CliDependencies:
@@ -430,6 +461,17 @@ async def worker_command(
 def main(argv: Sequence[str] | None = None) -> None:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.command == "smoke-api":
+        raise SystemExit(
+            asyncio.run(
+                smoke_api_command(
+                    args.base_url,
+                    args.api_key,
+                    args.admin_api_key,
+                    args.timeout_seconds,
+                )
+            )
+        )
     if args.command == "process-due":
         raise SystemExit(asyncio.run(process_due_command(args.limit)))
     if args.command == "worker":
@@ -610,6 +652,35 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    smoke_parser = subparsers.add_parser(
+        "smoke-api",
+        help="Verify a deployed API without creating or changing data.",
+    )
+    smoke_parser.add_argument("--base-url", required=True)
+    smoke_parser.add_argument(
+        "--api-key",
+        default=(
+            settings.api_key.get_secret_value()
+            if settings.api_key is not None
+            else None
+        ),
+        help="Client key; defaults to API_KEY.",
+    )
+    smoke_parser.add_argument(
+        "--admin-api-key",
+        default=(
+            settings.admin_api_key.get_secret_value()
+            if settings.admin_api_key is not None
+            else None
+        ),
+        help="Admin key; defaults to ADMIN_API_KEY.",
+    )
+    smoke_parser.add_argument(
+        "--timeout-seconds",
+        type=_parse_smoke_timeout_seconds,
+        default=10.0,
+    )
+
     process_due_parser = subparsers.add_parser(
         "process-due",
         help="Run one processing cycle for due missions.",
@@ -778,6 +849,18 @@ def _parse_poll_interval_seconds(value: str) -> float:
         message = "poll-interval-seconds must be greater than 0 and at most 3600"
         raise argparse.ArgumentTypeError(message)
     return interval
+
+
+def _parse_smoke_timeout_seconds(value: str) -> float:
+    try:
+        timeout = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("timeout-seconds must be a number") from exc
+    if timeout <= 0 or timeout > 60:
+        raise argparse.ArgumentTypeError(
+            "timeout-seconds must be greater than 0 and at most 60"
+        )
+    return timeout
 
 
 def _parse_retention_days(value: str) -> int:

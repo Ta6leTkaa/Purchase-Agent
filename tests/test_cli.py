@@ -21,6 +21,10 @@ from app.domain.mission import (
     TrainConstraints,
 )
 from app.repositories.mission import MissionRepository
+from app.services.deployment_smoke import (
+    DeploymentSmokeCheck,
+    DeploymentSmokeResult,
+)
 from app.services.mission_event_projection import (
     MissionEventProjectionRebuildResult,
 )
@@ -28,6 +32,76 @@ from app.services.mission_pagination import MissionCursor
 from app.storage.memory import InMemoryIdentityRepository, InMemoryMissionRepository
 
 CURRENT_TIME = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
+
+
+def test_smoke_api_command_passes_cli_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str | None, str | None, float]] = []
+
+    async def fake_smoke_api_command(
+        base_url: str,
+        api_key: str | None,
+        admin_api_key: str | None,
+        timeout_seconds: float,
+    ) -> int:
+        calls.append((base_url, api_key, admin_api_key, timeout_seconds))
+        return 0
+
+    monkeypatch.setattr(cli, "smoke_api_command", fake_smoke_api_command)
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(
+            [
+                "smoke-api",
+                "--base-url",
+                "https://api.example.test",
+                "--api-key",
+                "client-key",
+                "--admin-api-key",
+                "admin-key",
+                "--timeout-seconds",
+                "12.5",
+            ]
+        )
+
+    assert exc_info.value.code == 0
+    assert calls == [
+        ("https://api.example.test", "client-key", "admin-key", 12.5)
+    ]
+
+
+def test_smoke_api_command_writes_report_and_failure_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_run_deployment_smoke(**kwargs: object) -> DeploymentSmokeResult:
+        return DeploymentSmokeResult(
+            ok=False,
+            checks=[
+                DeploymentSmokeCheck(
+                    name="readiness",
+                    ok=False,
+                    status_code=503,
+                    message="Unexpected status or response shape.",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(cli, "run_deployment_smoke", fake_run_deployment_smoke)
+    stdout = io.StringIO()
+
+    exit_code = asyncio.run(
+        cli.smoke_api_command(
+            "https://api.example.test",
+            "client-key",
+            "admin-key",
+            10,
+            stdout=stdout,
+        )
+    )
+
+    assert exit_code == 1
+    assert json.loads(stdout.getvalue())["checks"][0]["name"] == "readiness"
 
 
 def test_process_due_command_uses_default_limit(

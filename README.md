@@ -27,6 +27,15 @@ traffic is considered safe. Database readiness includes an exact Alembic head
 check, so an instance with missing, outdated, or split schema revisions does
 not receive traffic. Scheduled execution and notification delivery remain opt-in:
 
+After deployment, run the non-mutating smoke check. It verifies liveness,
+readiness, client authentication, admin authentication, and that the instance
+is accepting traffic; output is one JSON report and secrets are never echoed:
+
+```bash
+API_KEY=... ADMIN_API_KEY=... python -m app.cli smoke-api \
+  --base-url https://purchase-agent.example.com
+```
+
 ```bash
 docker compose --profile worker --profile notifications up --build
 ```
