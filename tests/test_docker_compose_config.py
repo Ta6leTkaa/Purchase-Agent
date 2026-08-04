@@ -8,9 +8,8 @@ def test_docker_compose_defines_local_postgres() -> None:
 
     assert "postgres:" in content
     assert "image: postgres:16" in content
-    assert "container_name: purchase-agent-postgres" in content
     assert "POSTGRES_DB: purchase_agent" in content
-    assert '"5432:5432"' in content
+    assert '"${POSTGRES_PORT:-5432}:5432"' in content
     assert "purchase_agent_postgres_data:/var/lib/postgresql/data" in content
     assert "pg_isready -U purchase_agent -d purchase_agent" in content
 
@@ -37,7 +36,7 @@ def test_docker_compose_defines_api_and_database_migration_gate() -> None:
     assert "migrate:" in content
     assert 'command: ["alembic", "upgrade", "head"]' in content
     assert "api:" in content
-    assert '"8000:8000"' in content
+    assert '"${API_PORT:-8000}:8000"' in content
     assert "service_completed_successfully" in content
     assert "ENVIRONMENT: production" in content
     assert "API_KEY" in content

@@ -7,10 +7,11 @@ APIs for provider resolution history.
 
 ## Local Compose deployment
 
-Set non-empty `API_KEY` and `ADMIN_API_KEY` values in `.env`, then start the
-full backend:
+Copy the tracked configuration template, replace both API keys with different
+random values of at least 32 characters, then start the API stack:
 
 ```bash
+cp .env.example .env
 docker compose up --build
 ```
 
@@ -51,6 +52,48 @@ those audit records and must not be used as a read-only production probe.
 ```bash
 docker compose --profile worker --profile notifications up --build
 ```
+
+Use `API_PORT` and `POSTGRES_PORT` when their defaults are occupied. Compose
+does not set a global container name, so isolated stacks can run concurrently:
+
+```bash
+API_PORT=58000 POSTGRES_PORT=55432 \
+  docker compose -p purchase-agent-staging \
+  --profile worker --profile notifications up -d --build
+docker compose -p purchase-agent-staging ps
+```
+
+All long-running services must become `healthy`; `migrate` must exit with code
+zero. Then run `smoke-api`, and use `smoke-flow` only against disposable or
+staging data. Inspect failures with `docker compose logs api worker
+notification-worker migrate`.
+
+## Operations runbook
+
+Create a PostgreSQL backup before an upgrade that includes migrations:
+
+```bash
+docker compose exec -T postgres pg_dump \
+  -U purchase_agent -d purchase_agent -Fc > purchase-agent.dump
+```
+
+Verify that the dump is non-empty and store it outside the Compose volume. To
+restore into an intentionally empty recovery database, stop API and workers,
+recreate that database, and run:
+
+```bash
+docker compose exec -T postgres pg_restore \
+  -U purchase_agent -d purchase_agent --clean --if-exists < purchase-agent.dump
+```
+
+For an update, drain the API, create the backup, pull/build the new image, run
+`docker compose run --rm migrate`, and only then recreate API and worker
+services. Confirm `/ready`, `smoke-api`, and `/admin/worker-health` before
+returning traffic. Application rollback means restoring the previous image;
+database downgrade is not automatic and should use the verified backup when a
+migration is incompatible. Preserve API, worker, and PostgreSQL logs during an
+incident, but never include `.env`, API keys, provider tokens, passenger
+documents, or notification payloads in a support bundle.
 
 Client-facing Identity, Mission, and Provider endpoints require the configured
 key in the `X-API-Key` header. Liveness and readiness probes remain public.
