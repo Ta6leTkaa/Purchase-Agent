@@ -69,6 +69,7 @@ from app.services.mission_event_history import (
     MissionEventHistoryPageRequest,
     WaitForMissionEventHistory,
 )
+from app.services.mission_outcome import MissionOutcome, get_mission_outcome
 from app.services.mission_pagination import (
     InvalidMissionCursorError,
     MissionCursor,
@@ -365,6 +366,25 @@ async def get_mission(
     response.headers["Cache-Control"] = PRIVATE_REVALIDATION_CACHE_CONTROL
     response.headers["ETag"] = etag
     return mission
+
+
+@router.get(
+    "/{mission_id}/outcome",
+    response_model=MissionOutcome,
+    summary="Get actionable mission outcome",
+    responses={404: {"description": "Mission not found"}},
+)
+async def get_mission_outcome_endpoint(
+    mission_id: UUID,
+    repository: MissionRepositoryDep,
+    response: Response,
+) -> MissionOutcome:
+    mission = await repository.get(mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    response.headers["Cache-Control"] = PRIVATE_REVALIDATION_CACHE_CONTROL
+    _set_mission_etag(response, mission)
+    return get_mission_outcome(mission)
 
 
 @router.patch("/{mission_id}")

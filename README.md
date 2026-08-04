@@ -162,6 +162,14 @@ are retryable, while other `4xx` responses are terminal. Passenger identity and
 document data crosses this boundary, so the configured gateway must be trusted
 and must not log request bodies.
 
+Clients can drive the complete flow without interpreting internal transition
+states. `GET /missions/{mission_id}/outcome` returns the current status,
+selected option and reservation together with `terminal`, `successful`, and an
+explicit `next_action` (`run`, `wait`, `resume`, `confirm`, `retry`, or `none`).
+Mutation calls should carry the latest Mission ETag in `If-Match` and a stable
+`Idempotency-Key`; safe retries then return the original result without another
+provider operation.
+
 ## Domain models
 
 The backend includes initial Pydantic domain models for:
