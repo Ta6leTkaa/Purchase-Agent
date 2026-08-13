@@ -9,6 +9,10 @@ The product is evolving toward site-agnostic browser tasks. Its universal task
 model combines a free-form user instruction, a user-supplied target URL, and
 one or more selected person profiles. Train missions remain the first working
 vertical while this generic execution layer is introduced incrementally.
+Each task carries an explicit browser permission policy. Reversible same-site
+navigation, reading, form filling, and option selection can be automated;
+payments, authentication, CAPTCHA, cross-site navigation, sensitive profile
+data, and irreversible submissions return control to the user by default.
 
 ## Local Compose deployment
 

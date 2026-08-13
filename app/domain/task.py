@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.domain.task_permission import TaskPermissionPolicy
+
 
 class TaskStatus(StrEnum):
     DRAFT = "draft"
@@ -38,6 +40,7 @@ class AgentTask(BaseModel):
     status: TaskStatus = TaskStatus.DRAFT
     inferred_kind: str | None = Field(default=None, max_length=64)
     waiting_reason: UserActionReason | None = None
+    permissions: TaskPermissionPolicy = TaskPermissionPolicy()
     created_at: datetime
 
     @field_validator("instruction")
