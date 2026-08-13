@@ -1,29 +1,82 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Purchase Agent — поездка без рутины</title><link rel="stylesheet" href="/app/app.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Purchase Agent</title>
+  <link rel="stylesheet" href="/app/app.css">
 </head>
 <body>
-  <div class="ambient one"></div><div class="ambient two"></div>
-  <header class="shell topbar"><a class="brand" href="/app"><span class="mark">PA</span><span><b>Purchase Agent</b><small>умный помощник для поездок</small></span></a><div class="connection"><i></i><span id="healthText">Проверяем сервис</span></div></header>
-  <main class="shell">
-    <section class="hero"><div><p class="eyebrow">MVP · ЖЕЛЕЗНОДОРОЖНЫЕ БИЛЕТЫ</p><h1>Скажите, куда ехать.<br><em>Остальное сделает агент.</em></h1><p class="lead">Создайте тестовую поездку, получите лучший вариант и подтвердите бронирование в одном окне.</p></div><div class="heroBadge"><span>01</span><p>Москва<br>→ Санкт-Петербург</p></div></section>
-    <section class="workspace">
-      <aside class="steps">
-        <div class="step active" data-step="1"><span>1</span><div><b>Доступ</b><small>Подключение к API</small></div></div>
-        <div class="step" data-step="2"><span>2</span><div><b>Пассажир</b><small>Кто отправляется</small></div></div>
-        <div class="step" data-step="3"><span>3</span><div><b>Поездка</b><small>Маршрут и дата</small></div></div>
-        <div class="step" data-step="4"><span>4</span><div><b>Результат</b><small>Билет и статус</small></div></div>
-      </aside>
-      <section class="panel"><div id="notice" class="notice" hidden></div>
-        <form id="accessForm" class="screen active" data-screen="1"><p class="kicker">Шаг 1 из 4</p><h2>Подключение</h2><p class="muted">Введите клиентский ключ из файла <code>.env</code>. Он останется только в этой вкладке.</p><label>API-ключ<input id="apiKey" type="password" autocomplete="off" placeholder="local-client-key-…" required></label><button class="primary" type="submit">Проверить и продолжить <span>→</span></button></form>
-        <form id="passengerForm" class="screen" data-screen="2"><p class="kicker">Шаг 2 из 4</p><h2>Кто поедет?</h2><div class="grid"><label>Имя<input id="firstName" value="Иван" required></label><label>Фамилия<input id="lastName" value="Петров" required></label></div><label>Дата рождения<input id="birthDate" type="date" value="1990-01-01" required></label><p class="hint">Для теста паспорт не нужен — mock-провайдер принимает пассажира без документа.</p><div class="actions"><button class="ghost back" type="button">Назад</button><button class="primary" type="submit">Сохранить пассажира <span>→</span></button></div></form>
-        <form id="tripForm" class="screen" data-screen="3"><p class="kicker">Шаг 3 из 4</p><h2>Куда отправимся?</h2><div class="route"><label>Откуда<input id="origin" value="Москва" required></label><span>→</span><label>Куда<input id="destination" value="Санкт-Петербург" required></label></div><div class="grid"><label>Дата поездки<input id="travelDate" type="date" required></label><label>Режим<select id="executionMode"><option value="require_confirmation">С подтверждением</option><option value="automatic">Автоматически</option></select></label></div><div class="actions"><button class="ghost back" type="button">Назад</button><button class="primary" type="submit">Найти лучший билет <span>↗</span></button></div></form>
-        <section id="resultScreen" class="screen" data-screen="4"><p class="kicker">Шаг 4 из 4</p><div id="loading" class="loading"><span></span><h2>Агент ищет лучший вариант</h2><p>Проверяем маршрут и создаём резервирование…</p></div><div id="result" hidden><div class="success">✓</div><p class="kicker">ВАРИАНТ НАЙДЕН</p><h2 id="resultTitle"></h2><div class="ticket"><div><small>Маршрут</small><b id="ticketRoute"></b></div><div><small>Дата</small><b id="ticketDate"></b></div><div><small>Поезд</small><b id="ticketTrain"></b></div><div><small>Цена</small><b id="ticketPrice"></b></div></div><p id="resultMessage" class="muted"></p><div class="actions"><button id="restart" class="ghost" type="button">Новая поездка</button><button id="confirm" class="primary" type="button">Подтвердить бронирование <span>✓</span></button></div><details><summary>Технические данные</summary><pre id="rawResult"></pre></details></div></section>
+  <div id="authGate" class="auth-gate">
+    <div class="auth-card">
+      <div class="logo large">PA</div>
+      <p class="eyebrow">PURCHASE AGENT MVP</p>
+      <h1>Ваши поездки —<br><em>без рутины</em></h1>
+      <p>Введите клиентский API-ключ из файла <code>.env</code>. Он сохраняется только в этой вкладке.</p>
+      <form id="authForm"><label>API-ключ<input id="apiKey" type="password" autocomplete="off" placeholder="local-client-key-…" required></label><button class="primary wide" type="submit">Войти в кабинет <span>→</span></button></form>
+      <div id="authError" class="error" hidden></div>
+    </div>
+  </div>
+
+  <div id="appShell" class="app-shell" hidden>
+    <aside class="sidebar">
+      <a class="brand" href="#trips"><span class="logo">PA</span><span><b>Purchase Agent</b><small>travel workspace</small></span></a>
+      <nav>
+        <button class="nav active" data-view="trips"><span>⌁</span>Поездки</button>
+        <button class="nav" data-view="passengers"><span>◎</span>Пассажиры</button>
+        <button class="nav" data-view="activity"><span>↻</span>Активность</button>
+      </nav>
+      <div class="sidebar-bottom"><div class="service"><i></i><span><b>Сервис работает</b><small id="storageText">Проверка подключения</small></span></div><button id="logout" class="text-button">Сменить ключ</button></div>
+    </aside>
+
+    <main class="content">
+      <header class="mobile-head"><span class="logo">PA</span><button id="mobileMenu">Меню</button></header>
+      <section id="tripsView" class="view active">
+        <header class="page-head"><div><p class="eyebrow">ЛИЧНЫЙ КАБИНЕТ</p><h2>Мои поездки</h2><p>Планируйте и отслеживайте покупки билетов.</p></div><button id="newTrip" class="primary">+ Новая поездка</button></header>
+        <div class="stats"><article><small>Всего поездок</small><b id="totalTrips">0</b></article><article><small>Ожидают действия</small><b id="actionTrips">0</b></article><article><small>Завершено</small><b id="completedTrips">0</b></article></div>
+        <div class="toolbar"><div class="filters"><button class="filter active" data-status="">Все</button><button class="filter" data-status="active">Активные</button><button class="filter" data-status="requires_confirmation">Ждут подтверждения</button><button class="filter" data-status="completed">Завершённые</button></div><button id="refreshTrips" class="icon-button" title="Обновить">↻</button></div>
+        <div id="tripList" class="card-list"></div>
       </section>
-    </section>
-  </main>
-  <footer class="shell"><span>Purchase Agent MVP</span><span>Данные сохраняются в локальной PostgreSQL</span></footer>
+
+      <section id="passengersView" class="view">
+        <header class="page-head"><div><p class="eyebrow">ПРОФИЛИ</p><h2>Пассажиры</h2><p>Сохранённые данные для новых поездок.</p></div><button id="newPassenger" class="primary">+ Добавить пассажира</button></header>
+        <div id="passengerList" class="passenger-grid"></div>
+      </section>
+
+      <section id="activityView" class="view">
+        <header class="page-head"><div><p class="eyebrow">ЖУРНАЛ</p><h2>Последняя активность</h2><p>События выбранной поездки без технического шума.</p></div></header>
+        <div id="activityEmpty" class="empty"><span>↻</span><h3>Выберите поездку</h3><p>Откройте карточку поездки, чтобы увидеть её историю.</p></div>
+        <div id="activityList" class="timeline"></div>
+      </section>
+
+      <section id="tripDetail" class="view detail-view">
+        <button class="back-link" data-view-target="trips">← Все поездки</button>
+        <div id="tripDetailContent"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="tripDialog" class="dialog wide-dialog">
+    <form method="dialog"><button class="close" value="cancel" aria-label="Закрыть">×</button></form>
+    <div class="wizard-head"><p class="eyebrow">НОВАЯ ПОЕЗДКА</p><h2>Куда отправимся?</h2><div class="progress"><i class="active"></i><i></i><i></i></div></div>
+    <form id="tripForm">
+      <section class="wizard-step active" data-wizard="1">
+        <div class="route-box"><label>Откуда<input id="origin" value="Москва" required></label><span>→</span><label>Куда<input id="destination" value="Санкт-Петербург" required></label></div>
+        <div class="grid"><label>Дата поездки<input id="travelDate" type="date" required></label><label>Режим<select id="executionMode"><option value="require_confirmation">С моим подтверждением</option><option value="auto_purchase">Автоматическое оформление</option><option value="search_only">Только поиск</option></select></label></div>
+        <button class="primary next" type="button">Продолжить <span>→</span></button>
+      </section>
+      <section class="wizard-step" data-wizard="2"><h3>Кто поедет?</h3><p class="muted">Выберите сохранённых пассажиров или добавьте нового.</p><div id="passengerChoices" class="choices"></div><div class="wizard-actions"><button class="secondary previous" type="button">Назад</button><button class="primary next" type="button">Продолжить <span>→</span></button></div></section>
+      <section class="wizard-step" data-wizard="3"><h3>Проверьте детали</h3><div id="tripReview" class="review"></div><div class="wizard-actions"><button class="secondary previous" type="button">Назад</button><button class="primary" type="submit">Создать и найти билет <span>↗</span></button></div></section>
+    </form>
+  </dialog>
+
+  <dialog id="passengerDialog" class="dialog">
+    <form method="dialog"><button class="close" value="cancel" aria-label="Закрыть">×</button></form>
+    <p class="eyebrow">НОВЫЙ ПРОФИЛЬ</p><h2>Добавить пассажира</h2>
+    <form id="passengerForm"><div class="grid"><label>Имя<input id="firstName" required></label><label>Фамилия<input id="lastName" required></label></div><label>Дата рождения<input id="birthDate" type="date" required></label><div class="document-row"><label>Документ<select id="documentType"><option value="">Без документа</option><option value="internal_passport">Паспорт РФ</option><option value="international_passport">Загранпаспорт</option><option value="birth_certificate">Свидетельство о рождении</option></select></label><label>Номер<input id="documentNumber" autocomplete="off"></label></div><button class="primary wide" type="submit">Сохранить пассажира</button></form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
   <script src="/app/app.js" defer></script>
-</body></html>
+</body>
+</html>

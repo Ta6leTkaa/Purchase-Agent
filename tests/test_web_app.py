@@ -16,6 +16,9 @@ def test_web_app_is_available() -> None:
     assert response.headers["cache-control"] == "no-store"
     assert "Purchase Agent" in response.text
     assert "passengerForm" in response.text
+    assert "Мои поездки" in response.text
+    assert "Пассажиры" in response.text
+    assert "Новая поездка" in response.text
 
 
 def test_web_assets_are_served_with_explicit_types() -> None:
@@ -27,6 +30,10 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert script.status_code == 200
     assert script.headers["content-type"].startswith("text/javascript")
     assert "X-API-Key" in script.text
+    assert 'api("/missions?limit=100")' in script.text
+    assert 'api("/identities?limit=100")' in script.text
+    assert "performMissionAction" in script.text
+    assert "loadActivity" in script.text
 
 
 def test_web_routes_are_not_exposed_in_openapi() -> None:

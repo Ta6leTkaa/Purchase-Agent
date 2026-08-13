@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -6,6 +7,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.db.session import async_session_maker
+
+
+def test_settings_do_not_implicitly_read_project_dotenv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "ENVIRONMENT=production\nAPI_KEY=unexpected-secret\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    configured = Settings()
+
+    assert configured.environment == "local"
+    assert configured.api_key is None
 
 
 def test_settings_contains_database_url() -> None:
