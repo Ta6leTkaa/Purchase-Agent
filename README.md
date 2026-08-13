@@ -5,6 +5,11 @@ with typed train-ticket missions, provider resolution, a deterministic mock
 provider, durable Mission events, PostgreSQL persistence, and read-only audit
 APIs for provider resolution history.
 
+The product is evolving toward site-agnostic browser tasks. Its universal task
+model combines a free-form user instruction, a user-supplied target URL, and
+one or more selected person profiles. Train missions remain the first working
+vertical while this generic execution layer is introduced incrementally.
+
 ## Local Compose deployment
 
 Copy the tracked configuration template, replace both API keys with different
