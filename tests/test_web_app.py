@@ -19,8 +19,8 @@ def test_web_app_is_available() -> None:
     assert "Мои поездки" in response.text
     assert "Пассажиры" in response.text
     assert "Новая поездка" in response.text
-    assert "/app/app.css?v=20260813-2" in response.text
-    assert "/app/app.js?v=20260813-2" in response.text
+    assert "/app/app.css?v=20260813-3" in response.text
+    assert "/app/app.js?v=20260813-3" in response.text
 
 
 def test_web_assets_are_served_with_explicit_types() -> None:
@@ -38,6 +38,12 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert 'api("/identities?limit=100")' in script.text
     assert "performMissionAction" in script.text
     assert "loadActivity" in script.text
+
+
+def test_hidden_web_states_cannot_be_overridden_by_component_layout() -> None:
+    styles = TestClient(app).get("/app/app.css").text
+
+    assert "[hidden]{display:none!important}" in styles
 
 
 def test_web_routes_are_not_exposed_in_openapi() -> None:
