@@ -26,7 +26,7 @@ async def web_styles() -> FileResponse:
     return FileResponse(
         _WEB_ROOT / "app.css",
         media_type="text/css",
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -35,5 +35,5 @@ async def web_script() -> FileResponse:
     return FileResponse(
         _WEB_ROOT / "app.js",
         media_type="text/javascript",
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"Cache-Control": "no-store"},
     )

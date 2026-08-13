@@ -4,17 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Purchase Agent</title>
-  <link rel="stylesheet" href="/app/app.css">
+  <link rel="stylesheet" href="/app/app.css?v=20260813-2">
 </head>
 <body>
   <div id="authGate" class="auth-gate">
-    <div class="auth-card">
-      <div class="logo large">PA</div>
-      <p class="eyebrow">PURCHASE AGENT MVP</p>
-      <h1>Ваши поездки —<br><em>без рутины</em></h1>
-      <p>Введите клиентский API-ключ из файла <code>.env</code>. Он сохраняется только в этой вкладке.</p>
-      <form id="authForm"><label>API-ключ<input id="apiKey" type="password" autocomplete="off" placeholder="local-client-key-…" required></label><button class="primary wide" type="submit">Войти в кабинет <span>→</span></button></form>
-      <div id="authError" class="error" hidden></div>
+    <div class="auth-layout">
+      <section class="auth-promo">
+        <div class="auth-brand"><div class="logo large">PA</div><span><b>Purchase Agent</b><small>персональный агент поездок</small></span></div>
+        <div class="auth-copy"><p class="eyebrow">ЖЕЛЕЗНОДОРОЖНЫЕ ПОЕЗДКИ</p><h1>Меньше поиска.<br><em>Больше пути.</em></h1><p>Создайте поездку, выберите пассажиров — агент найдёт вариант и проведёт бронирование до результата.</p></div>
+        <div class="auth-route"><span><small>ОТКУДА</small><b>Москва</b></span><i>→</i><span><small>КУДА</small><b>Санкт-Петербург</b></span></div>
+      </section>
+      <section class="auth-card">
+        <div class="auth-card-head"><span class="secure-mark">✓</span><div><p class="eyebrow">БЕЗОПАСНЫЙ ВХОД</p><h2>Открыть кабинет</h2></div></div>
+        <p>Используйте клиентский ключ <code>API_KEY</code> из файла <code>.env</code>. Ключ останется только в этой вкладке браузера.</p>
+        <form id="authForm"><label>Клиентский API-ключ<div class="password-field"><input id="apiKey" type="password" autocomplete="off" placeholder="Вставьте ключ из .env" required><button id="toggleKey" type="button" aria-label="Показать ключ">Показать</button></div></label><button id="loginButton" class="primary wide" type="submit"><span class="button-label">Войти в кабинет</span><span class="button-arrow">→</span></button></form>
+        <div id="authError" class="error" hidden></div>
+        <p class="auth-help">Сервис должен быть запущен командой <code>docker compose up -d --build</code>.</p>
+      </section>
     </div>
   </div>
 
@@ -77,6 +83,6 @@
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
-  <script src="/app/app.js" defer></script>
+  <script src="/app/app.js?v=20260813-2" defer></script>
 </body>
 </html>

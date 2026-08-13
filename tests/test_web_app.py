@@ -19,6 +19,8 @@ def test_web_app_is_available() -> None:
     assert "Мои поездки" in response.text
     assert "Пассажиры" in response.text
     assert "Новая поездка" in response.text
+    assert "/app/app.css?v=20260813-2" in response.text
+    assert "/app/app.js?v=20260813-2" in response.text
 
 
 def test_web_assets_are_served_with_explicit_types() -> None:
@@ -27,8 +29,10 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     script = client.get("/app/app.js")
     assert styles.status_code == 200
     assert styles.headers["content-type"].startswith("text/css")
+    assert styles.headers["cache-control"] == "no-store"
     assert script.status_code == 200
     assert script.headers["content-type"].startswith("text/javascript")
+    assert script.headers["cache-control"] == "no-store"
     assert "X-API-Key" in script.text
     assert 'api("/missions?limit=100")' in script.text
     assert 'api("/identities?limit=100")' in script.text
