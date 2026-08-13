@@ -6,6 +6,7 @@ from app.db.models.mission_execution_attempt import MissionExecutionAttemptModel
 from app.db.models.notification_outbox import NotificationOutboxMessageModel
 from app.db.models.provider_history import MissionProviderHistoryEventModel
 from app.db.models.resource_creation_receipt import ResourceCreationReceiptModel
+from app.db.models.task import AgentTaskModel
 from app.db.models.worker_heartbeat import WorkerHeartbeatModel
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "NotificationOutboxMessageModel",
     "MissionProviderHistoryEventModel",
     "ResourceCreationReceiptModel",
+    "AgentTaskModel",
     "WorkerHeartbeatModel",
 ]

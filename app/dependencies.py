@@ -25,6 +25,8 @@ from app.repositories.sqlalchemy.provider_history import (
 from app.repositories.sqlalchemy.resource_creation_idempotency import (
     SqlAlchemyResourceCreationIdempotencyStore,
 )
+from app.repositories.sqlalchemy.task import SqlAlchemyAgentTaskRepository
+from app.repositories.task import AgentTaskRepository
 from app.services.clock import utc_now
 from app.services.mission_event_history import (
     AsyncWaiter as MissionEventAsyncWaiter,
@@ -60,9 +62,11 @@ from app.storage.mission_command_idempotency import (
 from app.storage.resource_creation_idempotency import (
     InMemoryResourceCreationIdempotencyStore,
 )
+from app.storage.task import InMemoryAgentTaskRepository
 
 identity_repository = InMemoryIdentityRepository()
 mission_repository = InMemoryMissionRepository()
+agent_task_repository = InMemoryAgentTaskRepository()
 provider_resolver = ProviderResolver(provider_registry)
 provider_history_waiter = AsyncioWaiter()
 mission_event_history_waiter = AsyncioWaiter()
@@ -151,6 +155,13 @@ def get_mission_repository(session: StorageSessionDep) -> MissionRepository:
     return mission_repository
 
 
+def get_agent_task_repository(session: StorageSessionDep) -> AgentTaskRepository:
+    if settings.storage_backend == "database":
+        assert session is not None
+        return SqlAlchemyAgentTaskRepository(session)
+    return agent_task_repository
+
+
 def get_mission_command_idempotency_store(session: StorageSessionDep) -> object:
     if settings.storage_backend == "database":
         assert session is not None
@@ -188,12 +199,11 @@ def get_provider_history_projection_reader(
     return None
 
 
-def get_provider_history_projection_reader_factory(
-) -> SqlAlchemyProviderHistoryProjectionReaderFactory | None:
+def get_provider_history_projection_reader_factory() -> (
+    SqlAlchemyProviderHistoryProjectionReaderFactory | None
+):
     if settings.storage_backend == "database":
-        return SqlAlchemyProviderHistoryProjectionReaderFactory(
-            async_session_maker
-        )
+        return SqlAlchemyProviderHistoryProjectionReaderFactory(async_session_maker)
     return None
 
 
@@ -214,8 +224,9 @@ def get_mission_event_projection_reader(
     return None
 
 
-def get_mission_event_projection_reader_factory(
-) -> SqlAlchemyMissionEventProjectionReaderFactory | None:
+def get_mission_event_projection_reader_factory() -> (
+    SqlAlchemyMissionEventProjectionReaderFactory | None
+):
     if settings.storage_backend == "database":
         return SqlAlchemyMissionEventProjectionReaderFactory(async_session_maker)
     return None

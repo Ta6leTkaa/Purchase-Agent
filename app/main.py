@@ -15,6 +15,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.identities import router as identities_router
 from app.api.routes.missions import router as missions_router
 from app.api.routes.providers import router as providers_router
+from app.api.routes.tasks import router as tasks_router
 from app.api.routes.web import router as web_router
 from app.core.config import Settings, settings
 
@@ -64,6 +65,7 @@ def create_app(config: Settings = settings) -> FastAPI:
     application.include_router(health_router)
     application.include_router(identities_router)
     application.include_router(missions_router)
+    application.include_router(tasks_router)
     application.include_router(providers_router)
     application.include_router(admin_router)
     configure_openapi(application)

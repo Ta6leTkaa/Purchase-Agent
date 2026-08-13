@@ -18,6 +18,7 @@ class TaskStatus(StrEnum):
     PREPARED = "prepared"
     COMPLETED = "completed"
     FAILED = "failed"
+    PAUSED = "paused"
     CANCELLED = "cancelled"
 
 
@@ -35,6 +36,7 @@ class AgentTask(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: UUID
+    version: int = Field(default=0, ge=0)
     instruction: str = Field(min_length=1, max_length=4_000)
     target_url: str = Field(min_length=1, max_length=2_048)
     person_ids: tuple[UUID, ...] = Field(min_length=1, max_length=100)
@@ -99,8 +101,7 @@ class AgentTask(BaseModel):
             return None
         normalized = value.strip().casefold().replace("-", "_")
         if not normalized or not all(
-            character.isalnum() or character == "_"
-            for character in normalized
+            character.isalnum() or character == "_" for character in normalized
         ):
             raise ValueError("inferred_kind must be a simple identifier")
         return normalized
