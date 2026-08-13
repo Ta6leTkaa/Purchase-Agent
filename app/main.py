@@ -15,6 +15,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.identities import router as identities_router
 from app.api.routes.missions import router as missions_router
 from app.api.routes.providers import router as providers_router
+from app.api.routes.web import router as web_router
 from app.core.config import Settings, settings
 
 
@@ -59,6 +60,7 @@ def create_app(config: Settings = settings) -> FastAPI:
     application.add_middleware(SecurityHeadersMiddleware)
     application.middleware("http")(request_context_middleware)
     register_api_exception_handlers(application)
+    application.include_router(web_router)
     application.include_router(health_router)
     application.include_router(identities_router)
     application.include_router(missions_router)

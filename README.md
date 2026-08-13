@@ -28,6 +28,12 @@ traffic is considered safe. Database readiness includes an exact Alembic head
 check, so an instance with missing, outdated, or split schema revisions does
 not receive traffic. Scheduled execution and notification delivery remain opt-in:
 
+Open `http://localhost:8000/app` for the built-in user-facing MVP. Enter the
+client `API_KEY` from `.env`, create a passenger and a route, then let the mock
+provider find and reserve a ticket. The key is kept in the current browser tab
+only. The UI is included in the production image; public API documentation
+remains disabled independently.
+
 After deployment, run the non-mutating smoke check. It verifies liveness,
 readiness, client authentication, admin authentication, and that the instance
 is accepting traffic; output is one JSON report and secrets are never echoed:

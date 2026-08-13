@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Purchase Agent — поездка без рутины</title><link rel="stylesheet" href="/app/app.css">
+</head>
+<body>
+  <div class="ambient one"></div><div class="ambient two"></div>
+  <header class="shell topbar"><a class="brand" href="/app"><span class="mark">PA</span><span><b>Purchase Agent</b><small>умный помощник для поездок</small></span></a><div class="connection"><i></i><span id="healthText">Проверяем сервис</span></div></header>
+  <main class="shell">
+    <section class="hero"><div><p class="eyebrow">MVP · ЖЕЛЕЗНОДОРОЖНЫЕ БИЛЕТЫ</p><h1>Скажите, куда ехать.<br><em>Остальное сделает агент.</em></h1><p class="lead">Создайте тестовую поездку, получите лучший вариант и подтвердите бронирование в одном окне.</p></div><div class="heroBadge"><span>01</span><p>Москва<br>→ Санкт-Петербург</p></div></section>
+    <section class="workspace">
+      <aside class="steps">
+        <div class="step active" data-step="1"><span>1</span><div><b>Доступ</b><small>Подключение к API</small></div></div>
+        <div class="step" data-step="2"><span>2</span><div><b>Пассажир</b><small>Кто отправляется</small></div></div>
+        <div class="step" data-step="3"><span>3</span><div><b>Поездка</b><small>Маршрут и дата</small></div></div>
+        <div class="step" data-step="4"><span>4</span><div><b>Результат</b><small>Билет и статус</small></div></div>
+      </aside>
+      <section class="panel"><div id="notice" class="notice" hidden></div>
+        <form id="accessForm" class="screen active" data-screen="1"><p class="kicker">Шаг 1 из 4</p><h2>Подключение</h2><p class="muted">Введите клиентский ключ из файла <code>.env</code>. Он останется только в этой вкладке.</p><label>API-ключ<input id="apiKey" type="password" autocomplete="off" placeholder="local-client-key-…" required></label><button class="primary" type="submit">Проверить и продолжить <span>→</span></button></form>
+        <form id="passengerForm" class="screen" data-screen="2"><p class="kicker">Шаг 2 из 4</p><h2>Кто поедет?</h2><div class="grid"><label>Имя<input id="firstName" value="Иван" required></label><label>Фамилия<input id="lastName" value="Петров" required></label></div><label>Дата рождения<input id="birthDate" type="date" value="1990-01-01" required></label><p class="hint">Для теста паспорт не нужен — mock-провайдер принимает пассажира без документа.</p><div class="actions"><button class="ghost back" type="button">Назад</button><button class="primary" type="submit">Сохранить пассажира <span>→</span></button></div></form>
+        <form id="tripForm" class="screen" data-screen="3"><p class="kicker">Шаг 3 из 4</p><h2>Куда отправимся?</h2><div class="route"><label>Откуда<input id="origin" value="Москва" required></label><span>→</span><label>Куда<input id="destination" value="Санкт-Петербург" required></label></div><div class="grid"><label>Дата поездки<input id="travelDate" type="date" required></label><label>Режим<select id="executionMode"><option value="require_confirmation">С подтверждением</option><option value="automatic">Автоматически</option></select></label></div><div class="actions"><button class="ghost back" type="button">Назад</button><button class="primary" type="submit">Найти лучший билет <span>↗</span></button></div></form>
+        <section id="resultScreen" class="screen" data-screen="4"><p class="kicker">Шаг 4 из 4</p><div id="loading" class="loading"><span></span><h2>Агент ищет лучший вариант</h2><p>Проверяем маршрут и создаём резервирование…</p></div><div id="result" hidden><div class="success">✓</div><p class="kicker">ВАРИАНТ НАЙДЕН</p><h2 id="resultTitle"></h2><div class="ticket"><div><small>Маршрут</small><b id="ticketRoute"></b></div><div><small>Дата</small><b id="ticketDate"></b></div><div><small>Поезд</small><b id="ticketTrain"></b></div><div><small>Цена</small><b id="ticketPrice"></b></div></div><p id="resultMessage" class="muted"></p><div class="actions"><button id="restart" class="ghost" type="button">Новая поездка</button><button id="confirm" class="primary" type="button">Подтвердить бронирование <span>✓</span></button></div><details><summary>Технические данные</summary><pre id="rawResult"></pre></details></div></section>
+      </section>
+    </section>
+  </main>
+  <footer class="shell"><span>Purchase Agent MVP</span><span>Данные сохраняются в локальной PostgreSQL</span></footer>
+  <script src="/app/app.js" defer></script>
+</body></html>

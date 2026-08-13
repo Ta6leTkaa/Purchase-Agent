@@ -22,6 +22,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+app = ["web/*.html", "web/*.css", "web/*.js"]
+
 [dependency-groups]
 dev = [
     "aiosqlite>=0.20.0",
