@@ -13,6 +13,10 @@ Each task carries an explicit browser permission policy. Reversible same-site
 navigation, reading, form filling, and option selection can be automated;
 payments, authentication, CAPTCHA, cross-site navigation, sensitive profile
 data, and irreversible submissions return control to the user by default.
+Execution is represented by a versioned, dependency-checked plan of declarative
+browser actions. Its audit journal records only step IDs, outcomes, safe
+messages, and reason codes; arbitrary metadata and submitted form values are
+excluded so passenger documents and credentials cannot leak into the log.
 
 ## Local Compose deployment
 

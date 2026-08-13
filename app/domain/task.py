@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.task_permission import TaskPermissionPolicy
+from app.domain.task_plan import TaskExecutionJournal, TaskPlan
 
 
 class TaskStatus(StrEnum):
@@ -41,6 +42,8 @@ class AgentTask(BaseModel):
     inferred_kind: str | None = Field(default=None, max_length=64)
     waiting_reason: UserActionReason | None = None
     permissions: TaskPermissionPolicy = TaskPermissionPolicy()
+    plan: TaskPlan | None = None
+    journal: TaskExecutionJournal | None = None
     created_at: datetime
 
     @field_validator("instruction")
@@ -116,6 +119,16 @@ class AgentTask(BaseModel):
             raise ValueError(
                 "waiting_reason is required only when status is waiting_for_user"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_execution_artifacts(self) -> "AgentTask":
+        if self.plan is not None and self.plan.task_id != self.id:
+            raise ValueError("plan must belong to the task")
+        if self.journal is not None and self.journal.task_id != self.id:
+            raise ValueError("journal must belong to the task")
+        if self.journal is not None and self.plan is None:
+            raise ValueError("journal requires a task plan")
         return self
 
     @property
