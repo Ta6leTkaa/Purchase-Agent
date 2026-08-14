@@ -99,6 +99,53 @@ def test_task_can_be_paused_resumed_and_cancelled() -> None:
     assert client.get(task_url).json()["status"] == "cancelled"
 
 
+def test_prepare_task_plan_persists_safe_preview() -> None:
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить авиабилет в Стамбул",
+            "target_url": "https://air.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+
+    response = client.post(f"/tasks/{created['id']}/plan")
+    stored = client.get(f"/tasks/{created['id']}").json()
+
+    assert response.status_code == 200
+    assert response.json()["inferred_kind"] == "flight_ticket"
+    assert stored["inferred_kind"] == "flight_ticket"
+    assert stored["plan"] == response.json()["plan"]
+    assert stored["version"] == 1
+    decisions = {
+        item["step_id"]: item["decision"]
+        for item in response.json()["permissions"]
+    }
+    assert decisions["fill_documents"]["requires_user"] is True
+    assert decisions["prepare_order"]["reason"] == "confirmation_required"
+
+
+def test_cancelled_task_cannot_be_planned() -> None:
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет в кино",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+    client.delete(f"/tasks/{created['id']}")
+
+    response = client.post(f"/tasks/{created['id']}/plan")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "task_cannot_be_planned"
+
+
 def test_completed_task_cannot_be_paused() -> None:
     client = TestClient(app)
     person_id = _create_person(client)

@@ -13,7 +13,8 @@ from app.dependencies import (
 from app.domain.task import AgentTask, TaskStatus
 from app.repositories.identity import IdentityRepository
 from app.repositories.task import AgentTaskRepository, AgentTaskVersionConflictError
-from app.schemas.task import AgentTaskCreate
+from app.schemas.task import AgentTaskCreate, TaskPlanResponse, TaskPlanStepPreview
+from app.services.task_planner import build_task_plan
 
 router = APIRouter(
     prefix="/tasks", tags=["tasks"], dependencies=[Depends(require_api_key)]
@@ -70,6 +71,51 @@ async def get_task(task_id: UUID, tasks: TaskRepositoryDep) -> AgentTask:
     return await _require_task(tasks, task_id)
 
 
+@router.post("/{task_id}/plan")
+async def prepare_task_plan(
+    task_id: UUID,
+    tasks: TaskRepositoryDep,
+    now: CurrentTimeDep,
+) -> TaskPlanResponse:
+    task = await _require_task(tasks, task_id)
+    if task.status in {
+        TaskStatus.RUNNING,
+        TaskStatus.COMPLETED,
+        TaskStatus.CANCELLED,
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "task_cannot_be_planned",
+                "message": f"Task in {task.status.value} state cannot be planned.",
+            },
+        )
+    preview = build_task_plan(task, now)
+    await _update_task(
+        tasks,
+        task,
+        task.model_copy(
+            update={
+                "plan": preview.plan,
+                "journal": None,
+                "inferred_kind": preview.inferred_kind,
+                "status": TaskStatus.READY,
+                "waiting_reason": None,
+            }
+        ),
+    )
+    return TaskPlanResponse(
+        inferred_kind=preview.inferred_kind,
+        plan=preview.plan,
+        permissions=tuple(
+            TaskPlanStepPreview(step_id=step.step_id, decision=decision)
+            for step, decision in zip(
+                preview.plan.steps, preview.decisions, strict=True
+            )
+        ),
+    )
+
+
 @router.post("/{task_id}/pause")
 async def pause_task(task_id: UUID, tasks: TaskRepositoryDep) -> AgentTask:
     task = await _require_task(tasks, task_id)
@@ -111,6 +157,14 @@ async def _update_status(
     tasks: AgentTaskRepository, task: AgentTask, status: TaskStatus
 ) -> AgentTask:
     changed = task.model_copy(update={"status": status, "waiting_reason": None})
+    return await _update_task(tasks, task, changed)
+
+
+async def _update_task(
+    tasks: AgentTaskRepository,
+    task: AgentTask,
+    changed: AgentTask,
+) -> AgentTask:
     try:
         updated = await tasks.update(changed, task.version)
     except AgentTaskVersionConflictError as exc:
