@@ -155,7 +155,10 @@ async def execute_task_plan(
         current = current.model_copy(update={"journal": journal})
         if result.page_snapshot is not None:
             current = current.model_copy(
-                update={"page_snapshot": result.page_snapshot}
+                update={
+                    "page_snapshot": result.page_snapshot,
+                    "page_fill_plan": None,
+                }
             )
         if not result.succeeded:
             return current.model_copy(update={"status": TaskStatus.FAILED})

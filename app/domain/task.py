@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.browser_page import BrowserPageSnapshot
+from app.domain.page_fill_plan import PageFillPlan
 from app.domain.task_permission import TaskPermissionPolicy
 from app.domain.task_plan import TaskExecutionJournal, TaskPlan, TaskStepApproval
 
@@ -49,6 +50,7 @@ class AgentTask(BaseModel):
     journal: TaskExecutionJournal | None = None
     approvals: tuple[TaskStepApproval, ...] = ()
     page_snapshot: BrowserPageSnapshot | None = None
+    page_fill_plan: PageFillPlan | None = None
     created_at: datetime
 
     @field_validator("instruction")
@@ -135,6 +137,11 @@ class AgentTask(BaseModel):
             raise ValueError("journal requires a task plan")
         if self.approvals and self.plan is None:
             raise ValueError("approvals require a task plan")
+        if self.page_fill_plan is not None:
+            if self.page_snapshot is None:
+                raise ValueError("page fill plan requires a page snapshot")
+            if self.page_fill_plan.snapshot_url != self.page_snapshot.url:
+                raise ValueError("page fill plan must match the current snapshot")
         approval_ids: set[UUID] = set()
         active_steps: set[str] = set()
         plan_step_ids = (

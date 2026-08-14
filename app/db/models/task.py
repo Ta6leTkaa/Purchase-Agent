@@ -40,6 +40,10 @@ class AgentTaskModel(Base):
         preferences_type,
         nullable=True,
     )
+    page_fill_plan: Mapped[dict[str, Any] | None] = mapped_column(
+        preferences_type,
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -67,6 +71,7 @@ def agent_task_to_model(task: AgentTask) -> AgentTaskModel:
         journal=data["journal"],
         approvals=data["approvals"],
         page_snapshot=data["page_snapshot"],
+        page_fill_plan=data["page_fill_plan"],
         created_at=task.created_at,
     )
 
@@ -87,6 +92,7 @@ def agent_task_from_model(model: AgentTaskModel) -> AgentTask:
             "journal": model.journal,
             "approvals": model.approvals,
             "page_snapshot": model.page_snapshot,
+            "page_fill_plan": model.page_fill_plan,
             "created_at": model.created_at,
         }
     )

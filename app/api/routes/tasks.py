@@ -23,6 +23,7 @@ from app.schemas.task import (
     TaskStepApprovalCreate,
 )
 from app.services.clock import utc_now
+from app.services.page_field_mapper import build_page_fill_plan
 from app.services.task_executor import TaskExecutionError, execute_task_plan
 from app.services.task_planner import build_task_plan
 
@@ -110,6 +111,7 @@ async def prepare_task_plan(
                 "journal": None,
                 "approvals": (),
                 "page_snapshot": None,
+                "page_fill_plan": None,
                 "inferred_kind": preview.inferred_kind,
                 "status": TaskStatus.READY,
                 "waiting_reason": None,
@@ -125,6 +127,42 @@ async def prepare_task_plan(
                 preview.plan.steps, preview.decisions, strict=True
             )
         ),
+    )
+
+
+@router.post("/{task_id}/map-page")
+async def map_task_page(
+    task_id: UUID,
+    tasks: TaskRepositoryDep,
+    identities: IdentityRepositoryDep,
+    now: CurrentTimeDep,
+) -> AgentTask:
+    task = await _require_task(tasks, task_id)
+    if task.page_snapshot is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "page_not_captured",
+                "message": "Execute page inspection before mapping fields.",
+            },
+        )
+    people = []
+    for person_id in task.person_ids:
+        identity = await identities.get(person_id)
+        if identity is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "person_no_longer_exists",
+                    "message": "A selected person no longer exists.",
+                },
+            )
+        people.append(identity)
+    fill_plan = build_page_fill_plan(task, people, now)
+    return await _update_task(
+        tasks,
+        task,
+        task.model_copy(update={"page_fill_plan": fill_plan}),
     )
 
 

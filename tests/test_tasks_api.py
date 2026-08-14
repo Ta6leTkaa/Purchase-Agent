@@ -6,6 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies import agent_task_repository, identity_repository
+from app.domain.browser_page import (
+    BrowserControlKind,
+    BrowserPageControl,
+    BrowserPageSnapshot,
+)
 from app.domain.task import TaskStatus, UserActionReason
 from app.domain.task_plan import TaskExecutionJournal, TaskJournalOutcome
 from app.main import app
@@ -255,6 +260,76 @@ def test_execute_task_runs_browser_driver_and_persists_journal(
     assert response.json()["waiting_reason"] == "confirmation_required"
     assert stored["journal"] == response.json()["journal"]
     assert stored["version"] == 2
+
+
+def test_map_page_persists_value_free_profile_bindings() -> None:
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет",
+            "target_url": "https://tickets.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+    task = asyncio.run(agent_task_repository.get(UUID(created["id"])))
+    assert task is not None
+    snapshot = BrowserPageSnapshot(
+        url="https://tickets.example.com/passenger",
+        captured_at=task.created_at,
+        controls=(
+            BrowserPageControl(
+                control_id="control_1",
+                kind=BrowserControlKind.TEXT,
+                label="First name",
+                required=True,
+            ),
+            BrowserPageControl(
+                control_id="control_2",
+                kind=BrowserControlKind.TEXT,
+                label="Passport number",
+                required=True,
+            ),
+        ),
+    )
+    asyncio.run(
+        agent_task_repository.update(
+            task.model_copy(update={"page_snapshot": snapshot}),
+            task.version,
+        )
+    )
+
+    response = client.post(f"/tasks/{task.id}/map-page")
+
+    assert response.status_code == 200
+    fill_plan = response.json()["page_fill_plan"]
+    assert [item["profile_field"] for item in fill_plan["bindings"]] == [
+        "first_name",
+        "document_number",
+    ]
+    assert fill_plan["bindings"][1]["sensitive"] is True
+    assert "Ivan" not in str(fill_plan)
+    assert "1234567890" not in str(fill_plan)
+    assert client.get(f"/tasks/{task.id}").json()["page_fill_plan"] == fill_plan
+
+
+def test_map_page_requires_captured_page() -> None:
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет",
+            "target_url": "https://tickets.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+
+    response = client.post(f"/tasks/{created['id']}/map-page")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "page_not_captured"
 
 
 def test_completed_task_cannot_be_paused() -> None:
