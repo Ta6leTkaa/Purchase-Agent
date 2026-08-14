@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from app.domain.browser_page import BrowserPageSnapshot
+from app.domain.page_fill_plan import PageFillPlan
 from app.domain.task import AgentTask, TaskStatus, UserActionReason
 from app.domain.task_permission import BrowserAction, TaskPermissionPolicy
 from app.domain.task_plan import TaskJournalOutcome, TaskPlanStep, TaskStepApproval
@@ -23,10 +24,12 @@ class RecordingRunner:
         *,
         fail_on: str | None = None,
         page_snapshot: BrowserPageSnapshot | None = None,
+        page_fill_plan: PageFillPlan | None = None,
     ) -> None:
         self.step_ids: list[str] = []
         self.fail_on = fail_on
         self.page_snapshot = page_snapshot
+        self.page_fill_plan = page_fill_plan
 
     async def run(
         self, task: AgentTask, step: TaskPlanStep
@@ -38,6 +41,9 @@ class RecordingRunner:
             reason_code=("element_not_found" if step_id == self.fail_on else None),
             page_snapshot=(
                 self.page_snapshot if step_id == "inspect_page" else None
+            ),
+            page_fill_plan=(
+                self.page_fill_plan if step_id == "fill_people" else None
             ),
         )
 
@@ -118,6 +124,31 @@ async def test_executor_keeps_safe_page_snapshot() -> None:
     )
 
     assert result.page_snapshot == snapshot
+
+
+@pytest.mark.asyncio
+async def test_executor_keeps_generated_page_fill_plan() -> None:
+    task = make_planned_task("Купить билет на поезд")
+    snapshot = BrowserPageSnapshot(
+        url=task.target_url,
+        title="Ticket search",
+        captured_at=NOW,
+    )
+    fill_plan = PageFillPlan(
+        snapshot_url=snapshot.url,
+        created_at=NOW,
+    )
+
+    result = await execute_task_plan(
+        task,
+        RecordingRunner(
+            page_snapshot=snapshot,
+            page_fill_plan=fill_plan,
+        ),
+        IncrementingClock(),
+    )
+
+    assert result.page_fill_plan == fill_plan
 
 
 @pytest.mark.asyncio

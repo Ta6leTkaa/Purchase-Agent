@@ -1,5 +1,5 @@
 import ipaddress
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -11,6 +11,12 @@ from app.adapters.playwright_browser import (
     PlaywrightBrowserStepRunner,
     validate_browser_url,
 )
+from app.domain.browser_page import (
+    BrowserControlKind,
+    BrowserPageControl,
+    BrowserPageSnapshot,
+)
+from app.domain.identity import Identity
 from app.domain.task import AgentTask
 from app.domain.task_permission import BrowserAction
 from app.domain.task_plan import TaskPlanStep
@@ -158,3 +164,88 @@ async def test_driver_fails_closed_for_unmapped_option_selection() -> None:
 
     assert not result.succeeded
     assert result.reason_code == "option_selection_requires_mapping"
+
+
+@pytest.mark.asyncio
+async def test_driver_fills_basic_fields_but_skips_document_values() -> None:
+    person = Identity(
+        id=uuid4(),
+        display_name="Ivan Petrov",
+        first_name="Ivan",
+        last_name="Petrov",
+        birth_date=date(1990, 1, 2),
+    )
+    page_mock = MagicMock()
+    page = cast(Page, page_mock)
+    first_name = MagicMock()
+    first_name.fill = AsyncMock()
+    passport = MagicMock()
+    passport.fill = AsyncMock()
+    first_name.is_visible = AsyncMock(return_value=True)
+    passport.is_visible = AsyncMock(return_value=True)
+    controls = MagicMock()
+    controls.all = AsyncMock(return_value=[first_name, passport])
+    controls.evaluate_all = AsyncMock(
+        return_value=[
+            {
+                "tag": "input",
+                "type": "text",
+                "name": "",
+                "label": "First name",
+                "required": False,
+                "disabled": False,
+                "options": [],
+            },
+            {
+                "tag": "input",
+                "type": "text",
+                "name": "",
+                "label": "Passport number",
+                "required": False,
+                "disabled": False,
+                "options": [],
+            },
+        ]
+    )
+    page_mock.locator = MagicMock(return_value=controls)
+    page_mock.url = "https://example.com/form"
+    page_mock.title = AsyncMock(return_value="Untitled page")
+    task = AgentTask(
+        id=uuid4(),
+        instruction="Купить билет на поезд",
+        target_url="https://example.com/",
+        person_ids=(person.id,),
+        page_snapshot=BrowserPageSnapshot(
+            url=page_mock.url,
+            captured_at=NOW,
+            controls=(
+                BrowserPageControl(
+                    control_id="control_1",
+                    kind=BrowserControlKind.TEXT,
+                    label="First name",
+                ),
+                BrowserPageControl(
+                    control_id="control_2",
+                    kind=BrowserControlKind.TEXT,
+                    label="Passport number",
+                ),
+            ),
+        ),
+        created_at=NOW,
+    )
+    runner = PlaywrightBrowserStepRunner(identities=(person,))
+    runner._page = page
+
+    result = await runner.run(
+        task,
+        TaskPlanStep(
+            step_id="fill_people",
+            action=BrowserAction.FILL_BASIC_PROFILE,
+            summary="Fill basic profile",
+        ),
+    )
+
+    assert result.succeeded
+    assert result.page_fill_plan is not None
+    first_name.fill.assert_awaited_once_with("Ivan", timeout=30_000)
+    passport.fill.assert_not_awaited()

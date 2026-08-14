@@ -12,6 +12,7 @@ from app.dependencies import (
     get_current_time,
     get_identity_repository,
 )
+from app.domain.identity import Identity
 from app.domain.task import AgentTask, TaskStatus, UserActionReason
 from app.domain.task_plan import TaskJournalOutcome, TaskStepApproval
 from app.repositories.identity import IdentityRepository
@@ -146,18 +147,7 @@ async def map_task_page(
                 "message": "Execute page inspection before mapping fields.",
             },
         )
-    people = []
-    for person_id in task.person_ids:
-        identity = await identities.get(person_id)
-        if identity is None:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "person_no_longer_exists",
-                    "message": "A selected person no longer exists.",
-                },
-            )
-        people.append(identity)
+    people = await _load_task_people(task, identities)
     fill_plan = build_page_fill_plan(task, people, now)
     return await _update_task(
         tasks,
@@ -213,7 +203,11 @@ async def approve_task_step(
 
 
 @router.post("/{task_id}/execute")
-async def execute_task(task_id: UUID, tasks: TaskRepositoryDep) -> AgentTask:
+async def execute_task(
+    task_id: UUID,
+    tasks: TaskRepositoryDep,
+    identities: IdentityRepositoryDep,
+) -> AgentTask:
     if not settings.browser_automation_enabled:
         raise HTTPException(
             status_code=503,
@@ -223,10 +217,12 @@ async def execute_task(task_id: UUID, tasks: TaskRepositoryDep) -> AgentTask:
             },
         )
     task = await _require_task(tasks, task_id)
+    people = await _load_task_people(task, identities)
     try:
         async with PlaywrightBrowserStepRunner(
             timeout_seconds=settings.browser_navigation_timeout_seconds,
             allow_local_network=settings.environment != "production",
+            identities=tuple(people),
         ) as runner:
             executed = await execute_task_plan(task, runner, utc_now)
     except TaskExecutionError as exc:
@@ -280,6 +276,25 @@ async def _require_task(tasks: AgentTaskRepository, task_id: UUID) -> AgentTask:
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+async def _load_task_people(
+    task: AgentTask,
+    identities: IdentityRepository,
+) -> list[Identity]:
+    people: list[Identity] = []
+    for person_id in task.person_ids:
+        identity = await identities.get(person_id)
+        if identity is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "person_no_longer_exists",
+                    "message": "A selected person no longer exists.",
+                },
+            )
+        people.append(identity)
+    return people
 
 
 async def _update_status(
