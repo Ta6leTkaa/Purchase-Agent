@@ -95,6 +95,34 @@ async def test_executor_stops_before_sensitive_profile_data() -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_runs_sensitive_step_only_after_one_time_approval() -> None:
+    task = make_planned_task("Купить билет на поезд")
+    blocked = await execute_task_plan(task, RecordingRunner(), IncrementingClock())
+    assert blocked.plan is not None
+    approval = TaskStepApproval(
+        approval_id=uuid4(),
+        plan_version=blocked.plan.version,
+        step_id="fill_documents",
+        reason="sensitive_data_approval_required",
+        approved_at=NOW,
+    )
+    approved = blocked.model_copy(
+        update={
+            "approvals": (approval,),
+            "status": TaskStatus.READY,
+            "waiting_reason": None,
+        }
+    )
+    runner = RecordingRunner()
+
+    result = await execute_task_plan(approved, runner, IncrementingClock())
+
+    assert runner.step_ids == ["fill_documents", "choose_option"]
+    assert result.status is TaskStatus.WAITING_FOR_USER
+    assert result.approvals[0].consumed_at is not None
+
+
+@pytest.mark.asyncio
 async def test_executor_stops_before_irreversible_order_submission() -> None:
     task = make_planned_task("Купить билеты в кино")
     runner = RecordingRunner()

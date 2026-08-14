@@ -21,7 +21,7 @@ from app.domain.browser_page import (
     BrowserPageSnapshot,
 )
 from app.domain.identity import Identity
-from app.domain.page_fill_plan import ProfileField
+from app.domain.page_fill_plan import PageFillPlan, ProfileField
 from app.domain.task import AgentTask
 from app.domain.task_permission import BrowserAction
 from app.domain.task_plan import TaskPlanStep
@@ -121,10 +121,7 @@ class PlaywrightBrowserStepRunner:
         if step.action is BrowserAction.FILL_BASIC_PROFILE:
             return await self._fill_basic_profile(page, task)
         if step.action is BrowserAction.FILL_SENSITIVE_PROFILE:
-            return BrowserStepResult(
-                succeeded=False,
-                reason_code="sensitive_profile_filling_not_implemented",
-            )
+            return await self._fill_sensitive_profile(page, task)
         return BrowserStepResult(
             succeeded=False,
             reason_code="browser_action_not_implemented",
@@ -174,30 +171,109 @@ class PlaywrightBrowserStepRunner:
         fill_plan = task.page_fill_plan or build_page_fill_plan(
             task, self._identities, utc_now()
         )
-        current_snapshot = await self._snapshot_page(page)
-        if (
-            current_snapshot.url != fill_plan.snapshot_url
-            or current_snapshot.controls != task.page_snapshot.controls
-        ):
+        if not await self._page_matches_snapshot(page, task):
             return BrowserStepResult(
                 succeeded=False,
                 reason_code="page_changed_since_mapping",
             )
-        identity_by_id = {identity.id: identity for identity in self._identities}
-        basic_bindings = tuple(
-            binding for binding in fill_plan.bindings if not binding.sensitive
+        return await self._fill_profile_bindings(
+            page,
+            fill_plan,
+            sensitive=False,
         )
-        if not basic_bindings:
+
+    async def _fill_sensitive_profile(
+        self,
+        page: Page,
+        task: AgentTask,
+    ) -> BrowserStepResult:
+        if (
+            not self._identities
+            or task.page_snapshot is None
+            or task.page_fill_plan is None
+        ):
             return BrowserStepResult(
                 succeeded=False,
-                reason_code="basic_profile_mapping_empty",
+                reason_code="sensitive_profile_mapping_unavailable",
+            )
+        if page.url != task.page_snapshot.url:
+            snapshot_url = urlsplit(task.page_snapshot.url)
+            target_url = urlsplit(task.target_url)
+            if (snapshot_url.scheme, snapshot_url.netloc) != (
+                target_url.scheme,
+                target_url.netloc,
+            ):
+                return BrowserStepResult(
+                    succeeded=False,
+                    reason_code="mapped_page_origin_changed",
+                )
+            response = await page.goto(
+                task.page_snapshot.url,
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
+            )
+            if response is None or response.status >= 400:
+                return BrowserStepResult(
+                    succeeded=False,
+                    reason_code="mapped_page_restore_failed",
+                )
+        if not await self._page_matches_snapshot(page, task):
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="page_changed_since_mapping",
+            )
+        basic_result = await self._fill_profile_bindings(
+            page,
+            task.page_fill_plan,
+            sensitive=False,
+            allow_empty=True,
+        )
+        if not basic_result.succeeded:
+            return basic_result
+        return await self._fill_profile_bindings(
+            page,
+            task.page_fill_plan,
+            sensitive=True,
+        )
+
+    async def _page_matches_snapshot(self, page: Page, task: AgentTask) -> bool:
+        if task.page_snapshot is None:
+            return False
+        current_snapshot = await self._snapshot_page(page)
+        return (
+            current_snapshot.url == task.page_snapshot.url
+            and current_snapshot.controls == task.page_snapshot.controls
+        )
+
+    async def _fill_profile_bindings(
+        self,
+        page: Page,
+        fill_plan: PageFillPlan,
+        *,
+        sensitive: bool,
+        allow_empty: bool = False,
+    ) -> BrowserStepResult:
+        identity_by_id = {identity.id: identity for identity in self._identities}
+        bindings = tuple(
+            binding
+            for binding in fill_plan.bindings
+            if binding.sensitive is sensitive
+        )
+        if not bindings:
+            return BrowserStepResult(
+                succeeded=allow_empty,
+                reason_code=(
+                    "profile_fields_not_required"
+                    if allow_empty
+                    else "profile_mapping_empty"
+                ),
                 page_fill_plan=fill_plan,
             )
         controls = page.locator("input, select, textarea, button, a[href]")
         visible_controls = [
             control for control in await controls.all() if await control.is_visible()
         ]
-        for binding in basic_bindings:
+        for binding in bindings:
             identity = identity_by_id.get(binding.person_id)
             if identity is None:
                 return BrowserStepResult(
@@ -212,13 +288,21 @@ class PlaywrightBrowserStepRunner:
                     reason_code="mapped_control_missing",
                     page_fill_plan=fill_plan,
                 )
-            await visible_controls[index].fill(
-                _profile_value(identity, binding.profile_field),
-                timeout=self._timeout_ms,
-            )
+            value = _profile_value(identity, binding.profile_field)
+            if value is None:
+                return BrowserStepResult(
+                    succeeded=False,
+                    reason_code="mapped_profile_value_missing",
+                    page_fill_plan=fill_plan,
+                )
+            await visible_controls[index].fill(value, timeout=self._timeout_ms)
         return BrowserStepResult(
             succeeded=True,
-            reason_code="basic_profile_filled",
+            reason_code=(
+                "sensitive_profile_filled"
+                if sensitive
+                else "basic_profile_filled"
+            ),
             page_fill_plan=fill_plan,
         )
 
@@ -298,14 +382,16 @@ def _control_kind(item: dict[str, Any]) -> BrowserControlKind:
     return BrowserControlKind.OTHER
 
 
-def _profile_value(identity: Identity, field: ProfileField) -> str:
+def _profile_value(identity: Identity, field: ProfileField) -> str | None:
     if field is ProfileField.FIRST_NAME:
         return identity.first_name
     if field is ProfileField.LAST_NAME:
         return identity.last_name
     if field is ProfileField.BIRTH_DATE:
         return identity.birth_date.isoformat()
-    raise ValueError("sensitive profile values cannot be filled as basic data")
+    if field is ProfileField.DOCUMENT_NUMBER:
+        return identity.documents[0].number if identity.documents else None
+    return None
 
 
 _CONTROL_INVENTORY_SCRIPT = """

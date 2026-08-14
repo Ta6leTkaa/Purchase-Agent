@@ -16,7 +16,7 @@ from app.domain.browser_page import (
     BrowserPageControl,
     BrowserPageSnapshot,
 )
-from app.domain.identity import Identity
+from app.domain.identity import Document, DocumentType, Identity
 from app.domain.task import AgentTask
 from app.domain.task_permission import BrowserAction
 from app.domain.task_plan import TaskPlanStep
@@ -174,6 +174,13 @@ async def test_driver_fills_basic_fields_but_skips_document_values() -> None:
         first_name="Ivan",
         last_name="Petrov",
         birth_date=date(1990, 1, 2),
+        documents=[
+            Document(
+                id=uuid4(),
+                type=DocumentType.internal_passport,
+                number="1234567890",
+            )
+        ],
     )
     page_mock = MagicMock()
     page = cast(Page, page_mock)
@@ -249,3 +256,18 @@ async def test_driver_fills_basic_fields_but_skips_document_values() -> None:
     assert result.page_fill_plan is not None
     first_name.fill.assert_awaited_once_with("Ivan", timeout=30_000)
     passport.fill.assert_not_awaited()
+
+    approved_task = task.model_copy(
+        update={"page_fill_plan": result.page_fill_plan}
+    )
+    sensitive_result = await runner.run(
+        approved_task,
+        TaskPlanStep(
+            step_id="fill_documents",
+            action=BrowserAction.FILL_SENSITIVE_PROFILE,
+            summary="Fill approved document",
+        ),
+    )
+
+    assert sensitive_result.succeeded
+    passport.fill.assert_awaited_once_with("1234567890", timeout=30_000)
