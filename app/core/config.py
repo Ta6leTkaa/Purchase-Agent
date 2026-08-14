@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     train_provider_base_url: str | None = None
     train_provider_bearer_token: SecretStr | None = None
     train_provider_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
+    browser_automation_enabled: bool = True
+    browser_navigation_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
     worker_claim_timeout_seconds: int = Field(default=900, ge=1, le=86400)

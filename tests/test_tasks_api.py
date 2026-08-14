@@ -9,6 +9,7 @@ from app.dependencies import agent_task_repository, identity_repository
 from app.domain.task import TaskStatus, UserActionReason
 from app.domain.task_plan import TaskExecutionJournal, TaskJournalOutcome
 from app.main import app
+from app.services.task_executor import BrowserStepResult
 from app.services.task_journal import append_task_journal_entry
 
 
@@ -35,7 +36,7 @@ def _create_person(client: TestClient) -> str:
         },
     )
     assert response.status_code == 200
-    return response.json()["id"]
+    return str(response.json()["id"])
 
 
 def test_create_and_list_universal_task() -> None:
@@ -212,6 +213,48 @@ def test_cannot_approve_a_step_that_is_not_blocked() -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "task_step_not_approvable"
+
+
+def test_execute_task_runs_browser_driver_and_persists_journal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SuccessfulBrowserRunner:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+        async def __aenter__(self) -> "SuccessfulBrowserRunner":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def run(self, task: object, step: object) -> BrowserStepResult:
+            return BrowserStepResult(succeeded=True, reason_code="test_step_done")
+
+    monkeypatch.setattr(
+        "app.api.routes.tasks.PlaywrightBrowserStepRunner",
+        SuccessfulBrowserRunner,
+    )
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет в кино",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+    client.post(f"/tasks/{created['id']}/plan")
+
+    response = client.post(f"/tasks/{created['id']}/execute")
+    stored = client.get(f"/tasks/{created['id']}").json()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "waiting_for_user"
+    assert response.json()["waiting_reason"] == "confirmation_required"
+    assert stored["journal"] == response.json()["journal"]
+    assert stored["version"] == 2
 
 
 def test_completed_task_cannot_be_paused() -> None:

@@ -4,7 +4,9 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
+from app.adapters.playwright_browser import PlaywrightBrowserStepRunner
 from app.api.dependencies.auth import require_api_key
+from app.core.config import settings
 from app.dependencies import (
     get_agent_task_repository,
     get_current_time,
@@ -20,6 +22,8 @@ from app.schemas.task import (
     TaskPlanStepPreview,
     TaskStepApprovalCreate,
 )
+from app.services.clock import utc_now
+from app.services.task_executor import TaskExecutionError, execute_task_plan
 from app.services.task_planner import build_task_plan
 
 router = APIRouter(
@@ -167,6 +171,39 @@ async def approve_task_step(
         }
     )
     return await _update_task(tasks, task, changed)
+
+
+@router.post("/{task_id}/execute")
+async def execute_task(task_id: UUID, tasks: TaskRepositoryDep) -> AgentTask:
+    if not settings.browser_automation_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "browser_automation_disabled",
+                "message": "Browser automation is disabled.",
+            },
+        )
+    task = await _require_task(tasks, task_id)
+    try:
+        async with PlaywrightBrowserStepRunner(
+            timeout_seconds=settings.browser_navigation_timeout_seconds,
+            allow_local_network=settings.environment != "production",
+        ) as runner:
+            executed = await execute_task_plan(task, runner, utc_now)
+    except TaskExecutionError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "task_not_executable", "message": str(exc)},
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "browser_driver_unavailable",
+                "message": "Browser driver could not be started.",
+            },
+        ) from exc
+    return await _update_task(tasks, task, executed)
 
 
 @router.post("/{task_id}/pause")
