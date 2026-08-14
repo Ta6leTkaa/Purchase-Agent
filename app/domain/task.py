@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.task_permission import TaskPermissionPolicy
-from app.domain.task_plan import TaskExecutionJournal, TaskPlan
+from app.domain.task_plan import TaskExecutionJournal, TaskPlan, TaskStepApproval
 
 
 class TaskStatus(StrEnum):
@@ -46,6 +46,7 @@ class AgentTask(BaseModel):
     permissions: TaskPermissionPolicy = TaskPermissionPolicy()
     plan: TaskPlan | None = None
     journal: TaskExecutionJournal | None = None
+    approvals: tuple[TaskStepApproval, ...] = ()
     created_at: datetime
 
     @field_validator("instruction")
@@ -130,6 +131,27 @@ class AgentTask(BaseModel):
             raise ValueError("journal must belong to the task")
         if self.journal is not None and self.plan is None:
             raise ValueError("journal requires a task plan")
+        if self.approvals and self.plan is None:
+            raise ValueError("approvals require a task plan")
+        approval_ids: set[UUID] = set()
+        active_steps: set[str] = set()
+        plan_step_ids = (
+            {step.step_id for step in self.plan.steps}
+            if self.plan is not None
+            else set()
+        )
+        for approval in self.approvals:
+            if approval.approval_id in approval_ids:
+                raise ValueError("approval IDs must be unique")
+            approval_ids.add(approval.approval_id)
+            if self.plan is not None and approval.plan_version != self.plan.version:
+                raise ValueError("approval must match the current plan version")
+            if approval.step_id not in plan_step_ids:
+                raise ValueError("approval step must exist in the current plan")
+            if approval.consumed_at is None:
+                if approval.step_id in active_steps:
+                    raise ValueError("a step can have only one active approval")
+                active_steps.add(approval.step_id)
         return self
 
     @property

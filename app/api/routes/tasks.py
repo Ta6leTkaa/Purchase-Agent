@@ -10,10 +10,16 @@ from app.dependencies import (
     get_current_time,
     get_identity_repository,
 )
-from app.domain.task import AgentTask, TaskStatus
+from app.domain.task import AgentTask, TaskStatus, UserActionReason
+from app.domain.task_plan import TaskJournalOutcome, TaskStepApproval
 from app.repositories.identity import IdentityRepository
 from app.repositories.task import AgentTaskRepository, AgentTaskVersionConflictError
-from app.schemas.task import AgentTaskCreate, TaskPlanResponse, TaskPlanStepPreview
+from app.schemas.task import (
+    AgentTaskCreate,
+    TaskPlanResponse,
+    TaskPlanStepPreview,
+    TaskStepApprovalCreate,
+)
 from app.services.task_planner import build_task_plan
 
 router = APIRouter(
@@ -98,6 +104,7 @@ async def prepare_task_plan(
             update={
                 "plan": preview.plan,
                 "journal": None,
+                "approvals": (),
                 "inferred_kind": preview.inferred_kind,
                 "status": TaskStatus.READY,
                 "waiting_reason": None,
@@ -114,6 +121,52 @@ async def prepare_task_plan(
             )
         ),
     )
+
+
+@router.post("/{task_id}/approvals")
+async def approve_task_step(
+    task_id: UUID,
+    request: TaskStepApprovalCreate,
+    tasks: TaskRepositoryDep,
+    now: CurrentTimeDep,
+) -> AgentTask:
+    task = await _require_task(tasks, task_id)
+    if (
+        task.status is not TaskStatus.WAITING_FOR_USER
+        or task.waiting_reason is None
+        or task.plan is None
+        or task.journal is None
+        or not task.journal.entries
+    ):
+        raise _approval_conflict("Task is not waiting for an approvable step.")
+    blocked = task.journal.entries[-1]
+    if (
+        blocked.outcome is not TaskJournalOutcome.BLOCKED
+        or blocked.step_id != request.step_id.strip().casefold().replace("-", "_")
+    ):
+        raise _approval_conflict("Only the currently blocked step can be approved.")
+    if blocked.reason_code != task.waiting_reason.value:
+        raise _approval_conflict("Blocked step reason no longer matches the task.")
+    if any(
+        approval.step_id == blocked.step_id and approval.consumed_at is None
+        for approval in task.approvals
+    ):
+        raise _approval_conflict("The blocked step already has an active approval.")
+    approval = TaskStepApproval(
+        approval_id=uuid4(),
+        plan_version=task.plan.version,
+        step_id=blocked.step_id,
+        reason=UserActionReason(blocked.reason_code).value,
+        approved_at=now,
+    )
+    changed = task.model_copy(
+        update={
+            "approvals": (*task.approvals, approval),
+            "status": TaskStatus.READY,
+            "waiting_reason": None,
+        }
+    )
+    return await _update_task(tasks, task, changed)
 
 
 @router.post("/{task_id}/pause")
@@ -187,4 +240,11 @@ def _invalid_transition(current: TaskStatus, target: TaskStatus) -> HTTPExceptio
             "code": "invalid_task_transition",
             "message": f"Task cannot move from {current.value} to {target.value}.",
         },
+    )
+
+
+def _approval_conflict(message: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={"code": "task_step_not_approvable", "message": message},
     )

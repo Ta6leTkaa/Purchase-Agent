@@ -30,6 +30,12 @@ class AgentTaskModel(Base):
     journal: Mapped[dict[str, Any] | None] = mapped_column(
         preferences_type, nullable=True
     )
+    approvals: Mapped[list[dict[str, Any]]] = mapped_column(
+        preferences_type,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -55,6 +61,7 @@ def agent_task_to_model(task: AgentTask) -> AgentTaskModel:
         permissions=data["permissions"],
         plan=data["plan"],
         journal=data["journal"],
+        approvals=data["approvals"],
         created_at=task.created_at,
     )
 
@@ -73,6 +80,7 @@ def agent_task_from_model(model: AgentTaskModel) -> AgentTask:
             "permissions": model.permissions,
             "plan": model.plan,
             "journal": model.journal,
+            "approvals": model.approvals,
             "created_at": model.created_at,
         }
     )

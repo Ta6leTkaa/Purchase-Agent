@@ -6,8 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies import agent_task_repository, identity_repository
-from app.domain.task import TaskStatus
+from app.domain.task import TaskStatus, UserActionReason
+from app.domain.task_plan import TaskExecutionJournal, TaskJournalOutcome
 from app.main import app
+from app.services.task_journal import append_task_journal_entry
 
 
 @pytest.fixture(autouse=True)
@@ -144,6 +146,72 @@ def test_cancelled_task_cannot_be_planned() -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "task_cannot_be_planned"
+
+
+def test_approve_currently_blocked_task_step() -> None:
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет в кино",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+    client.post(f"/tasks/{created['id']}/plan")
+    task = asyncio.run(agent_task_repository.get(UUID(created["id"])))
+    assert task is not None
+    assert task.plan is not None
+    journal = append_task_journal_entry(
+        TaskExecutionJournal(task_id=task.id),
+        task.plan,
+        step_id="prepare_order",
+        outcome=TaskJournalOutcome.BLOCKED,
+        message="Execution paused for a required user action",
+        timestamp=task.created_at,
+        reason_code="confirmation_required",
+    )
+    waiting = task.model_copy(
+        update={
+            "status": TaskStatus.WAITING_FOR_USER,
+            "waiting_reason": UserActionReason.CONFIRMATION_REQUIRED,
+            "journal": journal,
+        }
+    )
+    asyncio.run(agent_task_repository.update(waiting, task.version))
+
+    response = client.post(
+        f"/tasks/{task.id}/approvals",
+        json={"step_id": "prepare-order"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["waiting_reason"] is None
+    assert response.json()["approvals"][0]["step_id"] == "prepare_order"
+    assert response.json()["approvals"][0]["consumed_at"] is None
+
+
+def test_cannot_approve_a_step_that_is_not_blocked() -> None:
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет",
+            "target_url": "https://tickets.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+
+    response = client.post(
+        f"/tasks/{created['id']}/approvals",
+        json={"step_id": "prepare_order"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "task_step_not_approvable"
 
 
 def test_completed_task_cannot_be_paused() -> None:

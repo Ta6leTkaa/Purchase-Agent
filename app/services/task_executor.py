@@ -62,7 +62,19 @@ async def execute_task_plan(
         if step.step_id in succeeded_steps:
             continue
         decision = evaluate_browser_action(current, step.to_action_request())
-        if decision.requires_user:
+        approval = next(
+            (
+                item
+                for item in current.approvals
+                if item.plan_version == task.plan.version
+                and item.step_id == step.step_id
+                and item.reason == decision.reason
+                and item.consumed_at is None
+            ),
+            None,
+        )
+        approved = decision.requires_user and approval is not None
+        if decision.requires_user and not approved:
             journal = append_task_journal_entry(
                 journal,
                 task.plan,
@@ -79,7 +91,7 @@ async def execute_task_plan(
                     "journal": journal,
                 }
             )
-        if not decision.allowed:
+        if not decision.allowed and not approved:
             journal = append_task_journal_entry(
                 journal,
                 task.plan,
@@ -92,14 +104,25 @@ async def execute_task_plan(
             return current.model_copy(
                 update={"status": TaskStatus.FAILED, "journal": journal}
             )
+        started_at = now()
+        if approval is not None:
+            consumed = approval.model_copy(update={"consumed_at": started_at})
+            current = current.model_copy(
+                update={
+                    "approvals": tuple(
+                        consumed if item.approval_id == approval.approval_id else item
+                        for item in current.approvals
+                    )
+                }
+            )
         journal = append_task_journal_entry(
             journal,
             task.plan,
             step_id=step.step_id,
             outcome=TaskJournalOutcome.STARTED,
             message="Browser step started",
-            timestamp=now(),
-            reason_code=decision.reason,
+            timestamp=started_at,
+            reason_code=("user_approved" if approved else decision.reason),
         )
         current = current.model_copy(update={"journal": journal})
         try:

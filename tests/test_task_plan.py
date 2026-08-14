@@ -12,6 +12,7 @@ from app.domain.task_plan import (
     TaskJournalOutcome,
     TaskPlan,
     TaskPlanStep,
+    TaskStepApproval,
 )
 from app.services.task_journal import append_task_journal_entry
 
@@ -216,4 +217,38 @@ def test_journal_forbids_arbitrary_metadata_that_could_contain_secrets() -> None
                 "message": "Профиль заполнен",
                 "metadata": {"passport_number": "sensitive-value"},
             }
+        )
+
+
+def test_approval_is_bound_to_current_plan_step_and_version() -> None:
+    task_id = uuid4()
+    plan = make_plan(task_id)
+    approval = TaskStepApproval(
+        approval_id=uuid4(),
+        plan_version=plan.version,
+        step_id="select_option",
+        reason="confirmation_required",
+        approved_at=NOW,
+    )
+
+    task = AgentTask(
+        id=task_id,
+        instruction="Купить билет",
+        target_url="https://tickets.example.com/",
+        person_ids=(uuid4(),),
+        created_at=NOW,
+        plan=plan,
+        approvals=(approval,),
+    )
+
+    assert task.approvals == (approval,)
+    with pytest.raises(ValidationError, match="current plan version"):
+        AgentTask.model_validate(
+            task.model_copy(
+                update={
+                    "approvals": (
+                        approval.model_copy(update={"plan_version": 2}),
+                    )
+                }
+            ).model_dump()
         )

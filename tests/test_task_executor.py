@@ -5,7 +5,7 @@ import pytest
 
 from app.domain.task import AgentTask, TaskStatus, UserActionReason
 from app.domain.task_permission import BrowserAction, TaskPermissionPolicy
-from app.domain.task_plan import TaskJournalOutcome, TaskPlanStep
+from app.domain.task_plan import TaskJournalOutcome, TaskPlanStep, TaskStepApproval
 from app.services.task_executor import (
     BrowserStepResult,
     TaskExecutionError,
@@ -90,6 +90,36 @@ async def test_executor_stops_before_irreversible_order_submission() -> None:
     assert runner.step_ids == ["open_target", "inspect_page", "choose_option"]
     assert result.journal is not None
     assert result.journal.entries[-1].reason_code == "confirmation_required"
+
+
+@pytest.mark.asyncio
+async def test_executor_consumes_one_time_approval_for_blocked_step() -> None:
+    task = make_planned_task("Купить билеты в кино")
+    blocked = await execute_task_plan(task, RecordingRunner(), IncrementingClock())
+    assert blocked.plan is not None
+    approval = TaskStepApproval(
+        approval_id=uuid4(),
+        plan_version=blocked.plan.version,
+        step_id="prepare_order",
+        reason="confirmation_required",
+        approved_at=NOW,
+    )
+    approved = blocked.model_copy(
+        update={
+            "approvals": (approval,),
+            "status": TaskStatus.READY,
+            "waiting_reason": None,
+        }
+    )
+    runner = RecordingRunner()
+
+    result = await execute_task_plan(approved, runner, IncrementingClock())
+
+    assert result.status is TaskStatus.PREPARED
+    assert runner.step_ids == ["prepare_order"]
+    assert result.approvals[0].consumed_at is not None
+    assert result.journal is not None
+    assert result.journal.entries[-2].reason_code == "user_approved"
 
 
 @pytest.mark.asyncio

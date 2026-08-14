@@ -23,3 +23,7 @@ class TaskPlanResponse(BaseModel):
     inferred_kind: str
     plan: TaskPlan
     permissions: tuple[TaskPlanStepPreview, ...]
+
+
+class TaskStepApprovalCreate(BaseModel):
+    step_id: str = Field(min_length=1, max_length=64)

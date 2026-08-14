@@ -54,6 +54,7 @@ class SqlAlchemyAgentTaskRepository(AgentTaskRepository):
                 permissions=data["permissions"],
                 plan=data["plan"],
                 journal=data["journal"],
+                approvals=data["approvals"],
                 version=expected_version + 1,
             )
             .returning(AgentTaskModel.id)

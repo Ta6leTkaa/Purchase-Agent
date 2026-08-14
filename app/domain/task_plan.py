@@ -107,6 +107,49 @@ class TaskPlan(BaseModel):
         return self
 
 
+class TaskStepApproval(BaseModel):
+    """A one-time approval bound to one step of one plan version."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    approval_id: UUID
+    plan_version: int = Field(ge=1)
+    step_id: str = Field(min_length=1, max_length=64)
+    reason: str = Field(min_length=1, max_length=100)
+    approved_at: datetime
+    consumed_at: datetime | None = None
+
+    @field_validator("step_id")
+    @classmethod
+    def normalize_approval_step_id(cls, value: str) -> str:
+        return TaskPlanStep.normalize_step_id(value)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        normalized = value.strip().casefold()
+        if not normalized or not all(
+            character.isalnum() or character == "_" for character in normalized
+        ):
+            raise ValueError("approval reason must be a simple identifier")
+        return normalized
+
+    @field_validator("approved_at", "consumed_at")
+    @classmethod
+    def require_aware_approval_time(
+        cls, value: datetime | None
+    ) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("approval timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def validate_consumed_time(self) -> "TaskStepApproval":
+        if self.consumed_at is not None and self.consumed_at < self.approved_at:
+            raise ValueError("approval cannot be consumed before it is granted")
+        return self
+
+
 class TaskJournalOutcome(StrEnum):
     STARTED = "started"
     SUCCEEDED = "succeeded"
