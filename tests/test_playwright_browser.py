@@ -80,7 +80,25 @@ async def test_driver_opens_and_reads_a_page() -> None:
     body = MagicMock()
     body.count = AsyncMock(return_value=1)
     body.inner_text = AsyncMock(return_value="Example page")
-    page_mock.locator = MagicMock(return_value=body)
+    controls = MagicMock()
+    controls.evaluate_all = AsyncMock(
+        return_value=[
+            {
+                "tag": "input",
+                "type": "text",
+                "name": "first_name",
+                "label": "First name",
+                "required": True,
+                "disabled": False,
+                "options": [],
+            }
+        ]
+    )
+    page_mock.locator = MagicMock(
+        side_effect=lambda selector: body if selector == "body" else controls
+    )
+    page_mock.url = "https://example.com/form"
+    page_mock.title = AsyncMock(return_value="Example form")
     runner = PlaywrightBrowserStepRunner()
     runner._page = page
     task = AgentTask(
@@ -111,6 +129,10 @@ async def test_driver_opens_and_reads_a_page() -> None:
 
     assert opened.succeeded
     assert inspected.succeeded
+    assert inspected.page_snapshot is not None
+    assert inspected.page_snapshot.title == "Example form"
+    assert inspected.page_snapshot.controls[0].field_name == "first_name"
+    assert "value" not in inspected.page_snapshot.controls[0].model_dump()
 
 
 @pytest.mark.asyncio

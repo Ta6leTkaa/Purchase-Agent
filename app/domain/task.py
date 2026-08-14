@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.domain.browser_page import BrowserPageSnapshot
 from app.domain.task_permission import TaskPermissionPolicy
 from app.domain.task_plan import TaskExecutionJournal, TaskPlan, TaskStepApproval
 
@@ -47,6 +48,7 @@ class AgentTask(BaseModel):
     plan: TaskPlan | None = None
     journal: TaskExecutionJournal | None = None
     approvals: tuple[TaskStepApproval, ...] = ()
+    page_snapshot: BrowserPageSnapshot | None = None
     created_at: datetime
 
     @field_validator("instruction")

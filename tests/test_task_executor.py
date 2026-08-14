@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.domain.browser_page import BrowserPageSnapshot
 from app.domain.task import AgentTask, TaskStatus, UserActionReason
 from app.domain.task_permission import BrowserAction, TaskPermissionPolicy
 from app.domain.task_plan import TaskJournalOutcome, TaskPlanStep, TaskStepApproval
@@ -17,9 +18,15 @@ NOW = datetime(2026, 8, 14, 12, tzinfo=UTC)
 
 
 class RecordingRunner:
-    def __init__(self, *, fail_on: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fail_on: str | None = None,
+        page_snapshot: BrowserPageSnapshot | None = None,
+    ) -> None:
         self.step_ids: list[str] = []
         self.fail_on = fail_on
+        self.page_snapshot = page_snapshot
 
     async def run(
         self, task: AgentTask, step: TaskPlanStep
@@ -29,6 +36,9 @@ class RecordingRunner:
         return BrowserStepResult(
             succeeded=step_id != self.fail_on,
             reason_code=("element_not_found" if step_id == self.fail_on else None),
+            page_snapshot=(
+                self.page_snapshot if step_id == "inspect_page" else None
+            ),
         )
 
 
@@ -90,6 +100,24 @@ async def test_executor_stops_before_irreversible_order_submission() -> None:
     assert runner.step_ids == ["open_target", "inspect_page", "choose_option"]
     assert result.journal is not None
     assert result.journal.entries[-1].reason_code == "confirmation_required"
+
+
+@pytest.mark.asyncio
+async def test_executor_keeps_safe_page_snapshot() -> None:
+    task = make_planned_task("Купить билеты в кино")
+    snapshot = BrowserPageSnapshot(
+        url=task.target_url,
+        title="Ticket search",
+        captured_at=NOW,
+    )
+
+    result = await execute_task_plan(
+        task,
+        RecordingRunner(page_snapshot=snapshot),
+        IncrementingClock(),
+    )
+
+    assert result.page_snapshot == snapshot
 
 
 @pytest.mark.asyncio

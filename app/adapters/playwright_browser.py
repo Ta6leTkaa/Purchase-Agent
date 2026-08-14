@@ -3,6 +3,7 @@ import ipaddress
 import socket
 from collections.abc import Awaitable, Callable
 from types import TracebackType
+from typing import Any
 from urllib.parse import urlsplit
 
 from playwright.async_api import (
@@ -14,9 +15,15 @@ from playwright.async_api import (
     async_playwright,
 )
 
+from app.domain.browser_page import (
+    BrowserControlKind,
+    BrowserPageControl,
+    BrowserPageSnapshot,
+)
 from app.domain.task import AgentTask
 from app.domain.task_permission import BrowserAction
 from app.domain.task_plan import TaskPlanStep
+from app.services.clock import utc_now
 from app.services.task_executor import BrowserStepResult
 
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
@@ -95,9 +102,11 @@ class PlaywrightBrowserStepRunner:
                     reason_code="page_body_missing",
                 )
             await body.inner_text(timeout=self._timeout_ms)
+            snapshot = await self._snapshot_page(page)
             return BrowserStepResult(
                 succeeded=True,
                 reason_code="page_inspected",
+                page_snapshot=snapshot,
             )
         if step.action is BrowserAction.SELECT_OPTION:
             return BrowserStepResult(
@@ -121,6 +130,32 @@ class PlaywrightBrowserStepRunner:
         if self._page is None:
             raise RuntimeError("Playwright browser runner is not started")
         return self._page
+
+    async def _snapshot_page(self, page: Page) -> BrowserPageSnapshot:
+        raw_controls: list[dict[str, Any]] = await page.locator(
+            "input, select, textarea, button, a[href]"
+        ).evaluate_all(_CONTROL_INVENTORY_SCRIPT)
+        controls = tuple(
+            BrowserPageControl(
+                control_id=f"control_{index}",
+                kind=_control_kind(item),
+                label=str(
+                    item.get("label")
+                    or f"Unlabelled {item.get('tag', 'control')}"
+                ),
+                field_name=(str(item["name"]) if item.get("name") else None),
+                required=bool(item.get("required")),
+                disabled=bool(item.get("disabled")),
+                options=tuple(str(option) for option in item.get("options", ())),
+            )
+            for index, item in enumerate(raw_controls[:300], start=1)
+        )
+        return BrowserPageSnapshot(
+            url=page.url,
+            title=await page.title() or "Untitled page",
+            captured_at=utc_now(),
+            controls=controls,
+        )
 
     async def _guard_request(self, route: Route, request: Request) -> None:
         try:
@@ -170,3 +205,68 @@ async def _resolve_host(
         type=socket.SOCK_STREAM,
     )
     return {ipaddress.ip_address(record[4][0]) for record in records}
+
+
+def _control_kind(item: dict[str, Any]) -> BrowserControlKind:
+    tag = str(item.get("tag", "")).casefold()
+    input_type = str(item.get("type", "")).casefold()
+    if tag == "select":
+        return BrowserControlKind.SELECT
+    if tag == "button" or input_type in {"button", "submit", "reset"}:
+        return BrowserControlKind.BUTTON
+    if tag == "a":
+        return BrowserControlKind.LINK
+    if input_type == "radio":
+        return BrowserControlKind.RADIO
+    if input_type == "checkbox":
+        return BrowserControlKind.CHECKBOX
+    if input_type == "date":
+        return BrowserControlKind.DATE
+    if input_type == "email":
+        return BrowserControlKind.EMAIL
+    if input_type == "tel":
+        return BrowserControlKind.TEL
+    if input_type == "number":
+        return BrowserControlKind.NUMBER
+    if tag == "textarea" or input_type in {"", "text", "search"}:
+        return BrowserControlKind.TEXT
+    return BrowserControlKind.OTHER
+
+
+_CONTROL_INVENTORY_SCRIPT = """
+elements => elements
+  .filter(element => element.getClientRects().length > 0)
+  .slice(0, 300)
+  .map(element => {
+    const clean = value => (value || '').replace(/\\s+/g, ' ').trim().slice(0, 200);
+    const label = clean(
+      element.getAttribute('aria-label') ||
+      (element.labels && element.labels[0] && element.labels[0].innerText) ||
+      element.getAttribute('placeholder') ||
+      (
+        (element.tagName === 'BUTTON' || element.tagName === 'A') &&
+        element.innerText
+      ) ||
+      element.getAttribute('name') ||
+      element.id
+    );
+    return {
+      tag: element.tagName.toLowerCase(),
+      type: element.getAttribute('type') || '',
+      name: clean(element.getAttribute('name')) || null,
+      label,
+      required:
+        element.required === true ||
+        element.getAttribute('aria-required') === 'true',
+      disabled:
+        element.disabled === true ||
+        element.getAttribute('aria-disabled') === 'true',
+      options: element.tagName === 'SELECT'
+        ? Array.from(element.options)
+            .slice(0, 100)
+            .map(option => clean(option.textContent))
+            .filter(Boolean)
+        : []
+    };
+  })
+"""

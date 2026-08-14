@@ -4,6 +4,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.browser_page import BrowserPageSnapshot
 from app.domain.task import AgentTask, TaskStatus, UserActionReason
 from app.domain.task_plan import (
     TaskExecutionJournal,
@@ -23,6 +24,7 @@ class BrowserStepResult(BaseModel):
         max_length=100,
         pattern=r"^[a-z][a-z0-9_]*$",
     )
+    page_snapshot: BrowserPageSnapshot | None = None
 
 
 class BrowserStepRunner(Protocol):
@@ -151,6 +153,10 @@ async def execute_task_plan(
             reason_code=result.reason_code,
         )
         current = current.model_copy(update={"journal": journal})
+        if result.page_snapshot is not None:
+            current = current.model_copy(
+                update={"page_snapshot": result.page_snapshot}
+            )
         if not result.succeeded:
             return current.model_copy(update={"status": TaskStatus.FAILED})
         succeeded_steps.add(step.step_id)

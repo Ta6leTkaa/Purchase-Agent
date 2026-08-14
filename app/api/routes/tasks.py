@@ -109,6 +109,7 @@ async def prepare_task_plan(
                 "plan": preview.plan,
                 "journal": None,
                 "approvals": (),
+                "page_snapshot": None,
                 "inferred_kind": preview.inferred_kind,
                 "status": TaskStatus.READY,
                 "waiting_reason": None,
