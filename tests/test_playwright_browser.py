@@ -9,6 +9,7 @@ from playwright.async_api import Page
 
 from app.adapters.playwright_browser import (
     PlaywrightBrowserStepRunner,
+    _unique_matching_option,
     validate_browser_url,
 )
 from app.domain.browser_page import (
@@ -18,6 +19,7 @@ from app.domain.browser_page import (
 )
 from app.domain.identity import Document, DocumentType, Identity
 from app.domain.task import AgentTask
+from app.domain.task_intent import TaskIntent
 from app.domain.task_permission import BrowserAction
 from app.domain.task_plan import TaskPlanStep
 
@@ -163,7 +165,117 @@ async def test_driver_fails_closed_for_unmapped_option_selection() -> None:
     )
 
     assert not result.succeeded
-    assert result.reason_code == "option_selection_requires_mapping"
+    assert result.reason_code == "task_intent_mapping_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_driver_applies_unambiguous_task_intent_without_submitting() -> None:
+    person = Identity(
+        id=uuid4(),
+        display_name="Ivan Petrov",
+        first_name="Ivan",
+        last_name="Petrov",
+        birth_date=date(1990, 1, 2),
+    )
+    snapshot_controls = (
+        BrowserPageControl(
+            control_id="control_1",
+            kind=BrowserControlKind.SELECT,
+            label="Destination",
+            options=("Moscow", "Kazan"),
+        ),
+        BrowserPageControl(
+            control_id="control_2",
+            kind=BrowserControlKind.DATE,
+            label="Travel date",
+        ),
+        BrowserPageControl(
+            control_id="control_3",
+            kind=BrowserControlKind.NUMBER,
+            label="Ticket count",
+        ),
+        BrowserPageControl(
+            control_id="control_4",
+            kind=BrowserControlKind.RADIO,
+            label="Evening train",
+        ),
+    )
+    raw_controls = [
+        {
+            "tag": "select" if control.kind is BrowserControlKind.SELECT else "input",
+            "type": control.kind.value,
+            "name": "",
+            "label": control.label,
+            "required": False,
+            "disabled": False,
+            "options": list(control.options),
+        }
+        for control in snapshot_controls
+    ]
+    locators = [MagicMock() for _ in snapshot_controls]
+    for locator in locators:
+        locator.is_visible = AsyncMock(return_value=True)
+        locator.fill = AsyncMock()
+        locator.check = AsyncMock()
+        locator.select_option = AsyncMock()
+    controls = MagicMock()
+    controls.all = AsyncMock(return_value=locators)
+    controls.evaluate_all = AsyncMock(return_value=raw_controls)
+    page_mock = MagicMock()
+    page = cast(Page, page_mock)
+    page_mock.locator = MagicMock(return_value=controls)
+    page_mock.url = "https://example.com/form"
+    page_mock.title = AsyncMock(return_value="Intent form")
+    task = AgentTask(
+        id=uuid4(),
+        instruction="Buy one ticket to Kazan",
+        target_url="https://example.com/",
+        person_ids=(person.id,),
+        intent=TaskIntent(
+            destination="Kazan",
+            requested_date=date(2026, 10, 4),
+            requested_quantity=1,
+            participant_count=1,
+            search_terms=("Evening train",),
+        ),
+        page_snapshot=BrowserPageSnapshot(
+            url=page_mock.url,
+            captured_at=NOW,
+            controls=snapshot_controls,
+        ),
+        created_at=NOW,
+    )
+    runner = PlaywrightBrowserStepRunner(identities=(person,))
+    runner._page = page
+
+    result = await runner.run(
+        task,
+        TaskPlanStep(
+            step_id="choose_option",
+            action=BrowserAction.SELECT_OPTION,
+            summary="Apply intent",
+        ),
+    )
+
+    assert result.succeeded
+    assert result.reason_code == "task_intent_applied"
+    locators[0].select_option.assert_awaited_once_with(
+        label="Kazan", timeout=30_000
+    )
+    locators[1].fill.assert_awaited_once_with("2026-10-04", timeout=30_000)
+    locators[2].fill.assert_awaited_once_with("1", timeout=30_000)
+    locators[3].check.assert_awaited_once_with(timeout=30_000)
+
+
+def test_option_matching_rejects_ambiguous_partial_matches() -> None:
+    assert (
+        _unique_matching_option(
+            ("Kazan central", "Kazan airport"),
+            "Kazan",
+        )
+        is None
+    )
+    assert _unique_matching_option(("Moscow", "Kazan"), "kazan") == "Kazan"
 
 
 @pytest.mark.asyncio

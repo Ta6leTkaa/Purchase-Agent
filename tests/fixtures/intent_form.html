@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Task intent test form</title>
+  </head>
+  <body>
+    <form id="search-form">
+      <label>Origin
+        <select name="origin">
+          <option>Moscow</option>
+          <option>Kazan</option>
+        </select>
+      </label>
+      <label>Destination
+        <select name="destination">
+          <option>Moscow</option>
+          <option>Kazan</option>
+        </select>
+      </label>
+      <label>Travel date <input name="travel_date" type="date"></label>
+      <label>Ticket count <input name="ticket_count" type="number"></label>
+      <label><input name="train" type="radio"> Evening train</label>
+      <button type="submit">Search</button>
+    </form>
+    <output id="submitted">no</output>
+    <script>
+      document.querySelector('#search-form').addEventListener('submit', event => {
+        event.preventDefault();
+        document.querySelector('#submitted').textContent = 'yes';
+      });
+    </script>
+  </body>
+</html>

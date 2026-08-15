@@ -21,7 +21,7 @@ from app.domain.browser_page import (
     BrowserPageSnapshot,
 )
 from app.domain.identity import Identity
-from app.domain.page_fill_plan import PageFillPlan, ProfileField
+from app.domain.page_fill_plan import IntentField, PageFillPlan, ProfileField
 from app.domain.task import AgentTask
 from app.domain.task_permission import BrowserAction
 from app.domain.task_plan import TaskPlanStep
@@ -114,10 +114,7 @@ class PlaywrightBrowserStepRunner:
                 page_snapshot=snapshot,
             )
         if step.action is BrowserAction.SELECT_OPTION:
-            return BrowserStepResult(
-                succeeded=False,
-                reason_code="option_selection_requires_mapping",
-            )
+            return await self._apply_task_intent(page, task)
         if step.action is BrowserAction.FILL_BASIC_PROFILE:
             return await self._fill_basic_profile(page, task)
         if step.action is BrowserAction.FILL_SENSITIVE_PROFILE:
@@ -196,31 +193,11 @@ class PlaywrightBrowserStepRunner:
                 succeeded=False,
                 reason_code="sensitive_profile_mapping_unavailable",
             )
-        if page.url != task.page_snapshot.url:
-            snapshot_url = urlsplit(task.page_snapshot.url)
-            target_url = urlsplit(task.target_url)
-            if (snapshot_url.scheme, snapshot_url.netloc) != (
-                target_url.scheme,
-                target_url.netloc,
-            ):
-                return BrowserStepResult(
-                    succeeded=False,
-                    reason_code="mapped_page_origin_changed",
-                )
-            response = await page.goto(
-                task.page_snapshot.url,
-                wait_until="domcontentloaded",
-                timeout=self._timeout_ms,
-            )
-            if response is None or response.status >= 400:
-                return BrowserStepResult(
-                    succeeded=False,
-                    reason_code="mapped_page_restore_failed",
-                )
-        if not await self._page_matches_snapshot(page, task):
+        restore_error = await self._ensure_mapped_page(page, task)
+        if restore_error is not None:
             return BrowserStepResult(
                 succeeded=False,
-                reason_code="page_changed_since_mapping",
+                reason_code=restore_error,
             )
         basic_result = await self._fill_profile_bindings(
             page,
@@ -235,6 +212,126 @@ class PlaywrightBrowserStepRunner:
             task.page_fill_plan,
             sensitive=True,
         )
+
+    async def _apply_task_intent(
+        self,
+        page: Page,
+        task: AgentTask,
+    ) -> BrowserStepResult:
+        if task.intent is None or task.page_snapshot is None:
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="task_intent_mapping_unavailable",
+            )
+        if task.intent.issues:
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="task_intent_requires_clarification",
+            )
+        fill_plan = task.page_fill_plan or build_page_fill_plan(
+            task, self._identities, utc_now()
+        )
+        if not fill_plan.intent_bindings:
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="task_intent_mapping_empty",
+                page_fill_plan=fill_plan,
+            )
+        restore_error = await self._ensure_mapped_page(page, task)
+        if restore_error is not None:
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code=restore_error,
+                page_fill_plan=fill_plan,
+            )
+        controls = page.locator("input, select, textarea, button, a[href]")
+        visible_controls = [
+            control for control in await controls.all() if await control.is_visible()
+        ]
+        snapshot_controls = {
+            control.control_id: control for control in task.page_snapshot.controls
+        }
+        for binding in fill_plan.intent_bindings:
+            index = int(binding.control_id.removeprefix("control_")) - 1
+            if index >= len(visible_controls):
+                return BrowserStepResult(
+                    succeeded=False,
+                    reason_code="mapped_control_missing",
+                    page_fill_plan=fill_plan,
+                )
+            control = snapshot_controls[binding.control_id]
+            desired = _intent_value(
+                task,
+                binding.intent_field,
+                binding.search_term_index,
+            )
+            if desired is None:
+                return BrowserStepResult(
+                    succeeded=False,
+                    reason_code="mapped_intent_value_missing",
+                    page_fill_plan=fill_plan,
+                )
+            locator = visible_controls[index]
+            if control.kind is BrowserControlKind.SELECT:
+                option = _unique_matching_option(control.options, desired)
+                if option is None:
+                    return BrowserStepResult(
+                        succeeded=False,
+                        reason_code="select_option_not_unique",
+                        page_fill_plan=fill_plan,
+                    )
+                await locator.select_option(label=option, timeout=self._timeout_ms)
+            elif control.kind in {
+                BrowserControlKind.RADIO,
+                BrowserControlKind.CHECKBOX,
+            }:
+                await locator.check(timeout=self._timeout_ms)
+            elif control.kind in {
+                BrowserControlKind.TEXT,
+                BrowserControlKind.DATE,
+                BrowserControlKind.NUMBER,
+                BrowserControlKind.EMAIL,
+                BrowserControlKind.TEL,
+                BrowserControlKind.OTHER,
+            }:
+                await locator.fill(desired, timeout=self._timeout_ms)
+            else:
+                return BrowserStepResult(
+                    succeeded=False,
+                    reason_code="mapped_control_not_editable",
+                    page_fill_plan=fill_plan,
+                )
+        return BrowserStepResult(
+            succeeded=True,
+            reason_code="task_intent_applied",
+            page_fill_plan=fill_plan,
+        )
+
+    async def _ensure_mapped_page(
+        self,
+        page: Page,
+        task: AgentTask,
+    ) -> str | None:
+        if task.page_snapshot is None:
+            return "page_snapshot_missing"
+        if page.url != task.page_snapshot.url:
+            snapshot_url = urlsplit(task.page_snapshot.url)
+            target_url = urlsplit(task.target_url)
+            if (snapshot_url.scheme, snapshot_url.netloc) != (
+                target_url.scheme,
+                target_url.netloc,
+            ):
+                return "mapped_page_origin_changed"
+            response = await page.goto(
+                task.page_snapshot.url,
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
+            )
+            if response is None or response.status >= 400:
+                return "mapped_page_restore_failed"
+        if not await self._page_matches_snapshot(page, task):
+            return "page_changed_since_mapping"
+        return None
 
     async def _page_matches_snapshot(self, page: Page, task: AgentTask) -> bool:
         if task.page_snapshot is None:
@@ -392,6 +489,54 @@ def _profile_value(identity: Identity, field: ProfileField) -> str | None:
     if field is ProfileField.DOCUMENT_NUMBER:
         return identity.documents[0].number if identity.documents else None
     return None
+
+
+def _intent_value(
+    task: AgentTask,
+    field: IntentField,
+    search_term_index: int | None,
+) -> str | None:
+    intent = task.intent
+    if intent is None:
+        return None
+    if field is IntentField.ORIGIN:
+        return intent.origin
+    if field is IntentField.DESTINATION:
+        return intent.destination
+    if field is IntentField.REQUESTED_DATE:
+        return intent.requested_date.isoformat() if intent.requested_date else None
+    if field is IntentField.EARLIEST_TIME:
+        return intent.earliest_time.strftime("%H:%M") if intent.earliest_time else None
+    if field is IntentField.LATEST_TIME:
+        return intent.latest_time.strftime("%H:%M") if intent.latest_time else None
+    if field is IntentField.REQUESTED_QUANTITY:
+        return str(intent.requested_quantity) if intent.requested_quantity else None
+    if field is IntentField.SEARCH_TERM and search_term_index is not None:
+        if search_term_index < len(intent.search_terms):
+            return intent.search_terms[search_term_index]
+    return None
+
+
+def _unique_matching_option(options: tuple[str, ...], desired: str) -> str | None:
+    normalized_desired = _normalize_option(desired)
+    exact = [
+        option
+        for option in options
+        if _normalize_option(option) == normalized_desired
+    ]
+    if len(exact) == 1:
+        return exact[0]
+    partial = [
+        option
+        for option in options
+        if normalized_desired in _normalize_option(option)
+        or _normalize_option(option) in normalized_desired
+    ]
+    return partial[0] if len(partial) == 1 else None
+
+
+def _normalize_option(value: str) -> str:
+    return " ".join(value.casefold().split())
 
 
 _CONTROL_INVENTORY_SCRIPT = """
