@@ -12,6 +12,7 @@ from app.domain.browser_page import (
     BrowserPageSnapshot,
 )
 from app.domain.task import TaskStatus, UserActionReason
+from app.domain.task_intent import TaskIntent
 from app.domain.task_plan import TaskExecutionJournal, TaskJournalOutcome
 from app.main import app
 from app.services.task_executor import BrowserStepResult
@@ -293,11 +294,26 @@ def test_map_page_persists_value_free_profile_bindings() -> None:
                 label="Passport number",
                 required=True,
             ),
+            BrowserPageControl(
+                control_id="control_3",
+                kind=BrowserControlKind.SELECT,
+                label="Destination",
+                options=("Kazan", "Moscow"),
+                required=True,
+            ),
         ),
     )
     asyncio.run(
         agent_task_repository.update(
-            task.model_copy(update={"page_snapshot": snapshot}),
+            task.model_copy(
+                update={
+                    "page_snapshot": snapshot,
+                    "intent": TaskIntent(
+                        destination="Kazan",
+                        participant_count=1,
+                    ),
+                }
+            ),
             task.version,
         )
     )
@@ -311,6 +327,13 @@ def test_map_page_persists_value_free_profile_bindings() -> None:
         "document_number",
     ]
     assert fill_plan["bindings"][1]["sensitive"] is True
+    assert fill_plan["intent_bindings"] == [
+        {
+            "control_id": "control_3",
+            "intent_field": "destination",
+            "search_term_index": None,
+        }
+    ]
     assert "Ivan" not in str(fill_plan)
     assert "1234567890" not in str(fill_plan)
     assert client.get(f"/tasks/{task.id}").json()["page_fill_plan"] == fill_plan
