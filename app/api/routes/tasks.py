@@ -114,6 +114,7 @@ async def prepare_task_plan(
                 "page_snapshot": None,
                 "page_fill_plan": None,
                 "inferred_kind": preview.inferred_kind,
+                "intent": preview.intent,
                 "status": TaskStatus.READY,
                 "waiting_reason": None,
             }
@@ -121,6 +122,7 @@ async def prepare_task_plan(
     )
     return TaskPlanResponse(
         inferred_kind=preview.inferred_kind,
+        intent=preview.intent,
         plan=preview.plan,
         permissions=tuple(
             TaskPlanStepPreview(step_id=step.step_id, decision=decision)

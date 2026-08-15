@@ -2,6 +2,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.domain.task_intent import TaskIntent
 from app.domain.task_permission import PermissionDecision, TaskPermissionPolicy
 from app.domain.task_plan import TaskPlan
 
@@ -21,6 +22,7 @@ class TaskPlanStepPreview(BaseModel):
 
 class TaskPlanResponse(BaseModel):
     inferred_kind: str
+    intent: TaskIntent
     plan: TaskPlan
     permissions: tuple[TaskPlanStepPreview, ...]
 

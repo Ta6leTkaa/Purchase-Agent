@@ -125,6 +125,8 @@ def test_prepare_task_plan_persists_safe_preview() -> None:
     assert response.status_code == 200
     assert response.json()["inferred_kind"] == "flight_ticket"
     assert stored["inferred_kind"] == "flight_ticket"
+    assert stored["intent"] == response.json()["intent"]
+    assert stored["intent"]["destination"] == "Стамбул"
     assert stored["plan"] == response.json()["plan"]
     assert stored["version"] == 1
     decisions = {

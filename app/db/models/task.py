@@ -22,6 +22,9 @@ class AgentTaskModel(Base):
     person_ids: Mapped[list[str]] = mapped_column(preferences_type, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     inferred_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    intent: Mapped[dict[str, Any] | None] = mapped_column(
+        preferences_type, nullable=True
+    )
     waiting_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     permissions: Mapped[dict[str, Any]] = mapped_column(
         preferences_type, nullable=False
@@ -65,6 +68,7 @@ def agent_task_to_model(task: AgentTask) -> AgentTaskModel:
         person_ids=data["person_ids"],
         status=task.status.value,
         inferred_kind=task.inferred_kind,
+        intent=data["intent"],
         waiting_reason=task.waiting_reason.value if task.waiting_reason else None,
         permissions=data["permissions"],
         plan=data["plan"],
@@ -86,6 +90,7 @@ def agent_task_from_model(model: AgentTaskModel) -> AgentTask:
             "person_ids": model.person_ids,
             "status": model.status,
             "inferred_kind": model.inferred_kind,
+            "intent": model.intent,
             "waiting_reason": model.waiting_reason,
             "permissions": model.permissions,
             "plan": model.plan,

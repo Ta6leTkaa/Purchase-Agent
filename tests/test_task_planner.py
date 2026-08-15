@@ -25,6 +25,9 @@ def test_train_request_builds_profile_and_document_steps() -> None:
     )
 
     assert preview.inferred_kind == "train_ticket"
+    assert preview.intent.origin == "Москва"
+    assert preview.intent.destination == "Казань"
+    assert preview.intent.participant_count == 1
     assert [step.action for step in preview.plan.steps] == [
         BrowserAction.NAVIGATE,
         BrowserAction.READ_PAGE,

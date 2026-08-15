@@ -48,6 +48,7 @@ class SqlAlchemyAgentTaskRepository(AgentTaskRepository):
             .values(
                 status=task.status.value,
                 inferred_kind=task.inferred_kind,
+                intent=data["intent"],
                 waiting_reason=(
                     task.waiting_reason.value if task.waiting_reason else None
                 ),

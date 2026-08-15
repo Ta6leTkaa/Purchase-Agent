@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.domain.browser_page import BrowserPageSnapshot
 from app.domain.page_fill_plan import PageFillPlan
+from app.domain.task_intent import TaskIntent
 from app.domain.task_permission import TaskPermissionPolicy
 from app.domain.task_plan import TaskExecutionJournal, TaskPlan, TaskStepApproval
 
@@ -44,6 +45,7 @@ class AgentTask(BaseModel):
     person_ids: tuple[UUID, ...] = Field(min_length=1, max_length=100)
     status: TaskStatus = TaskStatus.DRAFT
     inferred_kind: str | None = Field(default=None, max_length=64)
+    intent: TaskIntent | None = None
     waiting_reason: UserActionReason | None = None
     permissions: TaskPermissionPolicy = TaskPermissionPolicy()
     plan: TaskPlan | None = None
