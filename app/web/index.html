@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Purchase Agent</title>
-  <link rel="stylesheet" href="/app/app.css?v=20260813-3">
+  <link rel="stylesheet" href="/app/app.css?v=20260815-1">
 </head>
 <body>
   <div id="authGate" class="auth-gate">
     <div class="auth-layout">
       <section class="auth-promo">
-        <div class="auth-brand"><div class="logo large">PA</div><span><b>Purchase Agent</b><small>персональный агент поездок</small></span></div>
-        <div class="auth-copy"><p class="eyebrow">ЖЕЛЕЗНОДОРОЖНЫЕ ПОЕЗДКИ</p><h1>Меньше поиска.<br><em>Больше пути.</em></h1><p>Создайте поездку, выберите пассажиров — агент найдёт вариант и проведёт бронирование до результата.</p></div>
-        <div class="auth-route"><span><small>ОТКУДА</small><b>Москва</b></span><i>→</i><span><small>КУДА</small><b>Санкт-Петербург</b></span></div>
+        <div class="auth-brand"><div class="logo large">PA</div><span><b>Purchase Agent</b><small>агент для покупок и бронирований</small></span></div>
+        <div class="auth-copy"><p class="eyebrow">ЛЮБОЙ САЙТ · ОДИН СЦЕНАРИЙ</p><h1>Опишите задачу.<br><em>Агент подготовит.</em></h1><p>Выберите людей и сайт. Агент разберёт запрос, заполнит форму и остановится перед необратимым действием.</p></div>
+        <div class="auth-route"><span><small>ВЫ ЗАДАЁТЕ</small><b>Цель и людей</b></span><i>→</i><span><small>АГЕНТ ГОТОВИТ</small><b>Заказ к оплате</b></span></div>
       </section>
       <section class="auth-card">
         <div class="auth-card-head"><span class="secure-mark">✓</span><div><p class="eyebrow">БЕЗОПАСНЫЙ ВХОД</p><h2>Открыть кабинет</h2></div></div>
@@ -26,9 +26,10 @@
 
   <div id="appShell" class="app-shell" hidden>
     <aside class="sidebar">
-      <a class="brand" href="#trips"><span class="logo">PA</span><span><b>Purchase Agent</b><small>travel workspace</small></span></a>
+      <a class="brand" href="#tasks"><span class="logo">PA</span><span><b>Purchase Agent</b><small>personal automation</small></span></a>
       <nav>
-        <button class="nav active" data-view="trips"><span>⌁</span>Поездки</button>
+        <button class="nav active" data-view="tasks"><span>✦</span>Задачи агента</button>
+        <button class="nav" data-view="trips"><span>⌁</span>Поездки</button>
         <button class="nav" data-view="passengers"><span>◎</span>Пассажиры</button>
         <button class="nav" data-view="activity"><span>↻</span>Активность</button>
       </nav>
@@ -37,7 +38,14 @@
 
     <main class="content">
       <header class="mobile-head"><span class="logo">PA</span><button id="mobileMenu">Меню</button></header>
-      <section id="tripsView" class="view active">
+      <section id="tasksView" class="view active">
+        <header class="page-head"><div><p class="eyebrow">УНИВЕРСАЛЬНЫЙ АГЕНТ</p><h2>Мои задачи</h2><p>От билетов и отелей до записи на услугу — на указанном вами сайте.</p></div><button id="newTask" class="primary">+ Новая задача</button></header>
+        <div class="stats"><article><small>Всего задач</small><b id="totalTasks">0</b></article><article><small>Ждут вас</small><b id="waitingTasks">0</b></article><article><small>Подготовлено</small><b id="preparedTasks">0</b></article></div>
+        <div class="toolbar"><p class="muted task-hint">Агент не подтверждает покупку и не проводит оплату без вас.</p><button id="refreshTasks" class="icon-button" title="Обновить">↻</button></div>
+        <div id="taskList" class="card-list"></div>
+      </section>
+
+      <section id="tripsView" class="view">
         <header class="page-head"><div><p class="eyebrow">ЛИЧНЫЙ КАБИНЕТ</p><h2>Мои поездки</h2><p>Планируйте и отслеживайте покупки билетов.</p></div><button id="newTrip" class="primary">+ Новая поездка</button></header>
         <div class="stats"><article><small>Всего поездок</small><b id="totalTrips">0</b></article><article><small>Ожидают действия</small><b id="actionTrips">0</b></article><article><small>Завершено</small><b id="completedTrips">0</b></article></div>
         <div class="toolbar"><div class="filters"><button class="filter active" data-status="">Все</button><button class="filter" data-status="active">Активные</button><button class="filter" data-status="requires_confirmation">Ждут подтверждения</button><button class="filter" data-status="completed">Завершённые</button></div><button id="refreshTrips" class="icon-button" title="Обновить">↻</button></div>
@@ -59,8 +67,26 @@
         <button class="back-link" data-view-target="trips">← Все поездки</button>
         <div id="tripDetailContent"></div>
       </section>
+
+      <section id="taskDetailView" class="view detail-view">
+        <button class="back-link" data-view-target="tasks">← Все задачи</button>
+        <div id="taskDetailContent"></div>
+      </section>
     </main>
   </div>
+
+  <dialog id="taskDialog" class="dialog wide-dialog">
+    <form method="dialog"><button class="close" value="cancel" aria-label="Закрыть">×</button></form>
+    <p class="eyebrow">НОВАЯ ЗАДАЧА АГЕНТА</p><h2>Что нужно сделать?</h2>
+    <p class="muted">Напишите запрос обычным языком. Добавьте маршрут, дату, время, количество или другие важные условия.</p>
+    <form id="taskForm">
+      <label>Задача<textarea id="taskInstruction" rows="4" placeholder="Например: найди 2 билета Москва — Санкт-Петербург на 10 сентября после 18:00" required></textarea></label>
+      <label>Сайт для выполнения<input id="taskTargetUrl" type="url" placeholder="https://example.com/search" required></label>
+      <label class="field-title">Для кого</label><div id="taskPersonChoices" class="choices compact-choices"></div>
+      <div class="safety-note"><b>Контроль остаётся у вас</b><span>Агент заполнит безопасные поля и остановится перед отправкой заказа, оплатой, CAPTCHA или авторизацией.</span></div>
+      <button class="primary wide" type="submit">Создать и запустить агента <span>↗</span></button>
+    </form>
+  </dialog>
 
   <dialog id="tripDialog" class="dialog wide-dialog">
     <form method="dialog"><button class="close" value="cancel" aria-label="Закрыть">×</button></form>
@@ -83,6 +109,6 @@
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
-  <script src="/app/app.js?v=20260813-3" defer></script>
+  <script src="/app/app.js?v=20260815-1" defer></script>
 </body>
 </html>

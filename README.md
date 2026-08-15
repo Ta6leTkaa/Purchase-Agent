@@ -42,12 +42,14 @@ check, so an instance with missing, outdated, or split schema revisions does
 not receive traffic. Scheduled execution and notification delivery remain opt-in:
 
 Open `http://localhost:8000/app` for the built-in user-facing MVP. Enter the
-client `API_KEY` from `.env` to open the trip dashboard. The web application
-lists saved trips and passengers, creates passenger profiles, guides a new trip
-through route/passenger/review steps, runs the mock provider, and exposes
-confirmation, cancellation, retry, outcome, and event-history views. The key
-is kept in the current browser tab only. The UI is included in the production
-image; public API documentation remains disabled independently.
+client `API_KEY` from `.env` to open the agent dashboard. Its primary workflow
+creates a site-agnostic task from a natural-language instruction, target URL,
+and selected people, then shows the inferred parameters, execution plan,
+progress, and any manual action required. The browser agent fills safe fields
+and stops before order submission, payment, authentication, or CAPTCHA. The
+original train-trip dashboard remains available as a separate mock-provider
+demo. The key is kept in the current browser tab only. The UI is included in
+the production image; public API documentation remains disabled independently.
 
 After deployment, run the non-mutating smoke check. It verifies liveness,
 readiness, client authentication, admin authentication, and that the instance
