@@ -70,10 +70,16 @@ def build_task_plan(task: AgentTask, now: datetime) -> TaskPlanPreview:
                 depends_on=(previous,),
             ),
             TaskPlanStep(
+                step_id="open_review",
+                action=BrowserAction.PREPARE_REVIEW,
+                summary="Advance to the review page without confirming the order",
+                depends_on=("choose_option",),
+            ),
+            TaskPlanStep(
                 step_id="prepare_order",
                 action=BrowserAction.SUBMIT_ORDER,
                 summary="Prepare the order and stop before irreversible submission",
-                depends_on=("choose_option",),
+                depends_on=("open_review",),
                 reversible=False,
             ),
         ]

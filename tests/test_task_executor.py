@@ -117,7 +117,11 @@ async def test_executor_runs_sensitive_step_only_after_one_time_approval() -> No
 
     result = await execute_task_plan(approved, runner, IncrementingClock())
 
-    assert runner.step_ids == ["fill_documents", "choose_option"]
+    assert runner.step_ids == [
+        "fill_documents",
+        "choose_option",
+        "open_review",
+    ]
     assert result.status is TaskStatus.WAITING_FOR_USER
     assert result.approvals[0].consumed_at is not None
 
@@ -131,7 +135,12 @@ async def test_executor_stops_before_irreversible_order_submission() -> None:
 
     assert result.status is TaskStatus.WAITING_FOR_USER
     assert result.waiting_reason is UserActionReason.CONFIRMATION_REQUIRED
-    assert runner.step_ids == ["open_target", "inspect_page", "choose_option"]
+    assert runner.step_ids == [
+        "open_target",
+        "inspect_page",
+        "choose_option",
+        "open_review",
+    ]
     assert result.journal is not None
     assert result.journal.entries[-1].reason_code == "confirmation_required"
 
@@ -249,7 +258,7 @@ async def test_executor_skips_steps_that_already_succeeded() -> None:
 
     result = await execute_task_plan(resumed, second_runner, IncrementingClock())
 
-    assert second_runner.step_ids == ["choose_option"]
+    assert second_runner.step_ids == ["choose_option", "open_review"]
     assert result.status is TaskStatus.WAITING_FOR_USER
 
 

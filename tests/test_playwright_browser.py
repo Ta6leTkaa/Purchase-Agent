@@ -9,6 +9,7 @@ from playwright.async_api import Page
 
 from app.adapters.playwright_browser import (
     PlaywrightBrowserStepRunner,
+    _is_safe_review_button,
     _unique_matching_option,
     validate_browser_url,
 )
@@ -199,11 +200,28 @@ async def test_driver_applies_unambiguous_task_intent_without_submitting() -> No
             kind=BrowserControlKind.RADIO,
             label="Evening train",
         ),
+        BrowserPageControl(
+            control_id="control_5",
+            kind=BrowserControlKind.BUTTON,
+            label="Search",
+        ),
     )
     raw_controls = [
         {
-            "tag": "select" if control.kind is BrowserControlKind.SELECT else "input",
-            "type": control.kind.value,
+            "tag": (
+                "select"
+                if control.kind is BrowserControlKind.SELECT
+                else (
+                    "button"
+                    if control.kind is BrowserControlKind.BUTTON
+                    else "input"
+                )
+            ),
+            "type": (
+                "submit"
+                if control.kind is BrowserControlKind.BUTTON
+                else control.kind.value
+            ),
             "name": "",
             "label": control.label,
             "required": False,
@@ -218,6 +236,8 @@ async def test_driver_applies_unambiguous_task_intent_without_submitting() -> No
         locator.fill = AsyncMock()
         locator.check = AsyncMock()
         locator.select_option = AsyncMock()
+        locator.click = AsyncMock()
+        locator.evaluate = AsyncMock(return_value="https://example.com/form")
     controls = MagicMock()
     controls.all = AsyncMock(return_value=locators)
     controls.evaluate_all = AsyncMock(return_value=raw_controls)
@@ -226,6 +246,7 @@ async def test_driver_applies_unambiguous_task_intent_without_submitting() -> No
     page_mock.locator = MagicMock(return_value=controls)
     page_mock.url = "https://example.com/form"
     page_mock.title = AsyncMock(return_value="Intent form")
+    page_mock.wait_for_load_state = AsyncMock()
     task = AgentTask(
         id=uuid4(),
         instruction="Buy one ticket to Kazan",
@@ -266,6 +287,19 @@ async def test_driver_applies_unambiguous_task_intent_without_submitting() -> No
     locators[2].fill.assert_awaited_once_with("1", timeout=30_000)
     locators[3].check.assert_awaited_once_with(timeout=30_000)
 
+    review = await runner.run(
+        task,
+        TaskPlanStep(
+            step_id="open_review",
+            action=BrowserAction.PREPARE_REVIEW,
+            summary="Open review",
+        ),
+    )
+
+    assert review.succeeded
+    assert review.page_snapshot is not None
+    locators[4].click.assert_awaited_once_with(timeout=30_000)
+
 
 def test_option_matching_rejects_ambiguous_partial_matches() -> None:
     assert (
@@ -276,6 +310,14 @@ def test_option_matching_rejects_ambiguous_partial_matches() -> None:
         is None
     )
     assert _unique_matching_option(("Moscow", "Kazan"), "kazan") == "Kazan"
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["Pay", "Continue to payment", "Купить", "Подтвердить заказ"],
+)
+def test_review_button_filter_rejects_irreversible_labels(label: str) -> None:
+    assert not _is_safe_review_button(label)
 
 
 @pytest.mark.asyncio

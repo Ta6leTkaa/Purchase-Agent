@@ -115,6 +115,8 @@ class PlaywrightBrowserStepRunner:
             )
         if step.action is BrowserAction.SELECT_OPTION:
             return await self._apply_task_intent(page, task)
+        if step.action is BrowserAction.PREPARE_REVIEW:
+            return await self._prepare_review(page, task)
         if step.action is BrowserAction.FILL_BASIC_PROFILE:
             return await self._fill_basic_profile(page, task)
         if step.action is BrowserAction.FILL_SENSITIVE_PROFILE:
@@ -333,6 +335,66 @@ class PlaywrightBrowserStepRunner:
             return "page_changed_since_mapping"
         return None
 
+    async def _prepare_review(
+        self,
+        page: Page,
+        task: AgentTask,
+    ) -> BrowserStepResult:
+        if task.page_snapshot is None:
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="page_snapshot_missing",
+            )
+        if not await self._page_matches_snapshot(page, task):
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="page_changed_before_review",
+            )
+        candidates = [
+            (index, control)
+            for index, control in enumerate(task.page_snapshot.controls)
+            if control.kind is BrowserControlKind.BUTTON
+            and not control.disabled
+            and _is_safe_review_button(control.label)
+        ]
+        if len(candidates) != 1:
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="review_button_not_unique",
+            )
+        index, _ = candidates[0]
+        controls = page.locator("input, select, textarea, button, a[href]")
+        visible_controls = [
+            control for control in await controls.all() if await control.is_visible()
+        ]
+        if index >= len(visible_controls):
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="review_button_missing",
+            )
+        button = visible_controls[index]
+        target = await button.evaluate(_FORM_TARGET_SCRIPT)
+        if target is not None and not _same_origin(str(target), task.target_url):
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="review_button_cross_origin",
+            )
+        await button.click(timeout=self._timeout_ms)
+        await page.wait_for_load_state(
+            "domcontentloaded",
+            timeout=self._timeout_ms,
+        )
+        if not _same_origin(page.url, task.target_url):
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="review_navigation_cross_origin",
+            )
+        return BrowserStepResult(
+            succeeded=True,
+            reason_code="review_page_opened",
+            page_snapshot=await self._snapshot_page(page),
+        )
+
     async def _page_matches_snapshot(self, page: Page, task: AgentTask) -> bool:
         if task.page_snapshot is None:
             return False
@@ -537,6 +599,60 @@ def _unique_matching_option(options: tuple[str, ...], desired: str) -> str | Non
 
 def _normalize_option(value: str) -> str:
     return " ".join(value.casefold().split())
+
+
+def _is_safe_review_button(label: str) -> bool:
+    normalized = _normalize_option(label)
+    if any(term in normalized for term in _BLOCKED_BUTTON_TERMS):
+        return False
+    return any(term in normalized for term in _SAFE_REVIEW_BUTTON_TERMS)
+
+
+def _same_origin(left: str, right: str) -> bool:
+    left_url = urlsplit(left)
+    right_url = urlsplit(right)
+    return (left_url.scheme, left_url.netloc) == (
+        right_url.scheme,
+        right_url.netloc,
+    )
+
+
+_SAFE_REVIEW_BUTTON_TERMS = (
+    "search",
+    "find",
+    "show",
+    "continue",
+    "next",
+    "review",
+    "proceed",
+    "найти",
+    "показать",
+    "продолжить",
+    "далее",
+    "к результатам",
+)
+_BLOCKED_BUTTON_TERMS = (
+    "pay",
+    "payment",
+    "purchase",
+    "buy",
+    "book",
+    "confirm",
+    "оплатить",
+    "оплата",
+    "купить",
+    "забронировать",
+    "подтвердить",
+    "заказать",
+    "оформить заказ",
+)
+_FORM_TARGET_SCRIPT = """
+element => {
+  const form = element.form || element.closest('form');
+  const target = element.getAttribute('formaction') || (form && form.action);
+  return target ? new URL(target, document.baseURI).href : null;
+}
+"""
 
 
 _CONTROL_INVENTORY_SCRIPT = """

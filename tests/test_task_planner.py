@@ -34,6 +34,7 @@ def test_train_request_builds_profile_and_document_steps() -> None:
         BrowserAction.FILL_BASIC_PROFILE,
         BrowserAction.FILL_SENSITIVE_PROFILE,
         BrowserAction.SELECT_OPTION,
+        BrowserAction.PREPARE_REVIEW,
         BrowserAction.SUBMIT_ORDER,
     ]
     assert preview.decisions[3].requires_user is True

@@ -135,6 +135,7 @@ def test_prepare_task_plan_persists_safe_preview() -> None:
         for item in response.json()["permissions"]
     }
     assert decisions["fill_documents"]["requires_user"] is True
+    assert decisions["open_review"]["allowed"] is True
     assert decisions["prepare_order"]["reason"] == "confirmation_required"
 
 

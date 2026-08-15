@@ -9,6 +9,7 @@ class BrowserAction(StrEnum):
     FILL_BASIC_PROFILE = "fill_basic_profile"
     FILL_SENSITIVE_PROFILE = "fill_sensitive_profile"
     SELECT_OPTION = "select_option"
+    PREPARE_REVIEW = "prepare_review"
     CREATE_FREE_RESERVATION = "create_free_reservation"
     SUBMIT_ORDER = "submit_order"
     AUTHENTICATE = "authenticate"
@@ -25,6 +26,7 @@ class TaskPermissionPolicy(BaseModel):
     allow_reading_pages: bool = True
     allow_basic_profile_filling: bool = True
     allow_option_selection: bool = True
+    allow_review_preparation: bool = True
     allow_free_reservation: bool = False
     require_approval_for_sensitive_data: bool = True
     require_approval_for_cross_origin_navigation: bool = True

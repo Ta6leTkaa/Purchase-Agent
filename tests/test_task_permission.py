@@ -30,6 +30,7 @@ def make_task(**overrides: object) -> AgentTask:
         BrowserAction.READ_PAGE,
         BrowserAction.FILL_BASIC_PROFILE,
         BrowserAction.SELECT_OPTION,
+        BrowserAction.PREPARE_REVIEW,
     ],
 )
 def test_default_policy_allows_reversible_browser_work(
@@ -164,6 +165,7 @@ def test_policy_can_disable_ordinary_automation() -> None:
             allow_reading_pages=False,
             allow_basic_profile_filling=False,
             allow_option_selection=False,
+            allow_review_preparation=False,
         )
     )
 
@@ -175,6 +177,7 @@ def test_policy_can_disable_ordinary_automation() -> None:
         BrowserActionRequest(action=BrowserAction.READ_PAGE),
         BrowserActionRequest(action=BrowserAction.FILL_BASIC_PROFILE),
         BrowserActionRequest(action=BrowserAction.SELECT_OPTION),
+        BrowserActionRequest(action=BrowserAction.PREPARE_REVIEW),
     ):
         decision = evaluate_browser_action(task, request)
         assert not decision.allowed

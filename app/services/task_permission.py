@@ -58,6 +58,12 @@ def evaluate_browser_action(
             if policy.allow_option_selection
             else _denied("option_selection_not_allowed")
         )
+    if request.action is BrowserAction.PREPARE_REVIEW:
+        return (
+            _allowed("review_preparation_allowed")
+            if policy.allow_review_preparation
+            else _denied("review_preparation_not_allowed")
+        )
     if request.action is BrowserAction.CREATE_FREE_RESERVATION:
         return (
             _allowed("free_reservation_allowed")
