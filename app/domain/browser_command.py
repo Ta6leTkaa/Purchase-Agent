@@ -4,6 +4,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.domain.browser_page import BrowserPageSnapshot
+
 
 class FillValueSource(StrEnum):
     LITERAL = "literal"
@@ -149,3 +151,12 @@ class AgentDecision(BaseModel):
         if not normalized:
             raise ValueError("decision explanations must not be blank")
         return normalized
+
+
+class CommandExecutionResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    succeeded: bool
+    reason_code: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=100)
+    page_snapshot: BrowserPageSnapshot | None = None
+    requires_user: bool = False

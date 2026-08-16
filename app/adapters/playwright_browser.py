@@ -17,6 +17,20 @@ from playwright.async_api import (
     async_playwright,
 )
 
+from app.domain.browser_command import (
+    AgentDecision,
+    AskUserCommand,
+    ClickCommand,
+    CommandExecutionResult,
+    FillCommand,
+    FillValueSource,
+    FinishCommand,
+    GoBackCommand,
+    OpenUrlCommand,
+    ScrollCommand,
+    SelectCommand,
+    WaitCommand,
+)
 from app.domain.browser_page import (
     BrowserControlKind,
     BrowserPageControl,
@@ -132,6 +146,207 @@ class PlaywrightBrowserStepRunner:
         return BrowserStepResult(
             succeeded=False,
             reason_code="browser_action_not_implemented",
+        )
+
+    async def execute_command(
+        self,
+        task: AgentTask,
+        decision: AgentDecision,
+        *,
+        approved_sensitive: bool = False,
+    ) -> CommandExecutionResult:
+        """Execute one validated model command against the current page."""
+        page = self._require_page()
+        command = decision.command
+        if isinstance(command, AskUserCommand):
+            return CommandExecutionResult(
+                succeeded=False,
+                reason_code="user_input_required",
+                requires_user=True,
+            )
+        if isinstance(command, FinishCommand):
+            return CommandExecutionResult(
+                succeeded=True,
+                reason_code=f"finished_{command.outcome.value}",
+                page_snapshot=(
+                    await self._snapshot_page(page)
+                    if page.url != "about:blank"
+                    else None
+                ),
+                requires_user=command.outcome.value in {
+                    "ready_for_user",
+                    "needs_user",
+                },
+            )
+        if page.url == "about:blank":
+            await page.goto(
+                task.page_snapshot.url if task.page_snapshot else task.target_url,
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
+            )
+        if isinstance(command, OpenUrlCommand):
+            if not _same_origin(command.url, task.target_url):
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="cross_origin_navigation_blocked",
+                    requires_user=True,
+                )
+            response = await page.goto(
+                command.url,
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
+            )
+            if response is None or response.status >= 400:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="navigation_failed",
+                )
+            return await self._command_succeeded(page, "url_opened")
+        if isinstance(command, GoBackCommand):
+            await page.go_back(
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
+            )
+            if not _same_origin(page.url, task.target_url):
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="cross_origin_navigation_blocked",
+                    requires_user=True,
+                )
+            return await self._command_succeeded(page, "went_back")
+        if isinstance(command, ScrollCommand):
+            delta = command.amount if command.direction == "down" else -command.amount
+            await page.mouse.wheel(0, delta)
+            return await self._command_succeeded(page, "page_scrolled")
+        if isinstance(command, WaitCommand):
+            await page.wait_for_timeout(command.seconds * 1_000)
+            return await self._command_succeeded(page, "page_waited")
+
+        snapshot = await self._snapshot_page(page)
+        control_id = command.control_id
+        control = next(
+            (item for item in snapshot.controls if item.control_id == control_id),
+            None,
+        )
+        if control is None:
+            return CommandExecutionResult(
+                succeeded=False,
+                reason_code="control_not_found",
+            )
+        locator = page.locator(
+            f'[data-purchase-agent-control="{control_id}"]'
+        )
+        if await locator.count() != 1 or not await locator.is_visible():
+            return CommandExecutionResult(
+                succeeded=False,
+                reason_code="control_not_actionable",
+            )
+        if isinstance(command, ClickCommand):
+            if control.kind not in {
+                BrowserControlKind.BUTTON,
+                BrowserControlKind.LINK,
+                BrowserControlKind.CLICKABLE,
+                BrowserControlKind.RADIO,
+                BrowserControlKind.CHECKBOX,
+            }:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="control_not_clickable",
+                )
+            if any(
+                term in _normalize_option(control.label)
+                for term in _BLOCKED_BUTTON_TERMS
+            ):
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="irreversible_click_requires_user",
+                    page_snapshot=snapshot,
+                    requires_user=True,
+                )
+            target = await locator.evaluate(_CLICK_TARGET_SCRIPT)
+            if target is not None and not _same_origin(str(target), task.target_url):
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="cross_origin_navigation_blocked",
+                    page_snapshot=snapshot,
+                    requires_user=True,
+                )
+            await locator.click(timeout=self._timeout_ms)
+            await page.wait_for_timeout(300)
+            return await self._command_succeeded(page, "control_clicked")
+        if isinstance(command, SelectCommand):
+            if control.kind is not BrowserControlKind.SELECT:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="control_not_select",
+                )
+            option = _unique_matching_option(control.options, command.option_text)
+            if option is None:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="select_option_not_unique",
+                )
+            await locator.select_option(label=option, timeout=self._timeout_ms)
+            return await self._command_succeeded(page, "option_selected")
+        if isinstance(command, FillCommand):
+            if control.kind not in {
+                BrowserControlKind.TEXT,
+                BrowserControlKind.DATE,
+                BrowserControlKind.EMAIL,
+                BrowserControlKind.TEL,
+                BrowserControlKind.NUMBER,
+                BrowserControlKind.OTHER,
+            }:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="control_not_fillable",
+                )
+            if command.value_source is FillValueSource.DOCUMENT_NUMBER:
+                if not approved_sensitive:
+                    return CommandExecutionResult(
+                        succeeded=False,
+                        reason_code="sensitive_data_approval_required",
+                        page_snapshot=snapshot,
+                        requires_user=True,
+                    )
+            value = self._command_fill_value(command)
+            if value is None:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="fill_value_unavailable",
+                )
+            await locator.fill(value, timeout=self._timeout_ms)
+            return await self._command_succeeded(page, "control_filled")
+        return CommandExecutionResult(
+            succeeded=False,
+            reason_code="command_not_implemented",
+        )
+
+    def _command_fill_value(self, command: FillCommand) -> str | None:
+        if command.value_source is FillValueSource.LITERAL:
+            return command.literal_value
+        if not self._identities:
+            return None
+        identity = self._identities[0]
+        if command.value_source is FillValueSource.FIRST_NAME:
+            return identity.first_name
+        if command.value_source is FillValueSource.LAST_NAME:
+            return identity.last_name
+        if command.value_source is FillValueSource.BIRTH_DATE:
+            return identity.birth_date.isoformat()
+        if command.value_source is FillValueSource.DOCUMENT_NUMBER:
+            return identity.documents[0].number if identity.documents else None
+        return None
+
+    async def _command_succeeded(
+        self,
+        page: Page,
+        reason_code: str,
+    ) -> CommandExecutionResult:
+        return CommandExecutionResult(
+            succeeded=True,
+            reason_code=reason_code,
+            page_snapshot=await self._snapshot_page(page),
         )
 
     def _require_page(self) -> Page:
@@ -600,8 +815,6 @@ def _control_kind(item: dict[str, Any]) -> BrowserControlKind:
         return BrowserControlKind.BUTTON
     if tag == "a" or role == "link":
         return BrowserControlKind.LINK
-    if role in {"tab", "option", "menuitem", "switch"} or item.get("clickable"):
-        return BrowserControlKind.CLICKABLE
     if input_type == "radio":
         return BrowserControlKind.RADIO
     if input_type == "checkbox":
@@ -615,7 +828,11 @@ def _control_kind(item: dict[str, Any]) -> BrowserControlKind:
     if input_type == "number":
         return BrowserControlKind.NUMBER
     if tag == "textarea" or input_type in {"", "text", "search"}:
+        if tag not in {"input", "textarea"}:
+            return BrowserControlKind.CLICKABLE
         return BrowserControlKind.TEXT
+    if role in {"tab", "option", "menuitem", "switch"} or item.get("clickable"):
+        return BrowserControlKind.CLICKABLE
     return BrowserControlKind.OTHER
 
 
@@ -786,6 +1003,16 @@ element => {
 }
 """
 _LINK_TARGET_SCRIPT = "element => element.href || null"
+_CLICK_TARGET_SCRIPT = """
+element => {
+  const form = element.form || element.closest('form');
+  const target =
+    element.href ||
+    element.getAttribute('formaction') ||
+    (form && form.action);
+  return target ? new URL(target, document.baseURI).href : null;
+}
+"""
 
 _ANNOTATED_CONTROL_SELECTOR = "[data-purchase-agent-control]"
 
