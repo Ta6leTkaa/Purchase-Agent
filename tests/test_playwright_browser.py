@@ -332,6 +332,7 @@ def test_fuzzy_movie_matching_ignores_punctuation_and_allows_short_title() -> No
         "Последний богатырь Колобок", "Последний богатырь. Колобок"
     ) == 1.0
     assert _best_matching_link(controls, ("Колобок",)) == 0
+    assert _best_matching_link(controls, ("колобка",)) == 0
 
 
 def test_fuzzy_movie_matching_refuses_ambiguous_short_title() -> None:

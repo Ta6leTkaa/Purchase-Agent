@@ -23,8 +23,8 @@ def test_web_app_is_available() -> None:
     assert "taskForm" in response.text
     assert "fillTaskDemo" in response.text
     assert "runDemo" in response.text
-    assert "/app/app.css?v=20260816-4" in response.text
-    assert "/app/app.js?v=20260816-4" in response.text
+    assert "/app/app.css?v=20260816-5" in response.text
+    assert "/app/app.js?v=20260816-5" in response.text
 
 
 def test_web_assets_are_served_with_explicit_types() -> None:
@@ -43,6 +43,7 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert 'api("/tasks?limit=100")' in script.text
     assert "createTask" in script.text
     assert "performTaskAction" in script.text
+    assert "Запрос разобран заново и запущен" in script.text
     assert "runInstantDemo" in script.text
     assert "ensureDemoPerson" in script.text
     assert "taskFailure" in script.text

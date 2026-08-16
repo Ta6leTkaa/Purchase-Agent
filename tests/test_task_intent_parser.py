@@ -75,6 +75,17 @@ def test_extracts_unquoted_cinema_title_without_exact_punctuation() -> None:
     assert short.search_terms == ("Колобок",)
 
 
+def test_extracts_title_from_colloquial_ticket_request() -> None:
+    intent = extract_task_intent(
+        "купи билеты на колобка на 17 августа в любое время любое место",
+        participant_count=1,
+        reference_date=date(2026, 8, 16),
+    )
+
+    assert intent.requested_date == date(2026, 8, 17)
+    assert intent.search_terms == ("колобка",)
+
+
 def test_invalid_or_ambiguous_values_are_left_unset() -> None:
     intent = extract_task_intent(
         "Купить билеты когда-нибудь 31.02.2026",

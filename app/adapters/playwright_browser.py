@@ -702,10 +702,18 @@ def _fuzzy_label_score(query: str, candidate: str) -> float:
     if query_tokens <= candidate_tokens:
         return 0.94
     overlap = len(query_tokens & candidate_tokens) / len(query_tokens)
+    morphological_overlap = sum(
+        max(
+            SequenceMatcher(None, query_token, candidate_token).ratio()
+            for candidate_token in candidate_tokens
+        )
+        >= 0.78
+        for query_token in query_tokens
+    ) / len(query_tokens)
     sequence = SequenceMatcher(
         None, normalized_query, normalized_candidate
     ).ratio()
-    return max(overlap * 0.88, sequence)
+    return max(overlap * 0.88, morphological_overlap * 0.9, sequence)
 
 
 def _normalize_fuzzy_text(value: str) -> str:
