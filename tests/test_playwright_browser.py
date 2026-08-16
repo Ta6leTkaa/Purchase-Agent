@@ -98,11 +98,23 @@ async def test_driver_opens_and_reads_a_page() -> None:
                 "tag": "input",
                 "type": "text",
                 "name": "first_name",
+                "role": "textbox",
                 "label": "First name",
                 "required": True,
                 "disabled": False,
                 "options": [],
-            }
+            },
+            {
+                "tag": "div",
+                "type": "",
+                "name": None,
+                "role": "tab",
+                "label": "Завтра",
+                "clickable": True,
+                "required": False,
+                "disabled": False,
+                "options": [],
+            },
         ]
     )
     page_mock.locator = MagicMock(
@@ -143,6 +155,9 @@ async def test_driver_opens_and_reads_a_page() -> None:
     assert inspected.page_snapshot is not None
     assert inspected.page_snapshot.title == "Example form"
     assert inspected.page_snapshot.controls[0].field_name == "first_name"
+    assert inspected.page_snapshot.controls[0].role == "textbox"
+    assert inspected.page_snapshot.controls[1].kind is BrowserControlKind.CLICKABLE
+    assert inspected.page_snapshot.controls[1].label == "Завтра"
     assert "value" not in inspected.page_snapshot.controls[0].model_dump()
 
 

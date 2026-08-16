@@ -141,7 +141,7 @@ class PlaywrightBrowserStepRunner:
 
     async def _snapshot_page(self, page: Page) -> BrowserPageSnapshot:
         raw_controls: list[dict[str, Any]] = await page.locator(
-            "input, select, textarea, button, a[href]"
+            "body *"
         ).evaluate_all(_CONTROL_INVENTORY_SCRIPT)
         controls = tuple(
             BrowserPageControl(
@@ -152,6 +152,7 @@ class PlaywrightBrowserStepRunner:
                     or f"Unlabelled {item.get('tag', 'control')}"
                 ),
                 field_name=(str(item["name"]) if item.get("name") else None),
+                role=(str(item["role"]) if item.get("role") else None),
                 required=bool(item.get("required")),
                 disabled=bool(item.get("disabled")),
                 options=tuple(str(option) for option in item.get("options", ())),
@@ -250,7 +251,7 @@ class PlaywrightBrowserStepRunner:
                 reason_code=restore_error,
                 page_fill_plan=fill_plan,
             )
-        controls = page.locator("input, select, textarea, button, a[href]")
+        controls = page.locator(_ANNOTATED_CONTROL_SELECTOR)
         visible_controls = [
             control for control in await controls.all() if await control.is_visible()
         ]
@@ -329,7 +330,8 @@ class PlaywrightBrowserStepRunner:
                 reason_code="task_intent_mapping_empty",
                 page_fill_plan=fill_plan,
             )
-        controls = page.locator("input, select, textarea, button, a[href]")
+        await self._snapshot_page(page)
+        controls = page.locator(_ANNOTATED_CONTROL_SELECTOR)
         visible_controls = [
             control for control in await controls.all() if await control.is_visible()
         ]
@@ -432,7 +434,7 @@ class PlaywrightBrowserStepRunner:
                 reason_code="review_button_not_unique",
             )
         index, _ = candidates[0]
-        controls = page.locator("input, select, textarea, button, a[href]")
+        controls = page.locator(_ANNOTATED_CONTROL_SELECTOR)
         visible_controls = [
             control for control in await controls.all() if await control.is_visible()
         ]
@@ -497,7 +499,7 @@ class PlaywrightBrowserStepRunner:
                 ),
                 page_fill_plan=fill_plan,
             )
-        controls = page.locator("input, select, textarea, button, a[href]")
+        controls = page.locator(_ANNOTATED_CONTROL_SELECTOR)
         visible_controls = [
             control for control in await controls.all() if await control.is_visible()
         ]
@@ -587,12 +589,19 @@ async def _resolve_host(
 def _control_kind(item: dict[str, Any]) -> BrowserControlKind:
     tag = str(item.get("tag", "")).casefold()
     input_type = str(item.get("type", "")).casefold()
+    role = str(item.get("role", "")).casefold()
     if tag == "select":
         return BrowserControlKind.SELECT
-    if tag == "button" or input_type in {"button", "submit", "reset"}:
+    if (
+        tag == "button"
+        or role == "button"
+        or input_type in {"button", "submit", "reset"}
+    ):
         return BrowserControlKind.BUTTON
-    if tag == "a":
+    if tag == "a" or role == "link":
         return BrowserControlKind.LINK
+    if role in {"tab", "option", "menuitem", "switch"} or item.get("clickable"):
+        return BrowserControlKind.CLICKABLE
     if input_type == "radio":
         return BrowserControlKind.RADIO
     if input_type == "checkbox":
@@ -778,29 +787,46 @@ element => {
 """
 _LINK_TARGET_SCRIPT = "element => element.href || null"
 
+_ANNOTATED_CONTROL_SELECTOR = "[data-purchase-agent-control]"
+
 
 _CONTROL_INVENTORY_SCRIPT = """
 elements => elements
-  .filter(element => element.getClientRects().length > 0)
-  .slice(0, 300)
+  .filter(element => {
+    if (element.getClientRects().length === 0) return false;
+    const tag = element.tagName.toLowerCase();
+    const role = (element.getAttribute('role') || '').toLowerCase();
+    const native = ['input', 'select', 'textarea', 'button', 'a'].includes(tag);
+    const semantic = [
+      'button', 'link', 'tab', 'option', 'menuitem', 'switch'
+    ].includes(role);
+    const keyboard = element.tabIndex >= 0;
+    const handler =
+      typeof element.onclick === 'function' || element.hasAttribute('onclick');
+    const pointer = getComputedStyle(element).cursor === 'pointer';
+    return native || semantic || keyboard || handler || pointer;
+  })
   .map(element => {
     const clean = value => (value || '').replace(/\\s+/g, ' ').trim().slice(0, 200);
     const label = clean(
       element.getAttribute('aria-label') ||
       (element.labels && element.labels[0] && element.labels[0].innerText) ||
       element.getAttribute('placeholder') ||
-      (
-        (element.tagName === 'BUTTON' || element.tagName === 'A') &&
-        element.innerText
-      ) ||
+      element.innerText ||
       element.getAttribute('name') ||
       element.id
     );
     return {
+      element,
       tag: element.tagName.toLowerCase(),
       type: element.getAttribute('type') || '',
+      role: clean(element.getAttribute('role')) || null,
       name: clean(element.getAttribute('name')) || null,
       label,
+      clickable:
+        typeof element.onclick === 'function' ||
+        element.hasAttribute('onclick') ||
+        getComputedStyle(element).cursor === 'pointer',
       required:
         element.required === true ||
         element.getAttribute('aria-required') === 'true',
@@ -814,5 +840,12 @@ elements => elements
             .filter(Boolean)
         : []
     };
+  })
+  .filter(item => item.label)
+  .slice(0, 300)
+  .map((item, index) => {
+    item.element.setAttribute('data-purchase-agent-control', `control_${index + 1}`);
+    delete item.element;
+    return item;
   })
 """

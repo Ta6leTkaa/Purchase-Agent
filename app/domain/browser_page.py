@@ -15,6 +15,7 @@ class BrowserControlKind(StrEnum):
     CHECKBOX = "checkbox"
     BUTTON = "button"
     LINK = "link"
+    CLICKABLE = "clickable"
     OTHER = "other"
 
 
@@ -27,6 +28,7 @@ class BrowserPageControl(BaseModel):
     kind: BrowserControlKind
     label: str = Field(min_length=1, max_length=200)
     field_name: str | None = Field(default=None, max_length=200)
+    role: str | None = Field(default=None, max_length=64)
     required: bool = False
     disabled: bool = False
     options: tuple[str, ...] = Field(default=(), max_length=100)
@@ -39,7 +41,7 @@ class BrowserPageControl(BaseModel):
             raise ValueError("control label must not be blank")
         return normalized
 
-    @field_validator("field_name")
+    @field_validator("field_name", "role")
     @classmethod
     def normalize_field_name(cls, value: str | None) -> str | None:
         if value is None:

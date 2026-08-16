@@ -18,6 +18,7 @@ def test_page_snapshot_keeps_structure_without_control_values() -> None:
         kind=BrowserControlKind.SELECT,
         label="  Город   отправления ",
         field_name="origin",
+        role="listbox",
         required=True,
         options=(" Москва ", "Санкт-Петербург", "Москва"),
     )
@@ -31,6 +32,7 @@ def test_page_snapshot_keeps_structure_without_control_values() -> None:
     assert snapshot.title == "Поиск билетов"
     assert control.label == "Город отправления"
     assert control.options == ("Москва", "Санкт-Петербург")
+    assert control.role == "listbox"
     assert "value" not in control.model_dump()
 
 
