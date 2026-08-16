@@ -43,6 +43,22 @@ def test_extracts_dash_route_without_leading_instruction_words() -> None:
     assert intent.destination == "Нижний Новгород"
 
 
+def test_extracts_russian_month_date_and_rolls_past_date_forward() -> None:
+    upcoming = extract_task_intent(
+        "Купить билет в кино на 22 августа",
+        participant_count=1,
+        reference_date=date(2026, 8, 16),
+    )
+    next_year = extract_task_intent(
+        "Купить билет в кино на 10 августа",
+        participant_count=1,
+        reference_date=date(2026, 8, 16),
+    )
+
+    assert upcoming.requested_date == date(2026, 8, 22)
+    assert next_year.requested_date == date(2027, 8, 10)
+
+
 def test_invalid_or_ambiguous_values_are_left_unset() -> None:
     intent = extract_task_intent(
         "Купить билеты когда-нибудь 31.02.2026",

@@ -38,6 +38,7 @@ def build_task_plan(task: AgentTask, now: datetime) -> TaskPlanPreview:
     intent = extract_task_intent(
         task.instruction,
         participant_count=len(task.person_ids),
+        reference_date=now.date(),
     )
     if kind in _BASIC_PROFILE_KINDS:
         steps.append(

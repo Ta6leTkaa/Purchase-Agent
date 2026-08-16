@@ -7,6 +7,33 @@ _DATE_PATTERN = re.compile(
     r"(?<!\d)(?:(?P<year>20\d{2})[-./](?P<month>\d{1,2})[-./](?P<day>\d{1,2})|"
     r"(?P<day_first>\d{1,2})[./](?P<month_first>\d{1,2})[./](?P<year_last>20\d{2}))(?!\d)"
 )
+_RUSSIAN_DATE_PATTERN = re.compile(
+    r"(?<!\d)(?P<day>\d{1,2})\s+"
+    r"(?P<month>января|февраля|марта|апреля|мая|июня|июля|августа|"
+    r"сентября|октября|ноября|декабря)"
+    r"(?:\s+(?P<year>20\d{2})(?:\s*г(?:ода|\.)?)?)?",
+    re.IGNORECASE,
+)
+_RUSSIAN_MONTHS = {
+    name: index
+    for index, name in enumerate(
+        (
+            "января",
+            "февраля",
+            "марта",
+            "апреля",
+            "мая",
+            "июня",
+            "июля",
+            "августа",
+            "сентября",
+            "октября",
+            "ноября",
+            "декабря",
+        ),
+        start=1,
+    )
+}
 _TIME_AFTER_PATTERN = re.compile(
     r"(?:после|не раньше|after|from)\s+(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)",
     re.IGNORECASE,
@@ -39,9 +66,11 @@ def extract_task_intent(
     instruction: str,
     *,
     participant_count: int,
+    reference_date: date | None = None,
 ) -> TaskIntent:
     requested_date, instruction_without_date, invalid_date = _extract_date(
-        instruction
+        instruction,
+        reference_date=reference_date,
     )
     origin, destination = _extract_route(instruction_without_date)
     earliest_time = _extract_time(_TIME_AFTER_PATTERN, instruction)
@@ -74,10 +103,14 @@ def extract_task_intent(
     )
 
 
-def _extract_date(value: str) -> tuple[date | None, str, bool]:
+def _extract_date(
+    value: str,
+    *,
+    reference_date: date | None,
+) -> tuple[date | None, str, bool]:
     match = _DATE_PATTERN.search(value)
     if match is None:
-        return None, value, False
+        return _extract_russian_date(value, reference_date=reference_date)
     try:
         if match.group("year") is not None:
             parsed = date(
@@ -91,6 +124,30 @@ def _extract_date(value: str) -> tuple[date | None, str, bool]:
                 int(match.group("month_first")),
                 int(match.group("day_first")),
             )
+    except ValueError:
+        return None, value, True
+    return parsed, f"{value[:match.start()]} {value[match.end():]}", False
+
+
+def _extract_russian_date(
+    value: str,
+    *,
+    reference_date: date | None,
+) -> tuple[date | None, str, bool]:
+    match = _RUSSIAN_DATE_PATTERN.search(value)
+    if match is None:
+        return None, value, False
+    today = reference_date or date.today()
+    explicit_year = match.group("year")
+    year = int(explicit_year) if explicit_year else today.year
+    try:
+        parsed = date(
+            year,
+            _RUSSIAN_MONTHS[match.group("month").casefold()],
+            int(match.group("day")),
+        )
+        if explicit_year is None and parsed < today:
+            parsed = parsed.replace(year=year + 1)
     except ValueError:
         return None, value, True
     return parsed, f"{value[:match.start()]} {value[match.end():]}", False
