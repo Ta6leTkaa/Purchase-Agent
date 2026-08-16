@@ -43,6 +43,19 @@ _TIME_BEFORE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _QUOTED_TERM_PATTERN = re.compile(r"[«\"']([^»\"']{1,200})[»\"']")
+_UNQUOTED_TITLE_PATTERNS = (
+    re.compile(
+        r"(?:фильм|сеанс)\s+(?P<title>[\w .,:;!?()\-]{2,200}?)"
+        r"(?=\s+на\s+\d{1,2}\b|\s+(?:после|до|любое|любой|места?)\b|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:в\s+кино|билет(?:а|ов)?\s+в\s+кино)\s+на\s+"
+        r"(?P<title>[\w .,:;!?()\-]{2,200}?)"
+        r"(?=\s+на\s+\d{1,2}\b|\s+(?:после|до|любое|любой|места?)\b|$)",
+        re.IGNORECASE,
+    ),
+)
 _QUANTITY_PATTERN = re.compile(
     r"(?<!\d)(?P<count>\d{1,3})\s*(?:билет(?:а|ов)?|мест(?:о|а)?|"
     r"tickets?|seats?|rooms?|номер(?:а|ов)?)(?!\w)",
@@ -90,6 +103,7 @@ def extract_task_intent(
         and requested_quantity != participant_count
     ):
         issues.append(TaskIntentIssue.QUANTITY_MISMATCH)
+    quoted_terms = tuple(_QUOTED_TERM_PATTERN.findall(instruction))
     return TaskIntent(
         origin=origin,
         destination=destination,
@@ -98,7 +112,7 @@ def extract_task_intent(
         latest_time=latest_time,
         requested_quantity=requested_quantity,
         participant_count=participant_count,
-        search_terms=tuple(_QUOTED_TERM_PATTERN.findall(instruction)),
+        search_terms=quoted_terms or _extract_unquoted_title(instruction),
         issues=tuple(issues),
     )
 
@@ -197,6 +211,16 @@ def _trim_route_value(value: str) -> str:
         re.IGNORECASE,
     )
     return stop_words.split(value, maxsplit=1)[0].strip(" ,.;:—-")
+
+
+def _extract_unquoted_title(value: str) -> tuple[str, ...]:
+    for pattern in _UNQUOTED_TITLE_PATTERNS:
+        match = pattern.search(value)
+        if match is not None:
+            title = " ".join(match.group("title").strip(" ,.;:—-").split())
+            if title:
+                return (title,)
+    return ()
 
 
 def _extract_time(pattern: re.Pattern[str], value: str) -> time | None:

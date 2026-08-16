@@ -59,6 +59,22 @@ def test_extracts_russian_month_date_and_rolls_past_date_forward() -> None:
     assert next_year.requested_date == date(2027, 8, 10)
 
 
+def test_extracts_unquoted_cinema_title_without_exact_punctuation() -> None:
+    full = extract_task_intent(
+        "Купи билет на фильм Последний богатырь Колобок на 22 августа",
+        participant_count=1,
+        reference_date=date(2026, 8, 16),
+    )
+    short = extract_task_intent(
+        "Купи билет в кино на Колобок на 22 августа",
+        participant_count=1,
+        reference_date=date(2026, 8, 16),
+    )
+
+    assert full.search_terms == ("Последний богатырь Колобок",)
+    assert short.search_terms == ("Колобок",)
+
+
 def test_invalid_or_ambiguous_values_are_left_unset() -> None:
     intent = extract_task_intent(
         "Купить билеты когда-нибудь 31.02.2026",

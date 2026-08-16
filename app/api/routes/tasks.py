@@ -272,6 +272,7 @@ async def resume_task(task_id: UUID, tasks: TaskRepositoryDep) -> AgentTask:
     if task.status not in {
         TaskStatus.PAUSED,
         TaskStatus.FAILED,
+        TaskStatus.MONITORING,
         TaskStatus.WAITING_FOR_USER,
     }:
         raise _invalid_transition(task.status, TaskStatus.READY)

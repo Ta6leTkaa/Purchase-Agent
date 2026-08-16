@@ -1,7 +1,9 @@
 import asyncio
 import ipaddress
+import re
 import socket
 from collections.abc import Awaitable, Callable
+from difflib import SequenceMatcher
 from types import TracebackType
 from typing import Any
 from urllib.parse import urlsplit
@@ -234,11 +236,7 @@ class PlaywrightBrowserStepRunner:
             task, self._identities, utc_now()
         )
         if not fill_plan.intent_bindings:
-            return BrowserStepResult(
-                succeeded=False,
-                reason_code="task_intent_mapping_empty",
-                page_fill_plan=fill_plan,
-            )
+            return await self._follow_matching_option(page, task, fill_plan)
         restore_error = await self._ensure_mapped_page(page, task)
         if restore_error is not None:
             return BrowserStepResult(
@@ -309,6 +307,54 @@ class PlaywrightBrowserStepRunner:
             page_fill_plan=fill_plan,
         )
 
+    async def _follow_matching_option(
+        self,
+        page: Page,
+        task: AgentTask,
+        fill_plan: PageFillPlan,
+    ) -> BrowserStepResult:
+        match_index = _best_matching_link(
+            task.page_snapshot.controls if task.page_snapshot else (),
+            task.intent.search_terms if task.intent else (),
+        )
+        if match_index is None:
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="task_intent_mapping_empty",
+                page_fill_plan=fill_plan,
+            )
+        controls = page.locator("input, select, textarea, button, a[href]")
+        visible_controls = [
+            control for control in await controls.all() if await control.is_visible()
+        ]
+        if match_index >= len(visible_controls):
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="matched_option_missing",
+                page_fill_plan=fill_plan,
+            )
+        link = visible_controls[match_index]
+        target = await link.evaluate(_LINK_TARGET_SCRIPT)
+        if target is None or not _same_origin(str(target), task.target_url):
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="matched_option_cross_origin",
+                page_fill_plan=fill_plan,
+            )
+        await link.click(timeout=self._timeout_ms)
+        await page.wait_for_load_state("domcontentloaded", timeout=self._timeout_ms)
+        if not _same_origin(page.url, task.target_url):
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="matched_option_cross_origin",
+                page_fill_plan=fill_plan,
+            )
+        return BrowserStepResult(
+            succeeded=True,
+            reason_code="matching_option_opened",
+            page_snapshot=await self._snapshot_page(page),
+        )
+
     async def _ensure_mapped_page(
         self,
         page: Page,
@@ -345,18 +391,35 @@ class PlaywrightBrowserStepRunner:
                 succeeded=False,
                 reason_code="page_snapshot_missing",
             )
-        if not await self._page_matches_snapshot(page, task):
-            return BrowserStepResult(
-                succeeded=False,
-                reason_code="page_changed_before_review",
+        if page.url != task.page_snapshot.url:
+            if not _same_origin(task.page_snapshot.url, task.target_url):
+                return BrowserStepResult(
+                    succeeded=False,
+                    reason_code="mapped_page_origin_changed",
+                )
+            response = await page.goto(
+                task.page_snapshot.url,
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
             )
+            if response is None or response.status >= 400:
+                return BrowserStepResult(
+                    succeeded=False,
+                    reason_code="mapped_page_restore_failed",
+                )
+        current_snapshot = await self._snapshot_page(page)
         candidates = [
             (index, control)
-            for index, control in enumerate(task.page_snapshot.controls)
+            for index, control in enumerate(current_snapshot.controls)
             if control.kind is BrowserControlKind.BUTTON
             and not control.disabled
             and _is_safe_review_button(control.label)
         ]
+        if not candidates:
+            return BrowserStepResult(
+                succeeded=False,
+                reason_code="review_action_not_available",
+            )
         if len(candidates) != 1:
             return BrowserStepResult(
                 succeeded=False,
@@ -597,6 +660,52 @@ def _unique_matching_option(options: tuple[str, ...], desired: str) -> str | Non
     return partial[0] if len(partial) == 1 else None
 
 
+def _best_matching_link(
+    controls: tuple[BrowserPageControl, ...],
+    search_terms: tuple[str, ...],
+) -> int | None:
+    if not search_terms:
+        return None
+    candidates: list[tuple[float, int]] = []
+    for index, control in enumerate(controls):
+        if control.kind is not BrowserControlKind.LINK or control.disabled:
+            continue
+        score = max(
+            (_fuzzy_label_score(term, control.label) for term in search_terms),
+            default=0.0,
+        )
+        if score >= 0.72:
+            candidates.append((score, index))
+    candidates.sort(reverse=True)
+    if not candidates:
+        return None
+    if len(candidates) > 1 and candidates[0][0] - candidates[1][0] < 0.12:
+        return None
+    return candidates[0][1]
+
+
+def _fuzzy_label_score(query: str, candidate: str) -> float:
+    normalized_query = _normalize_fuzzy_text(query)
+    normalized_candidate = _normalize_fuzzy_text(candidate)
+    if not normalized_query or not normalized_candidate:
+        return 0.0
+    if normalized_query == normalized_candidate:
+        return 1.0
+    query_tokens = set(normalized_query.split())
+    candidate_tokens = set(normalized_candidate.split())
+    if query_tokens <= candidate_tokens:
+        return 0.94
+    overlap = len(query_tokens & candidate_tokens) / len(query_tokens)
+    sequence = SequenceMatcher(
+        None, normalized_query, normalized_candidate
+    ).ratio()
+    return max(overlap * 0.88, sequence)
+
+
+def _normalize_fuzzy_text(value: str) -> str:
+    return " ".join(re.findall(r"[\w]+", value.casefold().replace("ё", "е")))
+
+
 def _normalize_option(value: str) -> str:
     return " ".join(value.casefold().split())
 
@@ -653,6 +762,7 @@ element => {
   return target ? new URL(target, document.baseURI).href : null;
 }
 """
+_LINK_TARGET_SCRIPT = "element => element.href || null"
 
 
 _CONTROL_INVENTORY_SCRIPT = """

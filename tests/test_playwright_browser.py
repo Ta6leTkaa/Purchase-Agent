@@ -9,6 +9,8 @@ from playwright.async_api import Page
 
 from app.adapters.playwright_browser import (
     PlaywrightBrowserStepRunner,
+    _best_matching_link,
+    _fuzzy_label_score,
     _is_safe_review_button,
     _unique_matching_option,
     validate_browser_url,
@@ -310,6 +312,43 @@ def test_option_matching_rejects_ambiguous_partial_matches() -> None:
         is None
     )
     assert _unique_matching_option(("Moscow", "Kazan"), "kazan") == "Kazan"
+
+
+def test_fuzzy_movie_matching_ignores_punctuation_and_allows_short_title() -> None:
+    controls = (
+        BrowserPageControl(
+            control_id="control_1",
+            kind=BrowserControlKind.LINK,
+            label="Последний богатырь. Колобок",
+        ),
+        BrowserPageControl(
+            control_id="control_2",
+            kind=BrowserControlKind.LINK,
+            label="Смешарики сквозь вселенные",
+        ),
+    )
+
+    assert _fuzzy_label_score(
+        "Последний богатырь Колобок", "Последний богатырь. Колобок"
+    ) == 1.0
+    assert _best_matching_link(controls, ("Колобок",)) == 0
+
+
+def test_fuzzy_movie_matching_refuses_ambiguous_short_title() -> None:
+    controls = (
+        BrowserPageControl(
+            control_id="control_1",
+            kind=BrowserControlKind.LINK,
+            label="Колобок возвращается",
+        ),
+        BrowserPageControl(
+            control_id="control_2",
+            kind=BrowserControlKind.LINK,
+            label="Колобок в космосе",
+        ),
+    )
+
+    assert _best_matching_link(controls, ("Колобок",)) is None
 
 
 @pytest.mark.parametrize(

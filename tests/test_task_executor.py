@@ -25,11 +25,13 @@ class RecordingRunner:
         fail_on: str | None = None,
         page_snapshot: BrowserPageSnapshot | None = None,
         page_fill_plan: PageFillPlan | None = None,
+        failure_reason: str = "element_not_found",
     ) -> None:
         self.step_ids: list[str] = []
         self.fail_on = fail_on
         self.page_snapshot = page_snapshot
         self.page_fill_plan = page_fill_plan
+        self.failure_reason = failure_reason
 
     async def run(
         self, task: AgentTask, step: TaskPlanStep
@@ -38,7 +40,7 @@ class RecordingRunner:
         self.step_ids.append(step_id)
         return BrowserStepResult(
             succeeded=step_id != self.fail_on,
-            reason_code=("element_not_found" if step_id == self.fail_on else None),
+            reason_code=(self.failure_reason if step_id == self.fail_on else None),
             page_snapshot=(
                 self.page_snapshot if step_id == "inspect_page" else None
             ),
@@ -230,6 +232,21 @@ async def test_executor_records_browser_failure_without_exception_details() -> N
     assert result.journal is not None
     assert result.journal.entries[-1].message == "Browser step failed"
     assert result.journal.entries[-1].reason_code == "element_not_found"
+
+
+@pytest.mark.asyncio
+async def test_executor_monitors_found_option_without_available_next_action() -> None:
+    task = make_planned_task("Купить билеты в кино")
+    runner = RecordingRunner(
+        fail_on="open_review",
+        failure_reason="review_action_not_available",
+    )
+
+    result = await execute_task_plan(task, runner, IncrementingClock())
+
+    assert result.status is TaskStatus.MONITORING
+    assert result.journal is not None
+    assert result.journal.entries[-1].reason_code == "review_action_not_available"
 
 
 @pytest.mark.asyncio

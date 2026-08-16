@@ -167,6 +167,11 @@ async def execute_task_plan(
                 update={"page_fill_plan": result.page_fill_plan}
             )
         if not result.succeeded:
-            return current.model_copy(update={"status": TaskStatus.FAILED})
+            status = (
+                TaskStatus.MONITORING
+                if result.reason_code == "review_action_not_available"
+                else TaskStatus.FAILED
+            )
+            return current.model_copy(update={"status": status})
         succeeded_steps.add(step.step_id)
     return current.model_copy(update={"status": TaskStatus.PREPARED})
