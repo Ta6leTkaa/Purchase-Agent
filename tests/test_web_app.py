@@ -21,6 +21,7 @@ def test_web_app_is_available() -> None:
     assert "Новая поездка" in response.text
     assert "Мои задачи" in response.text
     assert "taskForm" in response.text
+    assert "fillTaskDemo" in response.text
     assert "/app/app.css?v=20260815-1" in response.text
     assert "/app/app.js?v=20260815-1" in response.text
 
@@ -43,6 +44,20 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert "performTaskAction" in script.text
     assert "performMissionAction" in script.text
     assert "loadActivity" in script.text
+    assert '`${location.origin}/demo/cinema`' in script.text
+
+
+def test_demo_cinema_is_available_for_safe_manual_testing() -> None:
+    response = TestClient(app).get("/demo/cinema")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers["cache-control"] == "no-store"
+    assert "Demo Cinema" in response.text
+    assert 'name="movie"' in response.text
+    assert 'name="quantity"' in response.text
+    assert "Продолжить к просмотру" in response.text
+    assert "Купить билет" in response.text
 
 
 def test_hidden_web_states_cannot_be_overridden_by_component_layout() -> None:
@@ -56,3 +71,4 @@ def test_web_routes_are_not_exposed_in_openapi() -> None:
     assert "/app" not in paths
     assert "/app/app.css" not in paths
     assert "/app/app.js" not in paths
+    assert "/demo/cinema" not in paths

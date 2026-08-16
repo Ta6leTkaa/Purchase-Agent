@@ -59,6 +59,11 @@ textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px #1b5c4314; }
 .status.waiting_for_user { background: #fae2c8; color: #8a4d20; }
 .status.prepared { background: #dcecdc; color: #276844; }
 .field-title { margin-bottom: 8px; }
+.demo-button { position: relative; display: grid; grid-template-columns: 38px 1fr; gap: 0 12px; width: 100%; margin: -6px 0 21px; padding: 13px 15px; border: 1px solid #d5dac4; border-radius: 12px; background: #f1f4e5; color: var(--ink); text-align: left; }
+.demo-button > span { grid-row: 1 / 3; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--green); color: white; }
+.demo-button b { font-size: 12px; }
+.demo-button small { color: var(--muted); font-size: 10px; }
+.demo-button:hover { border-color: #aebd88; background: #ebf0d8; }
 .compact-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 240px; overflow: auto; }
 .compact-choices .choice { margin: 0; background: white; }
 .compact-choices .choice small { display: block; color: var(--muted); }

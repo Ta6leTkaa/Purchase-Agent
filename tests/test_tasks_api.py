@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.routes.tasks import _is_builtin_demo_url
 from app.dependencies import agent_task_repository, identity_repository
 from app.domain.browser_page import (
     BrowserControlKind,
@@ -43,6 +44,23 @@ def _create_person(client: TestClient) -> str:
     )
     assert response.status_code == 200
     return str(response.json()["id"])
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://localhost:8000/demo/cinema", True),
+        ("http://127.0.0.1:8000/demo/cinema", True),
+        ("http://localhost:8000/ready", False),
+        ("http://localhost:8000/demo/cinema?redirect=/admin", False),
+        ("https://example.com/demo/cinema", False),
+    ],
+)
+def test_only_exact_builtin_demo_url_can_use_local_browser_network(
+    url: str,
+    expected: bool,
+) -> None:
+    assert _is_builtin_demo_url(url) is expected
 
 
 def test_create_and_list_universal_task() -> None:

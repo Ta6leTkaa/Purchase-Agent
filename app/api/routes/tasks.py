@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Annotated
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -223,7 +224,10 @@ async def execute_task(
     try:
         async with PlaywrightBrowserStepRunner(
             timeout_seconds=settings.browser_navigation_timeout_seconds,
-            allow_local_network=settings.environment != "production",
+            allow_local_network=(
+                settings.environment != "production"
+                or _is_builtin_demo_url(task.target_url)
+            ),
             identities=tuple(people),
         ) as runner:
             executed = await execute_task_plan(task, runner, utc_now)
@@ -241,6 +245,17 @@ async def execute_task(
             },
         ) from exc
     return await _update_task(tasks, task, executed)
+
+
+def _is_builtin_demo_url(url: str) -> bool:
+    parsed = urlsplit(url)
+    return (
+        parsed.scheme == "http"
+        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+        and parsed.path == "/demo/cinema"
+        and not parsed.query
+        and not parsed.fragment
+    )
 
 
 @router.post("/{task_id}/pause")

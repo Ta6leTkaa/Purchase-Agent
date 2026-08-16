@@ -37,3 +37,12 @@ async def web_script() -> FileResponse:
         media_type="text/javascript",
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.get("/demo/cinema", response_class=FileResponse)
+async def demo_cinema() -> FileResponse:
+    return FileResponse(
+        _WEB_ROOT / "demo.html",
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )

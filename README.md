@@ -51,6 +51,14 @@ original train-trip dashboard remains available as a separate mock-provider
 demo. The key is kept in the current browser tab only. The UI is included in
 the production image; public API documentation remains disabled independently.
 
+For a self-contained manual check, add one person, create a new agent task, and
+click **Заполнить демонстрационный пример**. The form points to the bundled
+`/demo/cinema` page and supplies a cinema-ticket request. After launch, the
+agent should fill the movie, date, earliest time, and quantity, open the review
+state, and stop with `confirmation_required`; it must not activate the disabled
+purchase button. The local-network exception is restricted to this exact demo
+path, including in the production Compose profile.
+
 After deployment, run the non-mutating smoke check. It verifies liveness,
 readiness, client authentication, admin authentication, and that the instance
 is accepting traffic; output is one JSON report and secrets are never echoed:
