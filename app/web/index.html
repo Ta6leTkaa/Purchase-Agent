@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Purchase Agent</title>
-  <link rel="stylesheet" href="/app/app.css?v=20260815-1">
+  <link rel="stylesheet" href="/app/app.css?v=20260816-1">
 </head>
 <body>
   <div id="authGate" class="auth-gate">
@@ -30,7 +30,7 @@
       <nav>
         <button class="nav active" data-view="tasks"><span>✦</span>Задачи агента</button>
         <button class="nav" data-view="trips"><span>⌁</span>Поездки</button>
-        <button class="nav" data-view="passengers"><span>◎</span>Пассажиры</button>
+        <button class="nav" data-view="passengers"><span>◎</span>Люди</button>
         <button class="nav" data-view="activity"><span>↻</span>Активность</button>
       </nav>
       <div class="sidebar-bottom"><div class="service"><i></i><span><b>Сервис работает</b><small id="storageText">Проверка подключения</small></span></div><button id="logout" class="text-button">Сменить ключ</button></div>
@@ -39,9 +39,12 @@
     <main class="content">
       <header class="mobile-head"><span class="logo">PA</span><button id="mobileMenu">Меню</button></header>
       <section id="tasksView" class="view active">
-        <header class="page-head"><div><p class="eyebrow">УНИВЕРСАЛЬНЫЙ АГЕНТ</p><h2>Мои задачи</h2><p>От билетов и отелей до записи на услугу — на указанном вами сайте.</p></div><button id="newTask" class="primary">+ Новая задача</button></header>
+        <section class="agent-welcome">
+          <div class="welcome-copy"><span class="welcome-badge">MVP · БЕЗ РЕАЛЬНОЙ ОПЛАТЫ</span><h1>Поручите рутину<br><em>браузерному агенту</em></h1><p>Он поймёт запрос, откроет указанный сайт, заполнит подходящие поля и остановится перед подтверждением заказа.</p><div class="welcome-actions"><button id="runDemo" class="primary demo-launch"><span class="launch-icon">▶</span><span><b>Запустить готовое демо</b><small>Займёт около 10 секунд</small></span></button><button id="newTask" class="secondary new-task-button">Создать свою задачу →</button></div><div id="demoProgress" class="demo-progress" hidden><i></i><span>Подготавливаем безопасный тест…</span></div></div>
+          <div class="welcome-preview"><p class="eyebrow">КАК ЭТО РАБОТАЕТ</p><div class="preview-step"><span>1</span><div><b>Вы описываете результат</b><small>Например, билет в кино на конкретное время</small></div></div><div class="preview-step"><span>2</span><div><b>Агент работает на сайте</b><small>Находит поля и заполняет их сам</small></div></div><div class="preview-step"><span>3</span><div><b>Вы принимаете решение</b><small>Оплата и подтверждение остаются за вами</small></div></div></div>
+        </section>
+        <header class="section-head"><div><p class="eyebrow">ИСТОРИЯ</p><h2>Задачи агента</h2></div><button id="refreshTasks" class="icon-button" title="Обновить">↻ Обновить</button></header>
         <div class="stats"><article><small>Всего задач</small><b id="totalTasks">0</b></article><article><small>Ждут вас</small><b id="waitingTasks">0</b></article><article><small>Подготовлено</small><b id="preparedTasks">0</b></article></div>
-        <div class="toolbar"><p class="muted task-hint">Агент не подтверждает покупку и не проводит оплату без вас.</p><button id="refreshTasks" class="icon-button" title="Обновить">↻</button></div>
         <div id="taskList" class="card-list"></div>
       </section>
 
@@ -53,7 +56,7 @@
       </section>
 
       <section id="passengersView" class="view">
-        <header class="page-head"><div><p class="eyebrow">ПРОФИЛИ</p><h2>Пассажиры</h2><p>Сохранённые данные для новых поездок.</p></div><button id="newPassenger" class="primary">+ Добавить пассажира</button></header>
+        <header class="page-head"><div><p class="eyebrow">ПРОФИЛИ</p><h2>Люди</h2><p>Те, для кого агент будет заполнять формы и оформлять заказы.</p></div><button id="newPassenger" class="primary">+ Добавить человека</button></header>
         <div id="passengerList" class="passenger-grid"></div>
       </section>
 
@@ -110,6 +113,6 @@
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
-  <script src="/app/app.js?v=20260815-1" defer></script>
+  <script src="/app/app.js?v=20260816-1" defer></script>
 </body>
 </html>

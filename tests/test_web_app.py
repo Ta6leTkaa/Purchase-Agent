@@ -17,13 +17,14 @@ def test_web_app_is_available() -> None:
     assert "Purchase Agent" in response.text
     assert "passengerForm" in response.text
     assert "Мои поездки" in response.text
-    assert "Пассажиры" in response.text
+    assert "Люди" in response.text
     assert "Новая поездка" in response.text
-    assert "Мои задачи" in response.text
+    assert "Задачи агента" in response.text
     assert "taskForm" in response.text
     assert "fillTaskDemo" in response.text
-    assert "/app/app.css?v=20260815-1" in response.text
-    assert "/app/app.js?v=20260815-1" in response.text
+    assert "runDemo" in response.text
+    assert "/app/app.css?v=20260816-1" in response.text
+    assert "/app/app.js?v=20260816-1" in response.text
 
 
 def test_web_assets_are_served_with_explicit_types() -> None:
@@ -42,6 +43,8 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert 'api("/tasks?limit=100")' in script.text
     assert "createTask" in script.text
     assert "performTaskAction" in script.text
+    assert "runInstantDemo" in script.text
+    assert "ensureDemoPerson" in script.text
     assert "performMissionAction" in script.text
     assert "loadActivity" in script.text
     assert '`${location.origin}/demo/cinema`' in script.text
