@@ -23,8 +23,8 @@ def test_web_app_is_available() -> None:
     assert "taskForm" in response.text
     assert "fillTaskDemo" in response.text
     assert "runDemo" in response.text
-    assert "/app/app.css?v=20260816-3" in response.text
-    assert "/app/app.js?v=20260816-3" in response.text
+    assert "/app/app.css?v=20260816-4" in response.text
+    assert "/app/app.js?v=20260816-4" in response.text
 
 
 def test_web_assets_are_served_with_explicit_types() -> None:
@@ -46,7 +46,8 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert "runInstantDemo" in script.text
     assert "ensureDemoPerson" in script.text
     assert "taskFailure" in script.text
-    assert "Агент работал в отдельном фоновом браузере" in script.text
+    assert "taskControlMode" in script.text
+    assert "Каждое нажатие выполняет только один шаг" in script.text
     assert "task_intent_mapping_empty" in script.text
     assert "performMissionAction" in script.text
     assert "loadActivity" in script.text

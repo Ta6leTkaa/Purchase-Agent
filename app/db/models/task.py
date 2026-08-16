@@ -21,6 +21,9 @@ class AgentTaskModel(Base):
     target_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     person_ids: Mapped[list[str]] = mapped_column(preferences_type, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    control_mode: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'step_by_step'")
+    )
     inferred_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
     intent: Mapped[dict[str, Any] | None] = mapped_column(
         preferences_type, nullable=True
@@ -67,6 +70,7 @@ def agent_task_to_model(task: AgentTask) -> AgentTaskModel:
         target_url=task.target_url,
         person_ids=data["person_ids"],
         status=task.status.value,
+        control_mode=task.control_mode.value,
         inferred_kind=task.inferred_kind,
         intent=data["intent"],
         waiting_reason=task.waiting_reason.value if task.waiting_reason else None,
@@ -89,6 +93,7 @@ def agent_task_from_model(model: AgentTaskModel) -> AgentTask:
             "target_url": model.target_url,
             "person_ids": model.person_ids,
             "status": model.status,
+            "control_mode": model.control_mode,
             "inferred_kind": model.inferred_kind,
             "intent": model.intent,
             "waiting_reason": model.waiting_reason,

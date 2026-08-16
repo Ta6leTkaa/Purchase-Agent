@@ -76,6 +76,12 @@ class PlaywrightBrowserStepRunner:
 
     async def run(self, task: AgentTask, step: TaskPlanStep) -> BrowserStepResult:
         page = self._require_page()
+        if step.action is not BrowserAction.NAVIGATE and page.url == "about:blank":
+            await page.goto(
+                task.page_snapshot.url if task.page_snapshot else task.target_url,
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
+            )
         if step.action is BrowserAction.NAVIGATE:
             if step.target_url is None:
                 return BrowserStepResult(

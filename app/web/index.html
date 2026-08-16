@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Purchase Agent</title>
-  <link rel="stylesheet" href="/app/app.css?v=20260816-3">
+  <link rel="stylesheet" href="/app/app.css?v=20260816-4">
 </head>
 <body>
   <div id="authGate" class="auth-gate">
@@ -85,10 +85,15 @@
     <form id="taskForm">
       <label>Задача<textarea id="taskInstruction" rows="4" placeholder="Например: найди 2 билета Москва — Санкт-Петербург на 10 сентября после 18:00" required></textarea></label>
       <label>Сайт для выполнения<input id="taskTargetUrl" type="url" placeholder="https://example.com/search" required></label>
+      <fieldset class="control-modes"><legend>Как контролировать агента</legend>
+        <label><input type="radio" name="taskControlMode" value="step_by_step" checked><span><b>По шагам</b><small>Рекомендуется: одно действие за одно нажатие.</small></span></label>
+        <label><input type="radio" name="taskControlMode" value="plan_only"><span><b>Только план</b><small>Сайт не открывается, агент лишь составляет план.</small></span></label>
+        <label><input type="radio" name="taskControlMode" value="safe_auto"><span><b>Автоматически</b><small>Безопасные шаги до оплаты или подтверждения.</small></span></label>
+      </fieldset>
       <button id="fillTaskDemo" class="demo-button" type="button"><span>▶</span><b>Заполнить демонстрационный пример</b><small>Тестовая покупка билета в кино без оплаты</small></button>
       <label class="field-title">Для кого</label><div id="taskPersonChoices" class="choices compact-choices"></div>
       <div class="safety-note"><b>Контроль остаётся у вас</b><span>Агент заполнит безопасные поля и остановится перед отправкой заказа, оплатой, CAPTCHA или авторизацией.</span></div>
-      <button class="primary wide" type="submit">Создать и запустить агента <span>↗</span></button>
+      <button class="primary wide" type="submit">Создать задачу <span>↗</span></button>
     </form>
   </dialog>
 
@@ -113,6 +118,6 @@
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
-  <script src="/app/app.js?v=20260816-3" defer></script>
+  <script src="/app/app.js?v=20260816-4" defer></script>
 </body>
 </html>

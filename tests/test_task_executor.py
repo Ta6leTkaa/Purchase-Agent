@@ -97,6 +97,24 @@ async def test_executor_stops_before_sensitive_profile_data() -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_can_stop_after_one_successful_step() -> None:
+    task = make_planned_task("Купить билеты в кино")
+    runner = RecordingRunner()
+
+    result = await execute_task_plan(
+        task,
+        runner,
+        IncrementingClock(),
+        max_steps=1,
+    )
+
+    assert result.status is TaskStatus.READY
+    assert runner.step_ids == ["open_target"]
+    assert result.journal is not None
+    assert result.journal.entries[-1].outcome is TaskJournalOutcome.SUCCEEDED
+
+
+@pytest.mark.asyncio
 async def test_executor_runs_sensitive_step_only_after_one_time_approval() -> None:
     task = make_planned_task("Купить билет на поезд")
     blocked = await execute_task_plan(task, RecordingRunner(), IncrementingClock())

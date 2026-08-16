@@ -25,6 +25,12 @@ class TaskStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class TaskControlMode(StrEnum):
+    PLAN_ONLY = "plan_only"
+    STEP_BY_STEP = "step_by_step"
+    SAFE_AUTO = "safe_auto"
+
+
 class UserActionReason(StrEnum):
     AUTHENTICATION_REQUIRED = "authentication_required"
     CAPTCHA_REQUIRED = "captcha_required"
@@ -44,6 +50,7 @@ class AgentTask(BaseModel):
     target_url: str = Field(min_length=1, max_length=2_048)
     person_ids: tuple[UUID, ...] = Field(min_length=1, max_length=100)
     status: TaskStatus = TaskStatus.DRAFT
+    control_mode: TaskControlMode = TaskControlMode.SAFE_AUTO
     inferred_kind: str | None = Field(default=None, max_length=64)
     intent: TaskIntent | None = None
     waiting_reason: UserActionReason | None = None

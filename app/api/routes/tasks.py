@@ -65,6 +65,7 @@ async def create_task(
         person_ids=request.person_ids,
         inferred_kind=request.inferred_kind,
         permissions=request.permissions,
+        control_mode=request.control_mode,
         status=TaskStatus.READY,
         created_at=now,
     )
@@ -220,6 +221,14 @@ async def execute_task(
             },
         )
     task = await _require_task(tasks, task_id)
+    if task.control_mode.value == "plan_only":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "task_execution_disabled",
+                "message": "Task is in plan-only mode.",
+            },
+        )
     people = await _load_task_people(task, identities)
     try:
         async with PlaywrightBrowserStepRunner(
@@ -230,7 +239,12 @@ async def execute_task(
             ),
             identities=tuple(people),
         ) as runner:
-            executed = await execute_task_plan(task, runner, utc_now)
+            executed = await execute_task_plan(
+                task,
+                runner,
+                utc_now,
+                max_steps=(1 if task.control_mode.value == "step_by_step" else None),
+            )
     except TaskExecutionError as exc:
         raise HTTPException(
             status_code=409,

@@ -41,6 +41,8 @@ async def execute_task_plan(
     task: AgentTask,
     runner: BrowserStepRunner,
     now: Callable[[], datetime],
+    *,
+    max_steps: int | None = None,
 ) -> AgentTask:
     """Execute safe steps and stop before every user-controlled boundary."""
     if task.plan is None:
@@ -62,6 +64,7 @@ async def execute_task_plan(
             "journal": journal,
         }
     )
+    executed_steps = 0
     for step in task.plan.steps:
         if step.step_id in succeeded_steps:
             continue
@@ -174,4 +177,7 @@ async def execute_task_plan(
             )
             return current.model_copy(update={"status": status})
         succeeded_steps.add(step.step_id)
+        executed_steps += 1
+        if max_steps is not None and executed_steps >= max_steps:
+            return current.model_copy(update={"status": TaskStatus.READY})
     return current.model_copy(update={"status": TaskStatus.PREPARED})

@@ -83,6 +83,70 @@ def test_create_and_list_universal_task() -> None:
     assert client.get("/tasks").json() == [response.json()]
 
 
+def test_step_by_step_task_executes_one_step_per_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SuccessfulBrowserRunner:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "SuccessfulBrowserRunner":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def run(self, task: object, step: object) -> BrowserStepResult:
+            return BrowserStepResult(succeeded=True)
+
+    monkeypatch.setattr(
+        "app.api.routes.tasks.PlaywrightBrowserStepRunner",
+        SuccessfulBrowserRunner,
+    )
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет в кино",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+            "control_mode": "step_by_step",
+        },
+    ).json()
+    client.post(f"/tasks/{created['id']}/plan")
+
+    response = client.post(f"/tasks/{created['id']}/execute")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    entries = response.json()["journal"]["entries"]
+    assert [entry["step_id"] for entry in entries] == [
+        "open_target",
+        "open_target",
+    ]
+
+
+def test_plan_only_task_rejects_browser_execution() -> None:
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет в кино",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+            "control_mode": "plan_only",
+        },
+    ).json()
+    client.post(f"/tasks/{created['id']}/plan")
+
+    response = client.post(f"/tasks/{created['id']}/execute")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "task_execution_disabled"
+
+
 def test_create_task_rejects_unknown_person() -> None:
     client = TestClient(app)
 

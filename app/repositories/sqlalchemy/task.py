@@ -47,6 +47,7 @@ class SqlAlchemyAgentTaskRepository(AgentTaskRepository):
             .where(AgentTaskModel.version == expected_version)
             .values(
                 status=task.status.value,
+                control_mode=task.control_mode.value,
                 inferred_kind=task.inferred_kind,
                 intent=data["intent"],
                 waiting_reason=(

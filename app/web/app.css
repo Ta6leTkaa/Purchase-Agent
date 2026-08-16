@@ -112,6 +112,14 @@ textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px #1b5c4314; }
 .background-note b, .background-note small { display: block; }
 .background-note b { font-size: 12px; }
 .background-note small { color: var(--muted); font-size: 10px; }
+.background-note > a { margin-left: auto; color: var(--green); font-size: 11px; font-weight: 800; text-decoration: none; white-space: nowrap; }
+.control-modes { border: 0; padding: 0; margin: 4px 0 8px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.control-modes legend { font-weight: 800; margin-bottom: 10px; }
+.control-modes label { border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; gap: 10px; cursor: pointer; }
+.control-modes label:has(input:checked) { border-color: var(--green); background: var(--lime-soft); }
+.control-modes input { width: auto; }
+.control-modes span { display: grid; gap: 4px; }
+.control-modes small { color: var(--muted); font-weight: 500; line-height: 1.35; }
 .failure-attention { justify-content: space-between; border-color: #e7bcb5; background: #fbe8e4; }
 .failure-attention > div { display: grid; gap: 4px; }
 .failure-attention b { color: var(--red); }
@@ -136,4 +144,4 @@ textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px #1b5c4314; }
 .plan-step.failed > span { background: #f5dcda; color: var(--red); }
 @media(max-width:900px) { .agent-welcome { grid-template-columns: 1fr; } .welcome-preview { display: none; } }
 @media(max-width:850px) { .task-detail-grid { grid-template-columns: 1fr; } }
-@media(max-width:580px) { .agent-welcome { padding: 28px 23px; border-radius: 21px; } .welcome-copy h1 { font-size: 39px; } .welcome-actions, .welcome-actions button { width: 100%; } .demo-launch { justify-content: center; } .section-head { align-items: center; } .task-card { grid-template-columns: 1fr; } .task-side { align-items: start; text-align: left; } .compact-choices { grid-template-columns: 1fr; } .safety-note, .attention { display: block; } .safety-note b, .attention b { display: block; margin-bottom: 6px; } .failure-attention a { display: inline-block; margin-top: 12px; } }
+@media(max-width:580px) { .agent-welcome { padding: 28px 23px; border-radius: 21px; } .welcome-copy h1 { font-size: 39px; } .welcome-actions, .welcome-actions button { width: 100%; } .demo-launch { justify-content: center; } .section-head { align-items: center; } .task-card { grid-template-columns: 1fr; } .task-side { align-items: start; text-align: left; } .compact-choices, .control-modes { grid-template-columns: 1fr; } .safety-note, .attention { display: block; } .safety-note b, .attention b { display: block; margin-bottom: 6px; } .failure-attention a { display: inline-block; margin-top: 12px; } .background-note { align-items: flex-start; flex-wrap: wrap; } .background-note > a { margin-left: 0; width: 100%; } }
