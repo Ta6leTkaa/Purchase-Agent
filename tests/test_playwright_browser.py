@@ -12,6 +12,7 @@ from app.adapters.playwright_browser import (
     _best_matching_link,
     _fuzzy_label_score,
     _is_safe_review_button,
+    _redact_profile_values,
     _unique_matching_option,
     validate_browser_url,
 )
@@ -154,11 +155,52 @@ async def test_driver_opens_and_reads_a_page() -> None:
     assert inspected.succeeded
     assert inspected.page_snapshot is not None
     assert inspected.page_snapshot.title == "Example form"
+    assert inspected.page_snapshot.visible_text == "Example page"
     assert inspected.page_snapshot.controls[0].field_name == "first_name"
     assert inspected.page_snapshot.controls[0].role == "textbox"
     assert inspected.page_snapshot.controls[1].kind is BrowserControlKind.CLICKABLE
     assert inspected.page_snapshot.controls[1].label == "Завтра"
     assert "value" not in inspected.page_snapshot.controls[0].model_dump()
+
+
+def test_snapshot_visible_text_is_bounded_and_readable() -> None:
+    snapshot = BrowserPageSnapshot(
+        url="https://example.com/",
+        captured_at=NOW,
+        visible_text="  Фильм   Колобок \n\n  18:00   Зал 3  " + "x" * 20_000,
+    )
+
+    assert snapshot.visible_text.startswith("Фильм Колобок\n18:00 Зал 3")
+    assert len(snapshot.visible_text) == 12_000
+    assert snapshot.visible_text.endswith("x" * 100)
+
+
+def test_profile_values_are_removed_from_visible_page_text() -> None:
+    person = Identity(
+        id=uuid4(),
+        display_name="Ivan Petrov",
+        first_name="Ivan",
+        last_name="Petrov",
+        birth_date=date(1990, 1, 2),
+        documents=[
+            Document(
+                id=uuid4(),
+                type=DocumentType.internal_passport,
+                number="1234567890",
+            )
+        ],
+    )
+
+    redacted = _redact_profile_values(
+        "Passenger Ivan Petrov, born 1990-01-02, document 1234567890",
+        (person,),
+    )
+
+    assert "Ivan" not in redacted
+    assert "Petrov" not in redacted
+    assert "1990-01-02" not in redacted
+    assert "1234567890" not in redacted
+    assert redacted.count("[profile data]") == 3
 
 
 @pytest.mark.asyncio
@@ -260,7 +302,11 @@ async def test_driver_applies_unambiguous_task_intent_without_submitting() -> No
     controls.evaluate_all = AsyncMock(return_value=raw_controls)
     page_mock = MagicMock()
     page = cast(Page, page_mock)
-    page_mock.locator = MagicMock(return_value=controls)
+    body = MagicMock()
+    body.inner_text = AsyncMock(return_value="Intent form")
+    page_mock.locator = MagicMock(
+        side_effect=lambda selector: body if selector == "body" else controls
+    )
     page_mock.url = "https://example.com/form"
     page_mock.title = AsyncMock(return_value="Intent form")
     page_mock.wait_for_load_state = AsyncMock()
@@ -423,7 +469,11 @@ async def test_driver_fills_basic_fields_but_skips_document_values() -> None:
             },
         ]
     )
-    page_mock.locator = MagicMock(return_value=controls)
+    body = MagicMock()
+    body.inner_text = AsyncMock(return_value="Passenger form")
+    page_mock.locator = MagicMock(
+        side_effect=lambda selector: body if selector == "body" else controls
+    )
     page_mock.url = "https://example.com/form"
     page_mock.title = AsyncMock(return_value="Untitled page")
     task = AgentTask(

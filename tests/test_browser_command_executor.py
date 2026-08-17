@@ -67,8 +67,18 @@ def _page_with_control(
             }
         ]
     )
+    body = MagicMock()
+    body.inner_text = AsyncMock(return_value=f"Tickets\n{label}")
+
+    def locate(selector: str) -> MagicMock:
+        if selector == "body *":
+            return inventory
+        if selector == "body":
+            return body
+        return control
+
     page_mock.locator = MagicMock(
-        side_effect=lambda selector: inventory if selector == "body *" else control
+        side_effect=locate
     )
     page_mock.url = "https://tickets.example.com/search"
     page_mock.title = AsyncMock(return_value="Tickets")

@@ -42,6 +42,7 @@ class AgentDecisionContext(BaseModel):
     goal: str
     current_url: str
     page_title: str
+    visible_text: str = Field(default="", max_length=12_000)
     intent: dict[str, object]
     controls: tuple[AgentVisibleControl, ...] = Field(max_length=200)
     previous_actions: tuple[AgentActionObservation, ...] = Field(
@@ -75,6 +76,7 @@ def build_agent_decision_context(
         goal=task.instruction,
         current_url=snapshot.url,
         page_title=snapshot.title,
+        visible_text=snapshot.visible_text,
         intent=intent,
         controls=tuple(
             AgentVisibleControl(

@@ -37,6 +37,7 @@ def _task() -> AgentTask:
         page_snapshot=BrowserPageSnapshot(
             url="https://cinema.example.com/film/kolobok",
             title="Последний богатырь. Колобок",
+            visible_text="Последний богатырь. Колобок\nСегодня Завтра\n18:00 19:15",
             captured_at=NOW,
             controls=(
                 BrowserPageControl(
@@ -64,6 +65,7 @@ def test_context_contains_goal_and_controls_but_no_profile_values() -> None:
     assert context.goal.startswith("Купи билет")
     assert context.controls[0].label == "Завтра"
     assert context.intent["search_terms"] == ["Колобок"]
+    assert "18:00" in context.visible_text
     assert "first_name" not in serialized
     assert "document_number" not in serialized
 

@@ -366,6 +366,10 @@ class PlaywrightBrowserStepRunner:
         return self._page
 
     async def _snapshot_page(self, page: Page) -> BrowserPageSnapshot:
+        visible_text = await page.locator("body").inner_text(
+            timeout=self._timeout_ms
+        )
+        visible_text = _redact_profile_values(visible_text, self._identities)
         raw_controls: list[dict[str, Any]] = await page.locator(
             "body *"
         ).evaluate_all(_CONTROL_INVENTORY_SCRIPT)
@@ -390,6 +394,7 @@ class PlaywrightBrowserStepRunner:
             title=await page.title() or "Untitled page",
             captured_at=utc_now(),
             controls=controls,
+            visible_text=visible_text,
         )
 
     async def _fill_basic_profile(
@@ -955,6 +960,31 @@ def _fuzzy_label_score(query: str, candidate: str) -> float:
 
 def _normalize_fuzzy_text(value: str) -> str:
     return " ".join(re.findall(r"[\w]+", value.casefold().replace("ё", "е")))
+
+
+def _redact_profile_values(text: str, identities: tuple[Identity, ...]) -> str:
+    redacted = text
+    values: set[str] = set()
+    for identity in identities:
+        values.update(
+            {
+                identity.display_name,
+                identity.first_name,
+                identity.last_name,
+                identity.birth_date.isoformat(),
+            }
+        )
+        values.update(document.number for document in identity.documents)
+    for value in sorted(values, key=len, reverse=True):
+        normalized = value.strip()
+        if len(normalized) >= 3:
+            redacted = re.sub(
+                re.escape(normalized),
+                "[profile data]",
+                redacted,
+                flags=re.IGNORECASE,
+            )
+    return redacted
 
 
 def _normalize_option(value: str) -> str:

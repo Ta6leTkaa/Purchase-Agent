@@ -65,11 +65,21 @@ class BrowserPageSnapshot(BaseModel):
     title: str = Field(default="Untitled page", min_length=1, max_length=300)
     captured_at: datetime
     controls: tuple[BrowserPageControl, ...] = Field(default=(), max_length=300)
+    visible_text: str = ""
 
     @field_validator("title")
     @classmethod
     def normalize_title(cls, value: str) -> str:
         return " ".join(value.split())[:300] or "Untitled page"
+
+    @field_validator("visible_text")
+    @classmethod
+    def normalize_visible_text(cls, value: str) -> str:
+        lines = (" ".join(line.split()) for line in value.splitlines())
+        normalized = "\n".join(line for line in lines if line)
+        if len(normalized) <= 12_000:
+            return normalized
+        return f"{normalized[:5_995]}\n[…]\n{normalized[-6_000:]}"
 
     @field_validator("captured_at")
     @classmethod
