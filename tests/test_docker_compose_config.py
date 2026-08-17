@@ -52,6 +52,9 @@ def test_docker_compose_defines_api_and_database_migration_gate() -> None:
     assert "TRAIN_PROVIDER_BASE_URL" in content
     assert "TRAIN_PROVIDER_BEARER_TOKEN" in content
     assert "TRAIN_PROVIDER_TIMEOUT_SECONDS" in content
+    assert "AGENT_LLM_ENABLED" in content
+    assert "OPENAI_API_KEY" in content
+    assert "AGENT_LLM_MODEL" in content
     assert "http://localhost:8000/ready" in content
 
 

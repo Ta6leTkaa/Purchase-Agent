@@ -68,6 +68,19 @@ def test_local_environment_keeps_development_defaults() -> None:
     assert configured.admin_api_key is None
     assert configured.api_docs_enabled
     assert not configured.api_rate_limit_enabled
+    assert not configured.agent_llm_enabled
+    assert configured.agent_llm_model == "gpt-5.6-terra"
+
+
+def test_enabled_llm_requires_openai_key_in_production() -> None:
+    with pytest.raises(ValidationError, match="OPENAI_API_KEY is required"):
+        production_settings(agent_llm_enabled=True)
+
+    configured = production_settings(
+        agent_llm_enabled=True,
+        openai_api_key=SecretStr("test-openai-key"),
+    )
+    assert configured.agent_llm_enabled
 
 
 def test_unknown_environment_is_rejected() -> None:
