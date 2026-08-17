@@ -26,6 +26,13 @@ class AgentActionObservation(BaseModel):
     result: str = Field(min_length=1, max_length=100)
 
 
+class AgentClarification(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    question: str = Field(min_length=1, max_length=500)
+    answer: str = Field(min_length=1, max_length=2_000)
+
+
 class AgentDecisionContext(BaseModel):
     """Bounded, value-free page context safe to send to a model."""
 
@@ -40,6 +47,9 @@ class AgentDecisionContext(BaseModel):
     previous_actions: tuple[AgentActionObservation, ...] = Field(
         default=(),
         max_length=20,
+    )
+    clarifications: tuple[AgentClarification, ...] = Field(
+        default=(), max_length=20
     )
 
 
@@ -78,4 +88,11 @@ def build_agent_decision_context(
             for control in snapshot.controls[:200]
         ),
         previous_actions=previous_actions[-20:],
+        clarifications=tuple(
+            AgentClarification(
+                question=item.question,
+                answer=item.answer,
+            )
+            for item in task.clarifications[-20:]
+        ),
     )

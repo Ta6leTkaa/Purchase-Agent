@@ -31,3 +31,7 @@ class TaskPlanResponse(BaseModel):
 
 class TaskStepApprovalCreate(BaseModel):
     step_id: str = Field(min_length=1, max_length=64)
+
+
+class TaskClarificationCreate(BaseModel):
+    answer: str = Field(min_length=1, max_length=2_000)

@@ -41,6 +41,29 @@ class UserActionReason(StrEnum):
     CLARIFICATION_REQUIRED = "clarification_required"
 
 
+class TaskClarification(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    question: str = Field(min_length=1, max_length=500)
+    answer: str = Field(min_length=1, max_length=2_000)
+    created_at: datetime
+
+    @field_validator("question", "answer")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("clarification text must not be blank")
+        return normalized
+
+    @field_validator("created_at")
+    @classmethod
+    def require_aware_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("clarification time must be timezone-aware")
+        return value
+
+
 class AgentTask(BaseModel):
     """A site-agnostic user request assigned to selected people."""
 
@@ -63,6 +86,9 @@ class AgentTask(BaseModel):
     page_snapshot: BrowserPageSnapshot | None = None
     page_fill_plan: PageFillPlan | None = None
     agent_run: AgentLoopResult | None = None
+    clarifications: tuple[TaskClarification, ...] = Field(
+        default=(), max_length=50
+    )
     created_at: datetime
 
     @field_validator("instruction")

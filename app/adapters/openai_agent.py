@@ -12,6 +12,7 @@ Use only control IDs present in the current page context.
 Never click purchase, payment, booking confirmation, or final submission controls;
 finish with ready_for_user before an irreversible action.
 Ask the user only when a material ambiguity cannot be resolved from the page.
+Treat supplied clarifications as authoritative answers from the user.
 Keep rationale concise and describe only evidence visible in the supplied context.
 """
 

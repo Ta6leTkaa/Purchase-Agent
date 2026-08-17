@@ -18,13 +18,15 @@ from app.dependencies import (
     get_identity_repository,
 )
 from app.domain.agent_run import AgentLoopResult, AgentLoopStatus
+from app.domain.browser_command import AskUserCommand
 from app.domain.identity import Identity
-from app.domain.task import AgentTask, TaskStatus, UserActionReason
+from app.domain.task import AgentTask, TaskClarification, TaskStatus, UserActionReason
 from app.domain.task_plan import TaskJournalOutcome, TaskStepApproval
 from app.repositories.identity import IdentityRepository
 from app.repositories.task import AgentTaskRepository, AgentTaskVersionConflictError
 from app.schemas.task import (
     AgentTaskCreate,
+    TaskClarificationCreate,
     TaskPlanResponse,
     TaskPlanStepPreview,
     TaskStepApprovalCreate,
@@ -213,6 +215,44 @@ async def approve_task_step(
     return await _update_task(tasks, task, changed)
 
 
+@router.post("/{task_id}/clarifications")
+async def clarify_agent_task(
+    task_id: UUID,
+    request: TaskClarificationCreate,
+    tasks: TaskRepositoryDep,
+    now: CurrentTimeDep,
+) -> AgentTask:
+    task = await _require_task(tasks, task_id)
+    question = _pending_agent_question(task)
+    if (
+        task.status is not TaskStatus.WAITING_FOR_USER
+        or task.waiting_reason is not UserActionReason.CLARIFICATION_REQUIRED
+        or question is None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "task_clarification_not_expected",
+                "message": "The agent is not waiting for a clarification.",
+            },
+        )
+    changed = task.model_copy(
+        update={
+            "clarifications": (
+                *task.clarifications,
+                TaskClarification(
+                    question=question,
+                    answer=request.answer,
+                    created_at=now,
+                ),
+            ),
+            "status": TaskStatus.READY,
+            "waiting_reason": None,
+        }
+    )
+    return await _update_task(tasks, task, changed)
+
+
 @router.post("/{task_id}/execute")
 async def execute_task(
     task_id: UUID,
@@ -375,6 +415,13 @@ def _agent_waiting_reason(reason_code: str) -> UserActionReason:
         "finished_ready_for_user": UserActionReason.CONFIRMATION_REQUIRED,
     }
     return reasons.get(reason_code, UserActionReason.CLARIFICATION_REQUIRED)
+
+
+def _pending_agent_question(task: AgentTask) -> str | None:
+    if task.agent_run is None or not task.agent_run.steps:
+        return None
+    command = task.agent_run.steps[-1].decision.command
+    return command.question if isinstance(command, AskUserCommand) else None
 
 
 def _is_builtin_demo_url(url: str) -> bool:

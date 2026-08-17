@@ -16,7 +16,7 @@ from app.domain.browser_page import (
     BrowserPageControl,
     BrowserPageSnapshot,
 )
-from app.domain.task import AgentTask
+from app.domain.task import AgentTask, TaskClarification
 from app.domain.task_intent import TaskIntent
 from app.services.agent_decision import build_agent_decision_context
 
@@ -73,6 +73,25 @@ def test_context_requires_observed_page() -> None:
 
     with pytest.raises(ValueError, match="page snapshot"):
         build_agent_decision_context(task)
+
+
+def test_context_includes_user_clarifications() -> None:
+    task = _task().model_copy(
+        update={
+            "clarifications": (
+                TaskClarification(
+                    question="Какой город?",
+                    answer="Тверь",
+                    created_at=NOW,
+                ),
+            )
+        }
+    )
+
+    context = build_agent_decision_context(task)
+
+    assert context.clarifications[0].question == "Какой город?"
+    assert context.clarifications[0].answer == "Тверь"
 
 
 @pytest.mark.asyncio

@@ -46,7 +46,7 @@ async def run_agent_loop(
 
     snapshot = await runtime.observe(task)
     current_task = task.model_copy(update={"page_snapshot": snapshot})
-    observations: tuple[AgentActionObservation, ...] = ()
+    observations = _previous_observations(task)
     steps: list[AgentLoopStep] = []
     previous_fingerprint: str | None = None
     repeated_commands = 0
@@ -135,3 +135,16 @@ def _command_target(decision: AgentDecision) -> str | None:
         if value is not None:
             return str(value)[:200]
     return None
+
+
+def _previous_observations(task: AgentTask) -> tuple[AgentActionObservation, ...]:
+    if task.agent_run is None:
+        return ()
+    return tuple(
+        AgentActionObservation(
+            action=step.decision.command.action,
+            target=_command_target(step.decision),
+            result=step.result.reason_code,
+        )
+        for step in task.agent_run.steps[-20:]
+    )

@@ -54,6 +54,12 @@ class AgentTaskModel(Base):
         preferences_type,
         nullable=True,
     )
+    clarifications: Mapped[list[dict[str, Any]]] = mapped_column(
+        preferences_type,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -85,6 +91,7 @@ def agent_task_to_model(task: AgentTask) -> AgentTaskModel:
         page_snapshot=data["page_snapshot"],
         page_fill_plan=data["page_fill_plan"],
         agent_run=data["agent_run"],
+        clarifications=data["clarifications"],
         created_at=task.created_at,
     )
 
@@ -109,6 +116,7 @@ def agent_task_from_model(model: AgentTaskModel) -> AgentTask:
             "page_snapshot": model.page_snapshot,
             "page_fill_plan": model.page_fill_plan,
             "agent_run": model.agent_run,
+            "clarifications": model.clarifications,
             "created_at": model.created_at,
         }
     )

@@ -8,7 +8,12 @@ from fastapi.testclient import TestClient
 from app.api.routes.tasks import _is_builtin_demo_url
 from app.core.config import settings
 from app.dependencies import agent_task_repository, identity_repository
-from app.domain.agent_run import AgentLoopResult, AgentLoopStatus
+from app.domain.agent_run import AgentLoopResult, AgentLoopStatus, AgentLoopStep
+from app.domain.browser_command import (
+    AgentDecision,
+    AskUserCommand,
+    CommandExecutionResult,
+)
 from app.domain.browser_page import (
     BrowserControlKind,
     BrowserPageControl,
@@ -427,6 +432,70 @@ def test_enabled_llm_agent_requires_api_key(
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "agent_llm_not_configured"
+
+
+def test_user_can_answer_agent_clarification() -> None:
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет вечером",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+    task = asyncio.run(agent_task_repository.get(UUID(created["id"])))
+    assert task is not None
+    snapshot = BrowserPageSnapshot(
+        url=task.target_url,
+        title="Cinema",
+        captured_at=task.created_at,
+        controls=(),
+    )
+    decision = AgentDecision(
+        command=AskUserCommand(
+            action="ask_user",
+            question="Какой город выбрать?",
+        ),
+        rationale="The site requires a city",
+        expected_result="A city is selected",
+    )
+    waiting = task.model_copy(
+        update={
+            "status": TaskStatus.WAITING_FOR_USER,
+            "waiting_reason": UserActionReason.CLARIFICATION_REQUIRED,
+            "page_snapshot": snapshot,
+            "agent_run": AgentLoopResult(
+                status=AgentLoopStatus.WAITING_FOR_USER,
+                reason_code="user_input_required",
+                page_snapshot=snapshot,
+                steps=(
+                    AgentLoopStep(
+                        sequence=1,
+                        decision=decision,
+                        result=CommandExecutionResult(
+                            succeeded=False,
+                            reason_code="user_input_required",
+                            requires_user=True,
+                        ),
+                    ),
+                ),
+            ),
+        }
+    )
+    asyncio.run(agent_task_repository.update(waiting, task.version))
+
+    response = client.post(
+        f"/tasks/{task.id}/clarifications",
+        json={"answer": "Тверь"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["waiting_reason"] is None
+    assert response.json()["clarifications"][0]["question"] == "Какой город выбрать?"
+    assert response.json()["clarifications"][0]["answer"] == "Тверь"
 
 
 def test_map_page_persists_value_free_profile_bindings() -> None:

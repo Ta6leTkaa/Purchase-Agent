@@ -139,9 +139,17 @@ textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px #1b5c4314; }
 .plan-step b, .plan-step small { display: block; }
 .plan-step b { font-size: 13px; }
 .plan-step small { margin-top: 2px; color: var(--muted); font-size: 11px; }
+.plan-step em { display: block; margin-top: 4px; color: #87908b; font-size: 10px; font-style: normal; }
 .plan-step.succeeded > span { background: #dcecdc; color: #276844; }
 .plan-step.blocked > span { background: #fae2c8; color: #8a4d20; }
 .plan-step.failed > span { background: #f5dcda; color: var(--red); }
+.agent-attention { display: block; }
+.agent-attention > div { width: 100%; }
+.agent-attention span { display: block; margin-top: 3px; }
+.clarification-form { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; margin-top: 14px; }
+.clarification-form label { margin: 0; color: var(--ink); }
+.clarification-form input { margin-top: 5px; }
+.clarification-form .primary { white-space: nowrap; }
 @media(max-width:900px) { .agent-welcome { grid-template-columns: 1fr; } .welcome-preview { display: none; } }
 @media(max-width:850px) { .task-detail-grid { grid-template-columns: 1fr; } }
-@media(max-width:580px) { .agent-welcome { padding: 28px 23px; border-radius: 21px; } .welcome-copy h1 { font-size: 39px; } .welcome-actions, .welcome-actions button { width: 100%; } .demo-launch { justify-content: center; } .section-head { align-items: center; } .task-card { grid-template-columns: 1fr; } .task-side { align-items: start; text-align: left; } .compact-choices, .control-modes { grid-template-columns: 1fr; } .safety-note, .attention { display: block; } .safety-note b, .attention b { display: block; margin-bottom: 6px; } .failure-attention a { display: inline-block; margin-top: 12px; } .background-note { align-items: flex-start; flex-wrap: wrap; } .background-note > a { margin-left: 0; width: 100%; } }
+@media(max-width:580px) { .agent-welcome { padding: 28px 23px; border-radius: 21px; } .welcome-copy h1 { font-size: 39px; } .welcome-actions, .welcome-actions button { width: 100%; } .demo-launch { justify-content: center; } .section-head { align-items: center; } .task-card { grid-template-columns: 1fr; } .task-side { align-items: start; text-align: left; } .compact-choices, .control-modes { grid-template-columns: 1fr; } .safety-note, .attention { display: block; } .safety-note b, .attention b { display: block; margin-bottom: 6px; } .failure-attention a { display: inline-block; margin-top: 12px; } .background-note { align-items: flex-start; flex-wrap: wrap; } .background-note > a { margin-left: 0; width: 100%; } .clarification-form { grid-template-columns: 1fr; } }
