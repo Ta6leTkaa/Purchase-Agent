@@ -5,6 +5,10 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
+from app.adapters.openai_agent import (
+    AgentDecisionProviderError,
+    OpenAIAgentDecisionProvider,
+)
 from app.adapters.playwright_browser import PlaywrightBrowserStepRunner
 from app.api.dependencies.auth import require_api_key
 from app.core.config import settings
@@ -13,6 +17,7 @@ from app.dependencies import (
     get_current_time,
     get_identity_repository,
 )
+from app.domain.agent_run import AgentLoopResult, AgentLoopStatus
 from app.domain.identity import Identity
 from app.domain.task import AgentTask, TaskStatus, UserActionReason
 from app.domain.task_plan import TaskJournalOutcome, TaskStepApproval
@@ -24,6 +29,7 @@ from app.schemas.task import (
     TaskPlanStepPreview,
     TaskStepApprovalCreate,
 )
+from app.services.agent_loop import run_agent_loop
 from app.services.clock import utc_now
 from app.services.page_field_mapper import build_page_fill_plan
 from app.services.task_executor import TaskExecutionError, execute_task_plan
@@ -115,6 +121,7 @@ async def prepare_task_plan(
                 "approvals": (),
                 "page_snapshot": None,
                 "page_fill_plan": None,
+                "agent_run": None,
                 "inferred_kind": preview.inferred_kind,
                 "intent": preview.intent,
                 "status": TaskStatus.READY,
@@ -230,6 +237,8 @@ async def execute_task(
             },
         )
     people = await _load_task_people(task, identities)
+    if settings.agent_llm_enabled:
+        return await _execute_llm_agent(task, tasks, people)
     try:
         async with PlaywrightBrowserStepRunner(
             timeout_seconds=settings.browser_navigation_timeout_seconds,
@@ -259,6 +268,113 @@ async def execute_task(
             },
         ) from exc
     return await _update_task(tasks, task, executed)
+
+
+async def _execute_llm_agent(
+    task: AgentTask,
+    tasks: AgentTaskRepository,
+    people: list[Identity],
+) -> AgentTask:
+    if task.status not in {TaskStatus.READY, TaskStatus.RUNNING}:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "task_not_executable",
+                "message": f"Task in {task.status.value} state cannot be executed.",
+            },
+        )
+    if settings.openai_api_key is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "agent_llm_not_configured",
+                "message": "LLM agent is enabled but OPENAI_API_KEY is missing.",
+            },
+        )
+    try:
+        async with PlaywrightBrowserStepRunner(
+            timeout_seconds=settings.browser_navigation_timeout_seconds,
+            allow_local_network=(
+                settings.environment != "production"
+                or _is_builtin_demo_url(task.target_url)
+            ),
+            identities=tuple(people),
+        ) as runner:
+            async with OpenAIAgentDecisionProvider(
+                api_key=settings.openai_api_key,
+                model=settings.agent_llm_model,
+                reasoning_effort=settings.agent_llm_reasoning_effort,
+                timeout_seconds=settings.agent_llm_timeout_seconds,
+            ) as provider:
+                result = await run_agent_loop(
+                    task,
+                    provider=provider,
+                    runtime=runner,
+                    max_steps=(
+                        1
+                        if task.control_mode.value == "step_by_step"
+                        else settings.agent_llm_max_steps
+                    ),
+                )
+    except AgentDecisionProviderError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "agent_llm_unavailable",
+                "message": "The LLM agent could not choose its next action.",
+            },
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "browser_driver_unavailable",
+                "message": "Browser driver could not complete the agent run.",
+            },
+        ) from exc
+    changed = _apply_agent_result(task, result)
+    return await _update_task(tasks, task, changed)
+
+
+def _apply_agent_result(task: AgentTask, result: AgentLoopResult) -> AgentTask:
+    if result.status is AgentLoopStatus.COMPLETED:
+        status = TaskStatus.COMPLETED
+        waiting_reason = None
+    elif result.status is AgentLoopStatus.WAITING_FOR_USER:
+        status = TaskStatus.WAITING_FOR_USER
+        waiting_reason = _agent_waiting_reason(result.reason_code)
+    elif (
+        result.status is AgentLoopStatus.EXHAUSTED
+        and task.control_mode.value == "step_by_step"
+    ):
+        status = TaskStatus.READY
+        waiting_reason = None
+    else:
+        status = TaskStatus.FAILED
+        waiting_reason = None
+    return task.model_copy(
+        update={
+            "status": status,
+            "waiting_reason": waiting_reason,
+            "page_snapshot": result.page_snapshot,
+            "page_fill_plan": None,
+            "agent_run": result,
+        }
+    )
+
+
+def _agent_waiting_reason(reason_code: str) -> UserActionReason:
+    reasons = {
+        "sensitive_data_approval_required": (
+            UserActionReason.SENSITIVE_DATA_APPROVAL_REQUIRED
+        ),
+        "authentication_required": UserActionReason.AUTHENTICATION_REQUIRED,
+        "captcha_required": UserActionReason.CAPTCHA_REQUIRED,
+        "payment_required": UserActionReason.PAYMENT_REQUIRED,
+        "irreversible_click_requires_user": UserActionReason.CONFIRMATION_REQUIRED,
+        "finished_ready_for_user": UserActionReason.CONFIRMATION_REQUIRED,
+    }
+    return reasons.get(reason_code, UserActionReason.CLARIFICATION_REQUIRED)
 
 
 def _is_builtin_demo_url(url: str) -> bool:

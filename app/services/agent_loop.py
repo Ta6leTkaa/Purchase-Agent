@@ -1,8 +1,6 @@
-from enum import StrEnum
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
-
+from app.domain.agent_run import AgentLoopResult, AgentLoopStatus, AgentLoopStep
 from app.domain.browser_command import (
     AgentDecision,
     AgentFinishOutcome,
@@ -29,31 +27,6 @@ class AgentBrowserRuntime(Protocol):
         *,
         approved_sensitive: bool = False,
     ) -> CommandExecutionResult: ...
-
-
-class AgentLoopStatus(StrEnum):
-    COMPLETED = "completed"
-    WAITING_FOR_USER = "waiting_for_user"
-    NO_MATCH = "no_match"
-    EXHAUSTED = "exhausted"
-    STALLED = "stalled"
-
-
-class AgentLoopStep(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    sequence: int = Field(ge=1)
-    decision: AgentDecision
-    result: CommandExecutionResult
-
-
-class AgentLoopResult(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    status: AgentLoopStatus
-    reason_code: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=100)
-    page_snapshot: BrowserPageSnapshot
-    steps: tuple[AgentLoopStep, ...]
 
 
 async def run_agent_loop(

@@ -6,7 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.routes.tasks import _is_builtin_demo_url
+from app.core.config import settings
 from app.dependencies import agent_task_repository, identity_repository
+from app.domain.agent_run import AgentLoopResult, AgentLoopStatus
 from app.domain.browser_page import (
     BrowserControlKind,
     BrowserPageControl,
@@ -346,6 +348,85 @@ def test_execute_task_runs_browser_driver_and_persists_journal(
     assert response.json()["waiting_reason"] == "confirmation_required"
     assert stored["journal"] == response.json()["journal"]
     assert stored["version"] == 2
+
+
+def test_llm_agent_execution_persists_auditable_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeContextManager:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeContextManager":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+    async def fake_agent_loop(*args: object, **kwargs: object) -> AgentLoopResult:
+        task = args[0]
+        return AgentLoopResult(
+            status=AgentLoopStatus.WAITING_FOR_USER,
+            reason_code="finished_ready_for_user",
+            page_snapshot=BrowserPageSnapshot(
+                url=task.target_url,
+                title="Review order",
+                captured_at=task.created_at,
+                controls=(),
+            ),
+            steps=(),
+        )
+
+    monkeypatch.setattr(settings, "agent_llm_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(
+        "app.api.routes.tasks.PlaywrightBrowserStepRunner", FakeContextManager
+    )
+    monkeypatch.setattr(
+        "app.api.routes.tasks.OpenAIAgentDecisionProvider", FakeContextManager
+    )
+    monkeypatch.setattr("app.api.routes.tasks.run_agent_loop", fake_agent_loop)
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет на Колобка",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+
+    response = client.post(f"/tasks/{created['id']}/execute")
+    stored = client.get(f"/tasks/{created['id']}").json()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "waiting_for_user"
+    assert response.json()["waiting_reason"] == "confirmation_required"
+    assert response.json()["agent_run"]["status"] == "waiting_for_user"
+    assert stored["agent_run"] == response.json()["agent_run"]
+
+
+def test_enabled_llm_agent_requires_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "agent_llm_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+
+    response = client.post(f"/tasks/{created['id']}/execute")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "agent_llm_not_configured"
 
 
 def test_map_page_persists_value_free_profile_bindings() -> None:

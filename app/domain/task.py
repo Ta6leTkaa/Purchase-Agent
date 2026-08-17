@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.domain.agent_run import AgentLoopResult
 from app.domain.browser_page import BrowserPageSnapshot
 from app.domain.page_fill_plan import PageFillPlan
 from app.domain.task_intent import TaskIntent
@@ -37,6 +38,7 @@ class UserActionReason(StrEnum):
     CONFIRMATION_REQUIRED = "confirmation_required"
     PAYMENT_REQUIRED = "payment_required"
     SENSITIVE_DATA_APPROVAL_REQUIRED = "sensitive_data_approval_required"
+    CLARIFICATION_REQUIRED = "clarification_required"
 
 
 class AgentTask(BaseModel):
@@ -60,6 +62,7 @@ class AgentTask(BaseModel):
     approvals: tuple[TaskStepApproval, ...] = ()
     page_snapshot: BrowserPageSnapshot | None = None
     page_fill_plan: PageFillPlan | None = None
+    agent_run: AgentLoopResult | None = None
     created_at: datetime
 
     @field_validator("instruction")

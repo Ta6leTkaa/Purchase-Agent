@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.domain.agent_run import AgentLoopStatus
 from app.domain.browser_command import (
     AgentDecision,
     AgentFinishOutcome,
@@ -15,7 +16,7 @@ from app.domain.browser_command import (
 from app.domain.browser_page import BrowserPageSnapshot
 from app.domain.task import AgentTask
 from app.services.agent_decision import AgentDecisionContext
-from app.services.agent_loop import AgentLoopStatus, run_agent_loop
+from app.services.agent_loop import run_agent_loop
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 
