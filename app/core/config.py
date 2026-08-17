@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     agent_llm_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=100)
     agent_llm_reasoning_effort: Literal["low", "medium", "high"] = "medium"
     agent_llm_timeout_seconds: float = Field(default=45.0, gt=0, le=120)
+    agent_llm_max_steps: int = Field(default=12, ge=1, le=50)
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
     worker_claim_timeout_seconds: int = Field(default=900, ge=1, le=86400)

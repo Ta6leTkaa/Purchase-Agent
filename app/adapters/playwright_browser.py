@@ -148,6 +148,17 @@ class PlaywrightBrowserStepRunner:
             reason_code="browser_action_not_implemented",
         )
 
+    async def observe(self, task: AgentTask) -> BrowserPageSnapshot:
+        """Open the task page when needed and return a fresh bounded snapshot."""
+        page = self._require_page()
+        if page.url == "about:blank":
+            await page.goto(
+                task.page_snapshot.url if task.page_snapshot else task.target_url,
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
+            )
+        return await self._snapshot_page(page)
+
     async def execute_command(
         self,
         task: AgentTask,

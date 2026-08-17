@@ -55,6 +55,7 @@ def test_docker_compose_defines_api_and_database_migration_gate() -> None:
     assert "AGENT_LLM_ENABLED" in content
     assert "OPENAI_API_KEY" in content
     assert "AGENT_LLM_MODEL" in content
+    assert "AGENT_LLM_MAX_STEPS" in content
     assert "http://localhost:8000/ready" in content
 
 

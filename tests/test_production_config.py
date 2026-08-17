@@ -70,6 +70,7 @@ def test_local_environment_keeps_development_defaults() -> None:
     assert not configured.api_rate_limit_enabled
     assert not configured.agent_llm_enabled
     assert configured.agent_llm_model == "gpt-5.6-terra"
+    assert configured.agent_llm_max_steps == 12
 
 
 def test_enabled_llm_requires_openai_key_in_production() -> None:

@@ -1,0 +1,215 @@
+from datetime import UTC, datetime
+from uuid import uuid4
+
+import pytest
+
+from app.domain.browser_command import (
+    AgentDecision,
+    AgentFinishOutcome,
+    AskUserCommand,
+    ClickCommand,
+    CommandExecutionResult,
+    FinishCommand,
+    ScrollCommand,
+)
+from app.domain.browser_page import BrowserPageSnapshot
+from app.domain.task import AgentTask
+from app.services.agent_decision import AgentDecisionContext
+from app.services.agent_loop import AgentLoopStatus, run_agent_loop
+
+NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
+
+
+def _snapshot(title: str = "Cinema") -> BrowserPageSnapshot:
+    return BrowserPageSnapshot(
+        url="https://cinema.example.com/films",
+        title=title,
+        captured_at=NOW,
+        controls=(),
+    )
+
+
+def _task() -> AgentTask:
+    return AgentTask(
+        id=uuid4(),
+        instruction="Купи билет на Колобка",
+        target_url="https://cinema.example.com/films",
+        person_ids=(uuid4(),),
+        created_at=NOW,
+    )
+
+
+def _decision(command: object) -> AgentDecision:
+    return AgentDecision(
+        command=command,
+        rationale="This is the next safe action",
+        expected_result="The page advances",
+    )
+
+
+class ScriptedProvider:
+    def __init__(self, *decisions: AgentDecision) -> None:
+        self.decisions = list(decisions)
+        self.contexts: list[AgentDecisionContext] = []
+
+    async def decide(self, context: AgentDecisionContext) -> AgentDecision:
+        self.contexts.append(context)
+        return self.decisions.pop(0)
+
+
+class ScriptedRuntime:
+    def __init__(self, *results: CommandExecutionResult) -> None:
+        self.results = list(results)
+        self.executed: list[AgentDecision] = []
+
+    async def observe(self, task: AgentTask) -> BrowserPageSnapshot:
+        return _snapshot()
+
+    async def execute_command(
+        self,
+        task: AgentTask,
+        decision: AgentDecision,
+        *,
+        approved_sensitive: bool = False,
+    ) -> CommandExecutionResult:
+        self.executed.append(decision)
+        return self.results.pop(0)
+
+
+@pytest.mark.asyncio
+async def test_loop_observes_executes_and_finishes() -> None:
+    provider = ScriptedProvider(
+        _decision(ClickCommand(action="click", control_id="control_1")),
+        _decision(
+            FinishCommand(
+                action="finish",
+                outcome=AgentFinishOutcome.GOAL_REACHED,
+                summary="Ticket selected",
+            )
+        ),
+    )
+    changed = _snapshot("Checkout")
+    runtime = ScriptedRuntime(
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="control_clicked",
+            page_snapshot=changed,
+        ),
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="finished_goal_reached",
+            page_snapshot=changed,
+        ),
+    )
+
+    result = await run_agent_loop(_task(), provider=provider, runtime=runtime)
+
+    assert result.status is AgentLoopStatus.COMPLETED
+    assert result.page_snapshot.title == "Checkout"
+    assert len(result.steps) == 2
+    assert provider.contexts[1].previous_actions[0].result == "control_clicked"
+
+
+@pytest.mark.asyncio
+async def test_loop_allows_model_to_recover_from_failed_action() -> None:
+    provider = ScriptedProvider(
+        _decision(ClickCommand(action="click", control_id="control_1")),
+        _decision(ScrollCommand(action="scroll", direction="down")),
+        _decision(
+            FinishCommand(
+                action="finish",
+                outcome=AgentFinishOutcome.NO_MATCH,
+                summary="No matching session",
+            )
+        ),
+    )
+    runtime = ScriptedRuntime(
+        CommandExecutionResult(succeeded=False, reason_code="control_not_found"),
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="page_scrolled",
+            page_snapshot=_snapshot(),
+        ),
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="finished_no_match",
+            page_snapshot=_snapshot(),
+        ),
+    )
+
+    result = await run_agent_loop(_task(), provider=provider, runtime=runtime)
+
+    assert result.status is AgentLoopStatus.NO_MATCH
+    assert len(result.steps) == 3
+    assert provider.contexts[1].previous_actions[-1].result == "control_not_found"
+
+
+@pytest.mark.asyncio
+async def test_loop_stops_when_user_input_is_required() -> None:
+    provider = ScriptedProvider(
+        _decision(AskUserCommand(action="ask_user", question="Choose a city"))
+    )
+    runtime = ScriptedRuntime(
+        CommandExecutionResult(
+            succeeded=False,
+            reason_code="user_input_required",
+            requires_user=True,
+        )
+    )
+
+    result = await run_agent_loop(_task(), provider=provider, runtime=runtime)
+
+    assert result.status is AgentLoopStatus.WAITING_FOR_USER
+    assert result.reason_code == "user_input_required"
+
+
+@pytest.mark.asyncio
+async def test_loop_stops_before_third_identical_command() -> None:
+    repeated = _decision(ScrollCommand(action="scroll", direction="down"))
+    provider = ScriptedProvider(repeated, repeated, repeated)
+    runtime = ScriptedRuntime(
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="page_scrolled",
+            page_snapshot=_snapshot(),
+        ),
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="page_scrolled",
+            page_snapshot=_snapshot(),
+        ),
+    )
+
+    result = await run_agent_loop(_task(), provider=provider, runtime=runtime)
+
+    assert result.status is AgentLoopStatus.STALLED
+    assert result.reason_code == "repeated_command_limit"
+    assert len(runtime.executed) == 2
+
+
+@pytest.mark.asyncio
+async def test_loop_has_hard_step_limit() -> None:
+    provider = ScriptedProvider(
+        _decision(ScrollCommand(action="scroll", direction="down")),
+        _decision(ScrollCommand(action="scroll", direction="up")),
+    )
+    runtime = ScriptedRuntime(
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="page_scrolled",
+            page_snapshot=_snapshot(),
+        ),
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="page_scrolled",
+            page_snapshot=_snapshot(),
+        ),
+    )
+
+    result = await run_agent_loop(
+        _task(), provider=provider, runtime=runtime, max_steps=2
+    )
+
+    assert result.status is AgentLoopStatus.EXHAUSTED
+    assert result.reason_code == "maximum_steps_reached"
+    assert len(result.steps) == 2
