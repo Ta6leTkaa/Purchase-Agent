@@ -16,6 +16,9 @@ from playwright.async_api import (
     Route,
     async_playwright,
 )
+from playwright.async_api import (
+    TimeoutError as PlaywrightTimeoutError,
+)
 
 from app.domain.browser_command import (
     AgentDecision,
@@ -65,6 +68,7 @@ class PlaywrightBrowserStepRunner:
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._page: Page | None = None
+        self._allowed_origin: str | None = None
 
     async def __aenter__(self) -> "PlaywrightBrowserStepRunner":
         self._playwright = await async_playwright().start()
@@ -89,6 +93,7 @@ class PlaywrightBrowserStepRunner:
             await self._playwright.stop()
 
     async def run(self, task: AgentTask, step: TaskPlanStep) -> BrowserStepResult:
+        self._allowed_origin = task.target_origin
         page = self._require_page()
         if step.action is not BrowserAction.NAVIGATE and page.url == "about:blank":
             await page.goto(
@@ -150,6 +155,7 @@ class PlaywrightBrowserStepRunner:
 
     async def observe(self, task: AgentTask) -> BrowserPageSnapshot:
         """Open the task page when needed and return a fresh bounded snapshot."""
+        self._allowed_origin = task.target_origin
         page = self._require_page()
         if page.url == "about:blank":
             await page.goto(
@@ -167,6 +173,7 @@ class PlaywrightBrowserStepRunner:
         approved_sensitive: bool = False,
     ) -> CommandExecutionResult:
         """Execute one validated model command against the current page."""
+        self._allowed_origin = task.target_origin
         page = self._require_page()
         command = decision.command
         if isinstance(command, AskUserCommand):
@@ -282,7 +289,18 @@ class PlaywrightBrowserStepRunner:
                     page_snapshot=snapshot,
                     requires_user=True,
                 )
-            await locator.click(timeout=self._timeout_ms)
+            popup = await self._click_and_capture_popup(page, locator)
+            if popup is not None:
+                if not _same_origin(popup.url, task.target_url):
+                    await popup.close()
+                    return CommandExecutionResult(
+                        succeeded=False,
+                        reason_code="cross_origin_popup_blocked",
+                        page_snapshot=snapshot,
+                        requires_user=True,
+                    )
+                self._page = popup
+                page = popup
             await page.wait_for_timeout(300)
             return await self._command_succeeded(
                 page,
@@ -337,6 +355,36 @@ class PlaywrightBrowserStepRunner:
             succeeded=False,
             reason_code="command_not_implemented",
         )
+
+    async def _click_and_capture_popup(
+        self,
+        page: Page,
+        locator: Any,
+    ) -> Page | None:
+        popups: list[Page] = []
+
+        def capture_popup(popup: Page) -> None:
+            popups.append(popup)
+
+        page.on("popup", capture_popup)
+        try:
+            await locator.click(timeout=self._timeout_ms)
+            await page.wait_for_timeout(300)
+        finally:
+            page.remove_listener("popup", capture_popup)
+        if not popups:
+            return None
+        popup = popups[-1]
+        for extra in popups[:-1]:
+            await extra.close()
+        try:
+            await popup.wait_for_load_state(
+                "domcontentloaded",
+                timeout=min(self._timeout_ms, 5_000),
+            )
+        except PlaywrightTimeoutError:
+            pass
+        return popup
 
     def _command_fill_value(self, command: FillCommand) -> str | None:
         if command.value_source is FillValueSource.LITERAL:
@@ -799,6 +847,14 @@ class PlaywrightBrowserStepRunner:
         )
 
     async def _guard_request(self, route: Route, request: Request) -> None:
+        if (
+            self._allowed_origin is not None
+            and request.is_navigation_request()
+            and request.frame.parent_frame is None
+            and not _same_origin(request.url, self._allowed_origin)
+        ):
+            await route.abort("blockedbyclient")
+            return
         try:
             await validate_browser_url(
                 request.url,

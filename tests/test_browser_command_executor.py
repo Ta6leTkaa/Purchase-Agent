@@ -150,6 +150,70 @@ async def test_executor_reports_click_that_does_not_change_page() -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_follows_same_origin_popup() -> None:
+    page, control = _page_with_control(tag="button", label="Выбрать сеанс")
+    popup, _ = _page_with_control(tag="button", label="Выбрать места")
+    popup.url = "https://tickets.example.com/session/42"
+    popup.wait_for_load_state = AsyncMock()
+    handlers: dict[str, object] = {}
+    page.on = MagicMock(
+        side_effect=lambda event, handler: handlers.update({event: handler})
+    )
+
+    def open_popup(**kwargs: object) -> None:
+        handler = handlers["popup"]
+        assert callable(handler)
+        handler(popup)
+
+    control.click = AsyncMock(side_effect=open_popup)
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision({"action": "click", "control_id": "control_1"}),
+    )
+
+    assert result.succeeded
+    assert result.page_snapshot is not None
+    assert result.page_snapshot.url.endswith("/session/42")
+    assert runner._page is popup
+
+
+@pytest.mark.asyncio
+async def test_executor_closes_cross_origin_popup() -> None:
+    page, control = _page_with_control(tag="button", label="Продолжить")
+    popup, _ = _page_with_control(tag="button", label="External")
+    popup.url = "https://evil.example/checkout"
+    popup.wait_for_load_state = AsyncMock()
+    popup.close = AsyncMock()
+    handlers: dict[str, object] = {}
+    page.on = MagicMock(
+        side_effect=lambda event, handler: handlers.update({event: handler})
+    )
+
+    def open_popup(**kwargs: object) -> None:
+        handler = handlers["popup"]
+        assert callable(handler)
+        handler(popup)
+
+    control.click = AsyncMock(side_effect=open_popup)
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision({"action": "click", "control_id": "control_1"}),
+    )
+
+    assert not result.succeeded
+    assert result.requires_user
+    assert result.reason_code == "cross_origin_popup_blocked"
+    popup.close.assert_awaited_once()
+    assert runner._page is page
+
+
+@pytest.mark.asyncio
 async def test_executor_blocks_cross_origin_open_url() -> None:
     page, _ = _page_with_control(tag="button", label="Continue")
     runner = PlaywrightBrowserStepRunner()

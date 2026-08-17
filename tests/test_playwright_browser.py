@@ -84,6 +84,24 @@ async def test_local_development_can_explicitly_allow_local_address() -> None:
 
 
 @pytest.mark.asyncio
+async def test_request_guard_blocks_cross_origin_top_level_navigation() -> None:
+    runner = PlaywrightBrowserStepRunner()
+    runner._allowed_origin = "https://tickets.example.com"
+    route = MagicMock()
+    route.abort = AsyncMock()
+    route.continue_ = AsyncMock()
+    request = MagicMock()
+    request.url = "https://evil.example/checkout"
+    request.is_navigation_request.return_value = True
+    request.frame.parent_frame = None
+
+    await runner._guard_request(route, request)
+
+    route.abort.assert_awaited_once_with("blockedbyclient")
+    route.continue_.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_driver_opens_and_reads_a_page() -> None:
     page_mock = MagicMock()
     page = cast(Page, page_mock)
