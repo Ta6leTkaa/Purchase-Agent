@@ -32,6 +32,10 @@ class BrowserPageControl(BaseModel):
     nearby_text: str | None = Field(default=None, max_length=600)
     required: bool = False
     disabled: bool = False
+    checked: bool | None = None
+    selected: bool | None = None
+    expanded: bool | None = None
+    pressed: bool | None = None
     options: tuple[str, ...] = Field(default=(), max_length=100)
 
     @field_validator("label")

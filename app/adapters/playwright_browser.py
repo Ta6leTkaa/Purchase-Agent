@@ -284,7 +284,12 @@ class PlaywrightBrowserStepRunner:
                 )
             await locator.click(timeout=self._timeout_ms)
             await page.wait_for_timeout(300)
-            return await self._command_succeeded(page, "control_clicked")
+            return await self._command_succeeded(
+                page,
+                "control_clicked",
+                previous_snapshot=snapshot,
+                require_progress=True,
+            )
         if isinstance(command, SelectCommand):
             if control.kind is not BrowserControlKind.SELECT:
                 return CommandExecutionResult(
@@ -353,11 +358,26 @@ class PlaywrightBrowserStepRunner:
         self,
         page: Page,
         reason_code: str,
+        *,
+        previous_snapshot: BrowserPageSnapshot | None = None,
+        require_progress: bool = False,
     ) -> CommandExecutionResult:
+        snapshot = await self._snapshot_page(page)
+        if (
+            require_progress
+            and previous_snapshot is not None
+            and _snapshot_fingerprint(snapshot)
+            == _snapshot_fingerprint(previous_snapshot)
+        ):
+            return CommandExecutionResult(
+                succeeded=False,
+                reason_code="page_unchanged_after_click",
+                page_snapshot=snapshot,
+            )
         return CommandExecutionResult(
             succeeded=True,
             reason_code=reason_code,
-            page_snapshot=await self._snapshot_page(page),
+            page_snapshot=snapshot,
         )
 
     def _require_page(self) -> Page:
@@ -392,6 +412,10 @@ class PlaywrightBrowserStepRunner:
                 ),
                 required=bool(item.get("required")),
                 disabled=bool(item.get("disabled")),
+                checked=item.get("checked"),
+                selected=item.get("selected"),
+                expanded=item.get("expanded"),
+                pressed=item.get("pressed"),
                 options=tuple(str(option) for option in item.get("options", ())),
             )
             for index, item in enumerate(raw_controls[:300], start=1)
@@ -969,6 +993,17 @@ def _normalize_fuzzy_text(value: str) -> str:
     return " ".join(re.findall(r"[\w]+", value.casefold().replace("ё", "е")))
 
 
+def _snapshot_fingerprint(snapshot: BrowserPageSnapshot) -> tuple[object, ...]:
+    return (
+        snapshot.url,
+        snapshot.title,
+        snapshot.visible_text,
+        tuple(
+            control.model_dump(mode="json") for control in snapshot.controls
+        ),
+    )
+
+
 def _redact_profile_values(text: str, identities: tuple[Identity, ...]) -> str:
     redacted = text
     values: set[str] = set()
@@ -1083,6 +1118,11 @@ elements => elements
   })
   .map(element => {
     const clean = value => (value || '').replace(/\\s+/g, ' ').trim().slice(0, 200);
+    const stateFlag = (property, attribute) => {
+      if (typeof element[property] === 'boolean') return element[property];
+      const value = element.getAttribute(attribute);
+      return value === 'true' ? true : value === 'false' ? false : null;
+    };
     const label = clean(
       element.getAttribute('aria-label') ||
       (element.labels && element.labels[0] && element.labels[0].innerText) ||
@@ -1117,6 +1157,10 @@ elements => elements
       disabled:
         element.disabled === true ||
         element.getAttribute('aria-disabled') === 'true',
+      checked: stateFlag('checked', 'aria-checked'),
+      selected: stateFlag('selected', 'aria-selected'),
+      expanded: stateFlag('__expanded__', 'aria-expanded'),
+      pressed: stateFlag('__pressed__', 'aria-pressed'),
       options: element.tagName === 'SELECT'
         ? Array.from(element.options)
             .slice(0, 100)

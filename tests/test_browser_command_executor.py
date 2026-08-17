@@ -48,27 +48,36 @@ def _page_with_control(
     control.is_visible = AsyncMock(return_value=True)
     control.count = AsyncMock(return_value=1)
     control.evaluate = AsyncMock(return_value=None)
-    control.click = AsyncMock()
     control.fill = AsyncMock()
     control.select_option = AsyncMock()
     inventory = MagicMock()
-    inventory.evaluate_all = AsyncMock(
-        return_value=[
-            {
-                "tag": tag,
-                "type": control_type,
-                "role": role,
-                "name": None,
-                "label": label,
-                "clickable": True,
-                "required": False,
-                "disabled": False,
-                "options": options or [],
-            }
-        ]
-    )
+    raw_control = {
+        "tag": tag,
+        "type": control_type,
+        "role": role,
+        "name": None,
+        "label": label,
+        "clickable": True,
+        "required": False,
+        "disabled": False,
+        "checked": False if control_type in {"radio", "checkbox"} else None,
+        "selected": False if role == "tab" else None,
+        "expanded": None,
+        "pressed": None,
+        "options": options or [],
+    }
+    inventory.evaluate_all = AsyncMock(return_value=[raw_control])
     body = MagicMock()
     body.inner_text = AsyncMock(return_value=f"Tickets\n{label}")
+
+    def mark_clicked(**kwargs: object) -> None:
+        raw_control["selected"] = True if role == "tab" else None
+        raw_control["checked"] = (
+            True if control_type in {"radio", "checkbox"} else None
+        )
+        body.inner_text.return_value = f"Tickets\n{label}\nSelected"
+
+    control.click = AsyncMock(side_effect=mark_clicked)
 
     def locate(selector: str) -> MagicMock:
         if selector == "body *":
@@ -121,6 +130,23 @@ async def test_executor_blocks_irreversible_click() -> None:
     assert result.requires_user
     assert result.reason_code == "irreversible_click_requires_user"
     control.click.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_executor_reports_click_that_does_not_change_page() -> None:
+    page, control = _page_with_control(tag="button", label="Показать сеансы")
+    control.click = AsyncMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision({"action": "click", "control_id": "control_1"}),
+    )
+
+    assert not result.succeeded
+    assert result.reason_code == "page_unchanged_after_click"
+    assert result.page_snapshot is not None
 
 
 @pytest.mark.asyncio

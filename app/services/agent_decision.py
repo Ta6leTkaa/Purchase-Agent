@@ -16,6 +16,10 @@ class AgentVisibleControl(BaseModel):
     role: str | None = None
     nearby_text: str | None = Field(default=None, max_length=600)
     disabled: bool = False
+    checked: bool | None = None
+    selected: bool | None = None
+    expanded: bool | None = None
+    pressed: bool | None = None
     options: tuple[str, ...] = ()
 
 
@@ -87,6 +91,10 @@ def build_agent_decision_context(
                 role=control.role,
                 nearby_text=control.nearby_text,
                 disabled=control.disabled,
+                checked=control.checked,
+                selected=control.selected,
+                expanded=control.expanded,
+                pressed=control.pressed,
                 options=control.options,
             )
             for control in snapshot.controls[:200]
