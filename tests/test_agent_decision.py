@@ -45,6 +45,7 @@ def _task() -> AgentTask:
                     kind=BrowserControlKind.CLICKABLE,
                     label="Завтра",
                     role="tab",
+                    nearby_text="Сегодня Завтра Вторник, 18 августа",
                 ),
                 BrowserPageControl(
                     control_id="control_2",
@@ -64,6 +65,7 @@ def test_context_contains_goal_and_controls_but_no_profile_values() -> None:
 
     assert context.goal.startswith("Купи билет")
     assert context.controls[0].label == "Завтра"
+    assert "18 августа" in (context.controls[0].nearby_text or "")
     assert context.intent["search_terms"] == ["Колобок"]
     assert "18:00" in context.visible_text
     assert "first_name" not in serialized

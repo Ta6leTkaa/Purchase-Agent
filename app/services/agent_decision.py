@@ -14,6 +14,7 @@ class AgentVisibleControl(BaseModel):
     kind: BrowserControlKind
     label: str
     role: str | None = None
+    nearby_text: str | None = Field(default=None, max_length=600)
     disabled: bool = False
     options: tuple[str, ...] = ()
 
@@ -84,6 +85,7 @@ def build_agent_decision_context(
                 kind=control.kind,
                 label=control.label,
                 role=control.role,
+                nearby_text=control.nearby_text,
                 disabled=control.disabled,
                 options=control.options,
             )

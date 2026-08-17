@@ -111,6 +111,7 @@ async def test_driver_opens_and_reads_a_page() -> None:
                 "name": None,
                 "role": "tab",
                 "label": "Завтра",
+                "nearbyText": "Расписание · Сегодня · Завтра · Вторник",
                 "clickable": True,
                 "required": False,
                 "disabled": False,
@@ -160,6 +161,10 @@ async def test_driver_opens_and_reads_a_page() -> None:
     assert inspected.page_snapshot.controls[0].role == "textbox"
     assert inspected.page_snapshot.controls[1].kind is BrowserControlKind.CLICKABLE
     assert inspected.page_snapshot.controls[1].label == "Завтра"
+    assert (
+        inspected.page_snapshot.controls[1].nearby_text
+        == "Расписание · Сегодня · Завтра · Вторник"
+    )
     assert "value" not in inspected.page_snapshot.controls[0].model_dump()
 
 

@@ -383,6 +383,13 @@ class PlaywrightBrowserStepRunner:
                 ),
                 field_name=(str(item["name"]) if item.get("name") else None),
                 role=(str(item["role"]) if item.get("role") else None),
+                nearby_text=(
+                    _redact_profile_values(
+                        str(item["nearbyText"]), self._identities
+                    )[:600]
+                    if item.get("nearbyText")
+                    else None
+                ),
                 required=bool(item.get("required")),
                 disabled=bool(item.get("disabled")),
                 options=tuple(str(option) for option in item.get("options", ())),
@@ -1084,6 +1091,14 @@ elements => elements
       element.getAttribute('name') ||
       element.id
     );
+    const semanticContainer = element.closest(
+      'article, li, tr, form, fieldset, [role="listitem"], [role="row"], section'
+    );
+    const nearbySource = semanticContainer || element.parentElement;
+    const nearbyText = (nearbySource && nearbySource.innerText || '')
+      .replace(/\\s+/g, ' ')
+      .trim()
+      .slice(0, 600);
     return {
       element,
       tag: element.tagName.toLowerCase(),
@@ -1091,6 +1106,7 @@ elements => elements
       role: clean(element.getAttribute('role')) || null,
       name: clean(element.getAttribute('name')) || null,
       label,
+      nearbyText: nearbyText && nearbyText !== label ? nearbyText : null,
       clickable:
         typeof element.onclick === 'function' ||
         element.hasAttribute('onclick') ||
