@@ -9,14 +9,18 @@ from app.domain.browser_command import (
     AgentFinishOutcome,
     AskUserCommand,
     ClickCommand,
+    ClickVisualCommand,
     CommandExecutionResult,
+    DragVisualCommand,
     FinishCommand,
+    HoverVisualCommand,
     ScrollCommand,
+    ZoomVisualCommand,
 )
 from app.domain.browser_page import BrowserPageSnapshot
 from app.domain.task import AgentTask
 from app.services.agent_decision import AgentDecisionContext
-from app.services.agent_loop import run_agent_loop
+from app.services.agent_loop import _command_target, run_agent_loop
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 
@@ -46,6 +50,55 @@ def _decision(command: object) -> AgentDecision:
         rationale="This is the next safe action",
         expected_result="The page advances",
     )
+
+
+@pytest.mark.parametrize(
+    ("command", "target"),
+    [
+        (
+            ClickVisualCommand(
+                action="click_visual",
+                control_id="control_1",
+                x_ratio=0.25,
+                y_ratio=0.75,
+            ),
+            "control_1@(0.250,0.750)",
+        ),
+        (
+            HoverVisualCommand(
+                action="hover_visual",
+                control_id="control_2",
+                x_ratio=0.3333,
+                y_ratio=0.6666,
+            ),
+            "control_2@(0.333,0.667)",
+        ),
+        (
+            DragVisualCommand(
+                action="drag_visual",
+                control_id="control_3",
+                start_x_ratio=0.2,
+                start_y_ratio=0.5,
+                end_x_ratio=0.8,
+                end_y_ratio=0.5,
+            ),
+            "control_3@(0.200,0.500)->(0.800,0.500)",
+        ),
+        (
+            ZoomVisualCommand(
+                action="zoom_visual",
+                control_id="control_4",
+                direction="in",
+                intensity=2,
+            ),
+            "control_4:in:2",
+        ),
+    ],
+)
+def test_visual_command_target_preserves_spatial_details(
+    command: object, target: str
+) -> None:
+    assert _command_target(_decision(command)) == target
 
 
 class ScriptedProvider:

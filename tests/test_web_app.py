@@ -51,10 +51,12 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert "Каждое нажатие выполняет только один шаг" in script.text
     assert "task_intent_mapping_empty" in script.text
     assert "renderAgentRun" in script.text
+    assert "percentRatio" in script.text
+    assert 'command.action==="drag_visual"' in script.text
     assert "submitClarification" in script.text
     assert "performMissionAction" in script.text
     assert "loadActivity" in script.text
-    assert '`${location.origin}/demo/cinema`' in script.text
+    assert "`${location.origin}/demo/cinema`" in script.text
 
 
 def test_demo_cinema_is_available_for_safe_manual_testing() -> None:

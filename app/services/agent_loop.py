@@ -5,8 +5,12 @@ from app.domain.browser_command import (
     AgentDecision,
     AgentFinishOutcome,
     AskUserCommand,
+    ClickVisualCommand,
     CommandExecutionResult,
+    DragVisualCommand,
     FinishCommand,
+    HoverVisualCommand,
+    ZoomVisualCommand,
 )
 from app.domain.browser_page import BrowserPageSnapshot
 from app.domain.task import AgentTask
@@ -81,9 +85,7 @@ async def run_agent_loop(
             decision,
             approved_sensitive=approved_sensitive,
         )
-        steps.append(
-            AgentLoopStep(sequence=sequence, decision=decision, result=result)
-        )
+        steps.append(AgentLoopStep(sequence=sequence, decision=decision, result=result))
         observations = (
             *observations,
             AgentActionObservation(
@@ -94,9 +96,7 @@ async def run_agent_loop(
         )[-20:]
         if result.page_snapshot is not None:
             snapshot = result.page_snapshot
-            current_task = current_task.model_copy(
-                update={"page_snapshot": snapshot}
-            )
+            current_task = current_task.model_copy(update={"page_snapshot": snapshot})
 
         if isinstance(decision.command, FinishCommand):
             return AgentLoopResult(
@@ -147,6 +147,16 @@ def _finish_status(outcome: AgentFinishOutcome) -> AgentLoopStatus:
 
 def _command_target(decision: AgentDecision) -> str | None:
     command = decision.command
+    if isinstance(command, (ClickVisualCommand, HoverVisualCommand)):
+        return f"{command.control_id}@({command.x_ratio:.3f},{command.y_ratio:.3f})"
+    if isinstance(command, DragVisualCommand):
+        return (
+            f"{command.control_id}@({command.start_x_ratio:.3f},"
+            f"{command.start_y_ratio:.3f})->({command.end_x_ratio:.3f},"
+            f"{command.end_y_ratio:.3f})"
+        )
+    if isinstance(command, ZoomVisualCommand):
+        return f"{command.control_id}:{command.direction}:{command.intensity}"
     for attribute in ("control_id", "url", "question", "outcome"):
         value = getattr(command, attribute, None)
         if value is not None:

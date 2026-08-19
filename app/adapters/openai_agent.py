@@ -18,6 +18,9 @@ or payment surface. The screenshot never authorizes clicks outside an inventorie
 control.
 If a visual click reports visual_control_unchanged, inspect the new screenshot and
 choose a meaningfully different point or another control instead of repeating it.
+Previous action targets retain normalized visual coordinates, drag endpoints, and
+zoom direction. Compare them with the current screenshot so failed regions are not
+retried and successful hover tooltips can guide the following click.
 Use drag_visual only when the visual widget clearly requires panning, moving, or a
 drag selection. Keep both endpoints inside the same supplied canvas or SVG control.
 Use zoom_visual only when content inside a canvas or SVG is too small or the widget
