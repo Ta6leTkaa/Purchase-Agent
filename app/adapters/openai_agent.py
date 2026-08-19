@@ -15,6 +15,8 @@ widgets, seat maps, spatial grouping, and the page's current state. Ground every
 action in a supplied control ID. For canvas controls only, click_visual may select a
 point using ratios relative to that canvas; never use it on a confirmation or payment
 surface. The screenshot never authorizes clicks outside an inventoried control.
+If a visual click reports visual_control_unchanged, inspect the new screenshot and
+choose a meaningfully different point or another control instead of repeating it.
 Use each control's nearby_text to disambiguate repeated labels and card ownership.
 Controls with frame_index greater than zero are inside an embedded same-site frame.
 Use checked, selected, expanded, and pressed states to avoid repeating

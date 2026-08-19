@@ -369,6 +369,18 @@ class PlaywrightBrowserStepRunner:
                     succeeded=False,
                     reason_code="visual_control_not_actionable",
                 )
+            try:
+                before_image = await locator.screenshot(
+                    type="png",
+                    animations="disabled",
+                    timeout=self._timeout_ms,
+                )
+            except PlaywrightError:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_not_actionable",
+                )
+            before_url = page.url
             x = bounds["x"] + bounds["width"] * command.x_ratio
             y = bounds["y"] + bounds["height"] * command.y_ratio
             popup = await self._point_click_and_capture_popup(page, x, y)
@@ -384,6 +396,21 @@ class PlaywrightBrowserStepRunner:
                 self._page = popup
                 page = popup
             await page.wait_for_timeout(300)
+            if popup is None and page.url == before_url:
+                try:
+                    after_image = await locator.screenshot(
+                        type="png",
+                        animations="disabled",
+                        timeout=self._timeout_ms,
+                    )
+                except PlaywrightError:
+                    after_image = None
+                if after_image == before_image:
+                    return CommandExecutionResult(
+                        succeeded=False,
+                        reason_code="visual_control_unchanged",
+                        page_snapshot=await self._snapshot_page(page),
+                    )
             return await self._command_succeeded(page, "visual_control_clicked")
         if isinstance(command, SelectCommand):
             if control.kind is not BrowserControlKind.SELECT:
