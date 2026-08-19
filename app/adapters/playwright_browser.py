@@ -33,6 +33,7 @@ from app.domain.browser_command import (
     ClickCommand,
     ClickVisualCommand,
     CommandExecutionResult,
+    DragVisualCommand,
     FillCommand,
     FillValueSource,
     FinishCommand,
@@ -422,6 +423,91 @@ class PlaywrightBrowserStepRunner:
                         page_snapshot=await self._snapshot_page(page),
                     )
             return await self._command_succeeded(page, "visual_control_clicked")
+        if isinstance(command, DragVisualCommand):
+            if control.kind not in {
+                BrowserControlKind.CANVAS,
+                BrowserControlKind.SVG,
+            }:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_required",
+                )
+            control_context = " ".join(
+                part for part in (control.label, control.nearby_text) if part
+            )
+            if any(
+                term in _normalize_option(control_context)
+                for term in _BLOCKED_BUTTON_TERMS
+            ):
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="irreversible_click_requires_user",
+                    page_snapshot=snapshot,
+                    requires_user=True,
+                )
+            bounds = await locator.bounding_box()
+            if bounds is None or bounds["width"] < 24 or bounds["height"] < 24:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_not_actionable",
+                )
+            try:
+                before_image = await locator.screenshot(
+                    type="png",
+                    animations="disabled",
+                    timeout=self._timeout_ms,
+                )
+            except PlaywrightError:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_not_actionable",
+                )
+            start_x = bounds["x"] + bounds["width"] * command.start_x_ratio
+            start_y = bounds["y"] + bounds["height"] * command.start_y_ratio
+            end_x = bounds["x"] + bounds["width"] * command.end_x_ratio
+            end_y = bounds["y"] + bounds["height"] * command.end_y_ratio
+            before_url = page.url
+            try:
+                await page.mouse.move(start_x, start_y)
+                await page.mouse.down()
+                try:
+                    await page.mouse.move(end_x, end_y, steps=12)
+                finally:
+                    await page.mouse.up()
+            except PlaywrightError:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_not_actionable",
+                )
+            await page.wait_for_timeout(300)
+            if not _same_origin(page.url, task.target_url):
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="cross_origin_navigation_blocked",
+                    page_snapshot=snapshot,
+                    requires_user=True,
+                )
+            if page.url == before_url:
+                try:
+                    after_image = await locator.screenshot(
+                        type="png",
+                        animations="disabled",
+                        timeout=self._timeout_ms,
+                    )
+                except PlaywrightError:
+                    after_image = None
+                if after_image is not None and not _visual_region_changed(
+                    before_image,
+                    after_image,
+                    x_ratio=command.end_x_ratio,
+                    y_ratio=command.end_y_ratio,
+                ):
+                    return CommandExecutionResult(
+                        succeeded=False,
+                        reason_code="visual_control_unchanged",
+                        page_snapshot=await self._snapshot_page(page),
+                    )
+            return await self._command_succeeded(page, "visual_control_dragged")
         if isinstance(command, SelectCommand):
             if control.kind is not BrowserControlKind.SELECT:
                 return CommandExecutionResult(

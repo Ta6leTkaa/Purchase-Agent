@@ -5,6 +5,7 @@ from app.domain.browser_command import (
     AgentDecision,
     ClickCommand,
     ClickVisualCommand,
+    DragVisualCommand,
     FillCommand,
     FillValueSource,
     OpenUrlCommand,
@@ -57,6 +58,28 @@ def test_visual_click_is_bounded_to_inner_control_area() -> None:
             control_id="control_7",
             x_ratio=1.0,
             y_ratio=0.5,
+        )
+
+
+def test_visual_drag_requires_bounded_meaningful_distance() -> None:
+    command = DragVisualCommand(
+        action="drag_visual",
+        control_id="control_7",
+        start_x_ratio=0.2,
+        start_y_ratio=0.5,
+        end_x_ratio=0.8,
+        end_y_ratio=0.5,
+    )
+
+    assert command.end_x_ratio == 0.8
+    with pytest.raises(ValidationError, match="distance"):
+        DragVisualCommand(
+            action="drag_visual",
+            control_id="control_7",
+            start_x_ratio=0.5,
+            start_y_ratio=0.5,
+            end_x_ratio=0.55,
+            end_y_ratio=0.55,
         )
 
 

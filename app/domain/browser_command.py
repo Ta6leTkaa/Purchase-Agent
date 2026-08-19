@@ -38,6 +38,24 @@ class ClickVisualCommand(_Command):
     y_ratio: float = Field(ge=0.05, le=0.95)
 
 
+class DragVisualCommand(_Command):
+    action: Literal["drag_visual"]
+    control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
+    start_x_ratio: float = Field(ge=0.05, le=0.95)
+    start_y_ratio: float = Field(ge=0.05, le=0.95)
+    end_x_ratio: float = Field(ge=0.05, le=0.95)
+    end_y_ratio: float = Field(ge=0.05, le=0.95)
+
+    @model_validator(mode="after")
+    def require_meaningful_distance(self) -> "DragVisualCommand":
+        if max(
+            abs(self.end_x_ratio - self.start_x_ratio),
+            abs(self.end_y_ratio - self.start_y_ratio),
+        ) < 0.1:
+            raise ValueError("visual drag distance must be at least 0.1")
+        return self
+
+
 class FillCommand(_Command):
     action: Literal["fill"]
     control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
@@ -131,6 +149,7 @@ class FinishCommand(_Command):
 BrowserCommand = Annotated[
     ClickCommand
     | ClickVisualCommand
+    | DragVisualCommand
     | FillCommand
     | SelectCommand
     | ScrollCommand

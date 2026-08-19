@@ -175,6 +175,74 @@ async def test_executor_clicks_bounded_point_inside_svg_map() -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_drags_inside_visual_widget_and_verifies_change() -> None:
+    page, control = _page_with_control(tag="canvas", label="Карта зала")
+    control.bounding_box = AsyncMock(
+        return_value={"x": 100, "y": 200, "width": 400, "height": 300}
+    )
+    control.screenshot = AsyncMock(side_effect=[b"before", b"after"])
+    page.mouse.move = AsyncMock()
+    page.mouse.down = AsyncMock()
+    page.mouse.up = AsyncMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "drag_visual",
+                "control_id": "control_1",
+                "start_x_ratio": 0.25,
+                "start_y_ratio": 0.5,
+                "end_x_ratio": 0.75,
+                "end_y_ratio": 0.25,
+            }
+        ),
+    )
+
+    assert result.succeeded
+    assert result.reason_code == "visual_control_dragged"
+    assert page.mouse.move.await_args_list[0].args == (200, 350)
+    page.mouse.move.assert_awaited_with(400, 275, steps=12)
+    page.mouse.down.assert_awaited_once()
+    page.mouse.up.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_executor_reports_drag_that_does_not_change_visual_widget() -> None:
+    page, control = _page_with_control(tag="svg", label="Карта зала")
+    control.bounding_box = AsyncMock(
+        return_value={"x": 0, "y": 0, "width": 400, "height": 300}
+    )
+    control.screenshot = AsyncMock(side_effect=[b"same", b"same"])
+    page.mouse.move = AsyncMock()
+    page.mouse.down = AsyncMock()
+    page.mouse.up = AsyncMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "drag_visual",
+                "control_id": "control_1",
+                "start_x_ratio": 0.2,
+                "start_y_ratio": 0.5,
+                "end_x_ratio": 0.8,
+                "end_y_ratio": 0.5,
+            }
+        ),
+    )
+
+    assert not result.succeeded
+    assert result.reason_code == "visual_control_unchanged"
+    assert result.page_snapshot is not None
+    page.mouse.up.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_executor_reports_visual_click_that_does_not_change_canvas() -> None:
     page, control = _page_with_control(tag="canvas", label="Схема мест")
     control.bounding_box = AsyncMock(
