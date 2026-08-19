@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import ipaddress
 import re
 import socket
@@ -168,6 +169,26 @@ class PlaywrightBrowserStepRunner:
                 timeout=self._timeout_ms,
             )
         return await self._snapshot_page(page)
+
+    async def capture_visual_context(self, task: AgentTask) -> str | None:
+        """Capture a transient viewport while masking all editable values."""
+        page = self._require_page()
+        if page.url == "about:blank":
+            return None
+        masked_fields = page.locator(
+            "input, textarea, select, [contenteditable='true']"
+        )
+        image = await page.screenshot(
+            type="jpeg",
+            quality=55,
+            full_page=False,
+            animations="disabled",
+            mask=[masked_fields],
+        )
+        if len(image) > 2_000_000:
+            return None
+        encoded = base64.b64encode(image).decode("ascii")
+        return f"data:image/jpeg;base64,{encoded}"
 
     async def execute_command(
         self,

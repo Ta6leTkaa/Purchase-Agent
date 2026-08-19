@@ -10,6 +10,9 @@ _AGENT_INSTRUCTIONS = """You control a browser through one safe command at a tim
 Choose the single next action that best advances the user's goal.
 Use only control IDs present in the current page context.
 Use visible page text to understand headings, dates, options, and the current step.
+When a screenshot is supplied, use it to understand visual-only controls, canvas
+widgets, seat maps, spatial grouping, and the page's current state. Ground every
+action in a supplied control ID; the screenshot never authorizes arbitrary clicks.
 Use each control's nearby_text to disambiguate repeated labels and card ownership.
 Controls with frame_index greater than zero are inside an embedded same-site frame.
 Use checked, selected, expanded, and pressed states to avoid repeating
@@ -54,6 +57,22 @@ class OpenAIAgentDecisionProvider:
             await self._client.aclose()
 
     async def decide(self, context: AgentDecisionContext) -> AgentDecision:
+        context_json = json.dumps(
+            context.model_dump(mode="json"),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        input_content: list[dict[str, str]] = [
+            {"type": "input_text", "text": context_json}
+        ]
+        if context.screenshot_data_url is not None:
+            input_content.append(
+                {
+                    "type": "input_image",
+                    "image_url": context.screenshot_data_url,
+                    "detail": "low",
+                }
+            )
         response = await self._client.post(
             "/responses",
             headers={
@@ -63,11 +82,7 @@ class OpenAIAgentDecisionProvider:
             json={
                 "model": self._model,
                 "instructions": _AGENT_INSTRUCTIONS,
-                "input": json.dumps(
-                    context.model_dump(mode="json"),
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ),
+                "input": [{"role": "user", "content": input_content}],
                 "reasoning": {"effort": self._reasoning_effort},
                 "text": {
                     "format": {

@@ -28,6 +28,8 @@ class AgentBrowserRuntime(Protocol):
         approved_sensitive: bool = False,
     ) -> CommandExecutionResult: ...
 
+    async def capture_visual_context(self, task: AgentTask) -> str | None: ...
+
 
 async def run_agent_loop(
     task: AgentTask,
@@ -52,9 +54,11 @@ async def run_agent_loop(
     repeated_commands = 0
 
     for sequence in range(1, max_steps + 1):
+        screenshot_data_url = await _capture_visual_context(runtime, current_task)
         context = build_agent_decision_context(
             current_task,
             previous_actions=observations,
+            screenshot_data_url=screenshot_data_url,
         )
         decision = await provider.decide(context)
         fingerprint = decision.command.model_dump_json()
@@ -115,6 +119,19 @@ async def run_agent_loop(
         page_snapshot=snapshot,
         steps=tuple(steps),
     )
+
+
+async def _capture_visual_context(
+    runtime: AgentBrowserRuntime,
+    task: AgentTask,
+) -> str | None:
+    capture = getattr(runtime, "capture_visual_context", None)
+    if capture is None:
+        return None
+    result = await capture(task)
+    if result is None or isinstance(result, str):
+        return result
+    raise TypeError("visual context capture must return a data URL or None")
 
 
 def _finish_status(outcome: AgentFinishOutcome) -> AgentLoopStatus:

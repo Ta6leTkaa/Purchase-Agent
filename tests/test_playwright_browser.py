@@ -84,6 +84,39 @@ async def test_local_development_can_explicitly_allow_local_address() -> None:
 
 
 @pytest.mark.asyncio
+async def test_visual_context_masks_editable_values_and_is_transient() -> None:
+    runner = PlaywrightBrowserStepRunner()
+    page_mock = MagicMock()
+    page_mock.url = "https://cinema.example.com/seats"
+    masked_fields = MagicMock()
+    page_mock.locator.return_value = masked_fields
+    page_mock.screenshot = AsyncMock(return_value=b"jpeg-image")
+    runner._page = cast(Page, page_mock)
+    task = AgentTask(
+        id=uuid4(),
+        instruction="Выбери два места",
+        target_url="https://cinema.example.com/seats",
+        person_ids=(uuid4(),),
+        created_at=NOW,
+    )
+
+    result = await runner.capture_visual_context(task)
+
+    assert result == "data:image/jpeg;base64,anBlZy1pbWFnZQ=="
+    page_mock.locator.assert_called_once_with(
+        "input, textarea, select, [contenteditable='true']"
+    )
+    page_mock.screenshot.assert_awaited_once_with(
+        type="jpeg",
+        quality=55,
+        full_page=False,
+        animations="disabled",
+        mask=[masked_fields],
+    )
+    assert task.page_snapshot is None
+
+
+@pytest.mark.asyncio
 async def test_request_guard_blocks_cross_origin_top_level_navigation() -> None:
     runner = PlaywrightBrowserStepRunner()
     runner._allowed_origin = "https://tickets.example.com"

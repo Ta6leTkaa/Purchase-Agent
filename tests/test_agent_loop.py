@@ -62,9 +62,14 @@ class ScriptedRuntime:
     def __init__(self, *results: CommandExecutionResult) -> None:
         self.results = list(results)
         self.executed: list[AgentDecision] = []
+        self.visual_context_calls = 0
 
     async def observe(self, task: AgentTask) -> BrowserPageSnapshot:
         return _snapshot()
+
+    async def capture_visual_context(self, task: AgentTask) -> str | None:
+        self.visual_context_calls += 1
+        return "data:image/jpeg;base64,dGVzdA=="
 
     async def execute_command(
         self,
@@ -108,6 +113,8 @@ async def test_loop_observes_executes_and_finishes() -> None:
     assert result.status is AgentLoopStatus.COMPLETED
     assert result.page_snapshot.title == "Checkout"
     assert len(result.steps) == 2
+    assert runtime.visual_context_calls == 2
+    assert provider.contexts[0].screenshot_data_url is not None
     assert provider.contexts[1].previous_actions[0].result == "control_clicked"
 
 

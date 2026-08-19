@@ -59,6 +59,7 @@ class AgentDecisionContext(BaseModel):
     clarifications: tuple[AgentClarification, ...] = Field(
         default=(), max_length=20
     )
+    screenshot_data_url: str | None = Field(default=None, exclude=True)
 
 
 class AgentDecisionProvider(Protocol):
@@ -69,6 +70,7 @@ def build_agent_decision_context(
     task: AgentTask,
     *,
     previous_actions: tuple[AgentActionObservation, ...] = (),
+    screenshot_data_url: str | None = None,
 ) -> AgentDecisionContext:
     if task.page_snapshot is None:
         raise ValueError("task page snapshot is required for an agent decision")
@@ -111,4 +113,5 @@ def build_agent_decision_context(
             )
             for item in task.clarifications[-20:]
         ),
+        screenshot_data_url=screenshot_data_url,
     )

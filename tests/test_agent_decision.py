@@ -157,7 +157,68 @@ async def test_openai_provider_requests_strict_structured_decision() -> None:
     assert payload["store"] is False
     assert payload["text"]["format"]["type"] == "json_schema"
     assert payload["text"]["format"]["strict"] is True
+    assert payload["input"][0]["content"][0]["type"] == "input_text"
     assert "test-openai-key" not in json.dumps(payload)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_sends_transient_visual_context() -> None:
+    captured: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": json.dumps(
+                                    {
+                                        "command": {
+                                            "action": "click",
+                                            "control_id": "control_1",
+                                        },
+                                        "rationale": "Select visual option",
+                                        "expected_result": "Page advances",
+                                    }
+                                ),
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://api.openai.com/v1",
+    )
+    provider = OpenAIAgentDecisionProvider(
+        api_key=SecretStr("test-openai-key"),
+        model="test-model",
+        client=client,
+    )
+    context = build_agent_decision_context(
+        _task(), screenshot_data_url="data:image/jpeg;base64,dGVzdA=="
+    )
+
+    await provider.decide(context)
+
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    content = payload["input"][0]["content"]
+    assert content[1] == {
+        "type": "input_image",
+        "image_url": "data:image/jpeg;base64,dGVzdA==",
+        "detail": "low",
+    }
+    assert "screenshot_data_url" not in content[0]["text"]
+    assert "dGVzdA" not in content[0]["text"]
     await client.aclose()
 
 
