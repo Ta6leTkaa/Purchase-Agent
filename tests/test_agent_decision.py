@@ -42,6 +42,8 @@ def _task() -> AgentTask:
             controls=(
                 BrowserPageControl(
                     control_id="control_1",
+                    frame_index=1,
+                    frame_url="https://cinema.example.com/widget/schedule",
                     kind=BrowserControlKind.CLICKABLE,
                     label="Завтра",
                     role="tab",
@@ -66,6 +68,8 @@ def test_context_contains_goal_and_controls_but_no_profile_values() -> None:
 
     assert context.goal.startswith("Купи билет")
     assert context.controls[0].label == "Завтра"
+    assert context.controls[0].frame_index == 1
+    assert context.controls[0].frame_url.endswith("/widget/schedule")
     assert "18 августа" in (context.controls[0].nearby_text or "")
     assert context.controls[0].selected is True
     assert context.intent["search_terms"] == ["Колобок"]

@@ -214,6 +214,67 @@ async def test_executor_closes_cross_origin_popup() -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_clicks_control_inside_same_origin_frame() -> None:
+    page, _ = _page_with_control(tag="button", label="Main action")
+    frame = MagicMock()
+    frame.url = "https://tickets.example.com/widget/sessions"
+    frame_control = MagicMock()
+    frame_control.count = AsyncMock(return_value=1)
+    frame_control.is_visible = AsyncMock(return_value=True)
+    frame_control.evaluate = AsyncMock(return_value=None)
+    frame_inventory = MagicMock()
+    frame_inventory.evaluate_all = AsyncMock(
+        return_value=[
+            {
+                "tag": "button",
+                "type": "button",
+                "role": None,
+                "name": None,
+                "label": "18:00",
+                "clickable": True,
+                "required": False,
+                "disabled": False,
+                "options": [],
+            }
+        ]
+    )
+    frame_body = MagicMock()
+    frame_body.inner_text = AsyncMock(return_value="Колобок\n18:00")
+
+    def click_frame(**kwargs: object) -> None:
+        frame_body.inner_text.return_value = "Колобок\n18:00\nВыбор мест"
+
+    frame_control.click = AsyncMock(side_effect=click_frame)
+
+    def locate_frame(selector: str) -> MagicMock:
+        if selector == "body *":
+            return frame_inventory
+        if selector == "body":
+            return frame_body
+        return frame_control
+
+    frame.locator = MagicMock(side_effect=locate_frame)
+    external_frame = MagicMock()
+    external_frame.url = "https://payments.example.net/widget"
+    page.frames = [page, frame, external_frame]
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision({"action": "click", "control_id": "control_2"}),
+    )
+
+    assert result.succeeded
+    assert result.page_snapshot is not None
+    assert result.page_snapshot.controls[1].frame_index == 1
+    assert result.page_snapshot.controls[1].frame_url == frame.url
+    assert "[Embedded frame 1]" in result.page_snapshot.visible_text
+    frame_control.click.assert_awaited_once()
+    external_frame.locator.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_executor_blocks_cross_origin_open_url() -> None:
     page, _ = _page_with_control(tag="button", label="Continue")
     runner = PlaywrightBrowserStepRunner()

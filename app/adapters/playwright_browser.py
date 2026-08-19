@@ -2,7 +2,7 @@ import asyncio
 import ipaddress
 import re
 import socket
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from difflib import SequenceMatcher
 from types import TracebackType
 from typing import Any
@@ -10,11 +10,15 @@ from urllib.parse import urlsplit
 
 from playwright.async_api import (
     Browser,
+    Frame,
     Page,
     Playwright,
     Request,
     Route,
     async_playwright,
+)
+from playwright.async_api import (
+    Error as PlaywrightError,
 )
 from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
@@ -251,7 +255,17 @@ class PlaywrightBrowserStepRunner:
                 succeeded=False,
                 reason_code="control_not_found",
             )
-        locator = page.locator(
+        control_frame = _control_frame(page, control.frame_index)
+        if control_frame is None or not _frame_is_allowed(
+            control_frame,
+            control.frame_index,
+            page.url,
+        ):
+            return CommandExecutionResult(
+                succeeded=False,
+                reason_code="control_frame_not_found",
+            )
+        locator = control_frame.locator(
             f'[data-purchase-agent-control="{control_id}"]'
         )
         if await locator.count() != 1 or not await locator.is_visible():
@@ -434,16 +448,49 @@ class PlaywrightBrowserStepRunner:
         return self._page
 
     async def _snapshot_page(self, page: Page) -> BrowserPageSnapshot:
-        visible_text = await page.locator("body").inner_text(
-            timeout=self._timeout_ms
-        )
-        visible_text = _redact_profile_values(visible_text, self._identities)
-        raw_controls: list[dict[str, Any]] = await page.locator(
-            "body *"
-        ).evaluate_all(_CONTROL_INVENTORY_SCRIPT)
+        raw_controls: list[dict[str, Any]] = []
+        text_parts: list[str] = []
+        for frame_index, frame in enumerate(_page_frames(page)[:10]):
+            if not _frame_is_allowed(frame, frame_index, page.url):
+                continue
+            try:
+                frame_text = await frame.locator("body").inner_text(
+                    timeout=self._timeout_ms
+                )
+                frame_controls: list[dict[str, Any]] = await frame.locator(
+                    "body *"
+                ).evaluate_all(
+                    _CONTROL_INVENTORY_SCRIPT,
+                    len(raw_controls),
+                )
+            except PlaywrightError:
+                if frame_index == 0:
+                    raise
+                continue
+            frame_text = _redact_profile_values(frame_text, self._identities)
+            if frame_index == 0:
+                text_parts.append(frame_text)
+            elif frame_text:
+                text_parts.append(f"[Embedded frame {frame_index}]\n{frame_text}")
+            raw_controls.extend(
+                {
+                    **item,
+                    "frameIndex": frame_index,
+                    "frameUrl": frame.url,
+                }
+                for item in frame_controls[: 300 - len(raw_controls)]
+            )
+            if len(raw_controls) >= 300:
+                break
         controls = tuple(
             BrowserPageControl(
                 control_id=f"control_{index}",
+                frame_index=int(item.get("frameIndex", 0)),
+                frame_url=(
+                    str(item["frameUrl"])
+                    if item.get("frameIndex", 0) > 0 and item.get("frameUrl")
+                    else None
+                ),
                 kind=_control_kind(item),
                 label=str(
                     item.get("label")
@@ -473,7 +520,7 @@ class PlaywrightBrowserStepRunner:
             title=await page.title() or "Untitled page",
             captured_at=utc_now(),
             controls=controls,
-            visible_text=visible_text,
+            visible_text="\n".join(text_parts),
         )
 
     async def _fill_basic_profile(
@@ -1049,6 +1096,30 @@ def _normalize_fuzzy_text(value: str) -> str:
     return " ".join(re.findall(r"[\w]+", value.casefold().replace("ё", "е")))
 
 
+def _page_frames(page: Page) -> Sequence[Frame | Page]:
+    frames = page.frames
+    if isinstance(frames, list) and frames:
+        return frames
+    return [page]
+
+
+def _control_frame(page: Page, frame_index: int) -> Frame | Page | None:
+    frames = _page_frames(page)
+    return frames[frame_index] if frame_index < len(frames) else None
+
+
+def _frame_is_allowed(
+    frame: Frame | Page,
+    frame_index: int,
+    page_url: str,
+) -> bool:
+    return (
+        frame_index == 0
+        or frame.url == "about:blank"
+        or _same_origin(frame.url, page_url)
+    )
+
+
 def _snapshot_fingerprint(snapshot: BrowserPageSnapshot) -> tuple[object, ...]:
     return (
         snapshot.url,
@@ -1157,7 +1228,7 @@ _ANNOTATED_CONTROL_SELECTOR = "[data-purchase-agent-control]"
 
 
 _CONTROL_INVENTORY_SCRIPT = """
-elements => elements
+(elements, offset) => elements
   .filter(element => {
     if (element.getClientRects().length === 0) return false;
     const tag = element.tagName.toLowerCase();
@@ -1228,7 +1299,10 @@ elements => elements
   .filter(item => item.label)
   .slice(0, 300)
   .map((item, index) => {
-    item.element.setAttribute('data-purchase-agent-control', `control_${index + 1}`);
+    item.element.setAttribute(
+      'data-purchase-agent-control',
+      `control_${offset + index + 1}`
+    );
     delete item.element;
     return item;
   })

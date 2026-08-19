@@ -11,6 +11,8 @@ class AgentVisibleControl(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     control_id: str
+    frame_index: int = Field(default=0, ge=0, le=9)
+    frame_url: str | None = Field(default=None, max_length=2_048)
     kind: BrowserControlKind
     label: str
     role: str | None = None
@@ -86,6 +88,8 @@ def build_agent_decision_context(
         controls=tuple(
             AgentVisibleControl(
                 control_id=control.control_id,
+                frame_index=control.frame_index,
+                frame_url=control.frame_url,
                 kind=control.kind,
                 label=control.label,
                 role=control.role,

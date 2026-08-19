@@ -25,6 +25,8 @@ class BrowserPageControl(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
+    frame_index: int = Field(default=0, ge=0, le=9)
+    frame_url: str | None = Field(default=None, max_length=2_048)
     kind: BrowserControlKind
     label: str = Field(min_length=1, max_length=200)
     field_name: str | None = Field(default=None, max_length=200)
@@ -46,7 +48,7 @@ class BrowserPageControl(BaseModel):
             raise ValueError("control label must not be blank")
         return normalized
 
-    @field_validator("field_name", "role", "nearby_text")
+    @field_validator("field_name", "role", "nearby_text", "frame_url")
     @classmethod
     def normalize_field_name(cls, value: str | None) -> str | None:
         if value is None:
