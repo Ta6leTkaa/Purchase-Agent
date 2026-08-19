@@ -12,6 +12,7 @@ from playwright.async_api import Page
 from app.adapters.playwright_browser import (
     PlaywrightBrowserStepRunner,
     _best_matching_link,
+    _control_kind,
     _fuzzy_label_score,
     _is_safe_review_button,
     _redact_profile_values,
@@ -153,6 +154,10 @@ def test_visual_change_detection_accepts_selection_near_click() -> None:
         x_ratio=0.75,
         y_ratio=0.75,
     )
+
+
+def test_control_kind_recognizes_svg_visual_surface() -> None:
+    assert _control_kind({"tag": "svg"}) is BrowserControlKind.SVG
 
 
 @pytest.mark.asyncio

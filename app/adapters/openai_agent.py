@@ -10,11 +10,12 @@ _AGENT_INSTRUCTIONS = """You control a browser through one safe command at a tim
 Choose the single next action that best advances the user's goal.
 Use only control IDs present in the current page context.
 Use visible page text to understand headings, dates, options, and the current step.
-When a screenshot is supplied, use it to understand visual-only controls, canvas
-widgets, seat maps, spatial grouping, and the page's current state. Ground every
-action in a supplied control ID. For canvas controls only, click_visual may select a
-point using ratios relative to that canvas; never use it on a confirmation or payment
-surface. The screenshot never authorizes clicks outside an inventoried control.
+When a screenshot is supplied, use it to understand visual-only controls, canvas and
+SVG widgets, seat maps, spatial grouping, and the page's current state. Ground every
+action in a supplied control ID. For canvas and SVG controls only, click_visual may
+select a point using ratios relative to that widget; never use it on a confirmation
+or payment surface. The screenshot never authorizes clicks outside an inventoried
+control.
 If a visual click reports visual_control_unchanged, inspect the new screenshot and
 choose a meaningfully different point or another control instead of repeating it.
 Use each control's nearby_text to disambiguate repeated labels and card ownership.

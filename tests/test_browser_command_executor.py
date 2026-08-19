@@ -145,6 +145,36 @@ async def test_executor_clicks_bounded_point_inside_canvas() -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_clicks_bounded_point_inside_svg_map() -> None:
+    page, control = _page_with_control(tag="svg", label="Схема зала")
+    control.bounding_box = AsyncMock(
+        return_value={"x": 50, "y": 100, "width": 500, "height": 400}
+    )
+    control.screenshot = AsyncMock(side_effect=[b"before", b"after"])
+    page.mouse.click = AsyncMock()
+    page.on = MagicMock()
+    page.remove_listener = MagicMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "click_visual",
+                "control_id": "control_1",
+                "x_ratio": 0.5,
+                "y_ratio": 0.25,
+            }
+        ),
+    )
+
+    assert result.succeeded
+    assert result.reason_code == "visual_control_clicked"
+    page.mouse.click.assert_awaited_once_with(300, 200)
+
+
+@pytest.mark.asyncio
 async def test_executor_reports_visual_click_that_does_not_change_canvas() -> None:
     page, control = _page_with_control(tag="canvas", label="Схема мест")
     control.bounding_box = AsyncMock(

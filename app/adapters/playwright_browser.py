@@ -347,7 +347,10 @@ class PlaywrightBrowserStepRunner:
                 require_progress=True,
             )
         if isinstance(command, ClickVisualCommand):
-            if control.kind is not BrowserControlKind.CANVAS:
+            if control.kind not in {
+                BrowserControlKind.CANVAS,
+                BrowserControlKind.SVG,
+            }:
                 return CommandExecutionResult(
                     succeeded=False,
                     reason_code="visual_control_required",
@@ -1085,6 +1088,8 @@ def _control_kind(item: dict[str, Any]) -> BrowserControlKind:
     role = str(item.get("role", "")).casefold()
     if tag == "canvas":
         return BrowserControlKind.CANVAS
+    if tag == "svg":
+        return BrowserControlKind.SVG
     if tag == "select":
         return BrowserControlKind.SELECT
     if (
@@ -1408,9 +1413,14 @@ _CONTROL_INVENTORY_SCRIPT = """
     if (element.getClientRects().length === 0) return false;
     const tag = element.tagName.toLowerCase();
     const role = (element.getAttribute('role') || '').toLowerCase();
+    const visual = tag === 'canvas' || (
+      tag === 'svg' &&
+      element.getBoundingClientRect().width >= 120 &&
+      element.getBoundingClientRect().height >= 120
+    );
     const native = [
-      'input', 'select', 'textarea', 'button', 'a', 'canvas'
-    ].includes(tag);
+      'input', 'select', 'textarea', 'button', 'a'
+    ].includes(tag) || visual;
     const semantic = [
       'button', 'link', 'tab', 'option', 'menuitem', 'switch'
     ].includes(role);
@@ -1434,7 +1444,8 @@ _CONTROL_INVENTORY_SCRIPT = """
       element.innerText ||
       element.getAttribute('name') ||
       element.id ||
-      (element.tagName === 'CANVAS' ? 'Visual canvas' : '')
+      (element.tagName === 'CANVAS' ? 'Visual canvas' : '') ||
+      (element.tagName.toLowerCase() === 'svg' ? 'Visual SVG' : '')
     );
     const semanticContainer = element.closest(
       'article, li, tr, form, fieldset, [role="listitem"], [role="row"], section'

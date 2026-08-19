@@ -17,6 +17,7 @@ class BrowserControlKind(StrEnum):
     LINK = "link"
     CLICKABLE = "clickable"
     CANVAS = "canvas"
+    SVG = "svg"
     OTHER = "other"
 
 
