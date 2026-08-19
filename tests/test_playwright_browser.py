@@ -1,10 +1,12 @@
 import ipaddress
 from datetime import UTC, date, datetime
+from io import BytesIO
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from PIL import Image, ImageDraw
 from playwright.async_api import Page
 
 from app.adapters.playwright_browser import (
@@ -14,6 +16,7 @@ from app.adapters.playwright_browser import (
     _is_safe_review_button,
     _redact_profile_values,
     _unique_matching_option,
+    _visual_region_changed,
     validate_browser_url,
 )
 from app.domain.browser_page import (
@@ -28,6 +31,18 @@ from app.domain.task_permission import BrowserAction
 from app.domain.task_plan import TaskPlanStep
 
 NOW = datetime(2026, 8, 14, 12, tzinfo=UTC)
+
+
+def _png_image(
+    *,
+    changed_box: tuple[int, int, int, int] | None = None,
+) -> bytes:
+    image = Image.new("RGB", (200, 200), "white")
+    if changed_box is not None:
+        ImageDraw.Draw(image).rectangle(changed_box, fill="black")
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
 async def public_resolver(
@@ -114,6 +129,30 @@ async def test_visual_context_masks_editable_values_and_is_transient() -> None:
         mask=[masked_fields],
     )
     assert task.page_snapshot is None
+
+
+def test_visual_change_detection_ignores_animation_away_from_click() -> None:
+    before = _png_image()
+    after = _png_image(changed_box=(0, 0, 20, 20))
+
+    assert not _visual_region_changed(
+        before,
+        after,
+        x_ratio=0.75,
+        y_ratio=0.75,
+    )
+
+
+def test_visual_change_detection_accepts_selection_near_click() -> None:
+    before = _png_image()
+    after = _png_image(changed_box=(130, 130, 170, 170))
+
+    assert _visual_region_changed(
+        before,
+        after,
+        x_ratio=0.75,
+        y_ratio=0.75,
+    )
 
 
 @pytest.mark.asyncio

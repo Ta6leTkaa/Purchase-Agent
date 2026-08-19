@@ -5,10 +5,12 @@ import re
 import socket
 from collections.abc import Awaitable, Callable, Sequence
 from difflib import SequenceMatcher
+from io import BytesIO
 from types import TracebackType
 from typing import Any
 from urllib.parse import urlsplit
 
+from PIL import Image, ImageChops, UnidentifiedImageError
 from playwright.async_api import (
     Browser,
     Frame,
@@ -405,7 +407,12 @@ class PlaywrightBrowserStepRunner:
                     )
                 except PlaywrightError:
                     after_image = None
-                if after_image == before_image:
+                if after_image is not None and not _visual_region_changed(
+                    before_image,
+                    after_image,
+                    x_ratio=command.x_ratio,
+                    y_ratio=command.y_ratio,
+                ):
                     return CommandExecutionResult(
                         succeeded=False,
                         reason_code="visual_control_unchanged",
@@ -1107,6 +1114,51 @@ def _control_kind(item: dict[str, Any]) -> BrowserControlKind:
     if role in {"tab", "option", "menuitem", "switch"} or item.get("clickable"):
         return BrowserControlKind.CLICKABLE
     return BrowserControlKind.OTHER
+
+
+def _visual_region_changed(
+    before: bytes,
+    after: bytes,
+    *,
+    x_ratio: float,
+    y_ratio: float,
+    threshold: float = 0.015,
+) -> bool:
+    """Compare a local area around the click and ignore unrelated animation."""
+    if before == after:
+        return False
+    try:
+        with Image.open(BytesIO(before)) as before_source:
+            before_image = before_source.convert("RGB")
+        with Image.open(BytesIO(after)) as after_source:
+            after_image = after_source.convert("RGB")
+    except (UnidentifiedImageError, OSError):
+        return True
+    if before_image.size != after_image.size:
+        return True
+    width, height = before_image.size
+    radius = max(8, round(min(width, height) * 0.12))
+    center_x = round(width * x_ratio)
+    center_y = round(height * y_ratio)
+    crop_box = (
+        max(0, center_x - radius),
+        max(0, center_y - radius),
+        min(width, center_x + radius),
+        min(height, center_y + radius),
+    )
+    sample_size = (32, 32)
+    before_sample = before_image.crop(crop_box).resize(
+        sample_size, Image.Resampling.BILINEAR
+    )
+    after_sample = after_image.crop(crop_box).resize(
+        sample_size, Image.Resampling.BILINEAR
+    )
+    histogram = ImageChops.difference(before_sample, after_sample).histogram()
+    total_difference = sum(
+        (index % 256) * count for index, count in enumerate(histogram)
+    )
+    maximum_difference = sample_size[0] * sample_size[1] * 3 * 255
+    return total_difference / maximum_difference >= threshold
 
 
 def _profile_value(identity: Identity, field: ProfileField) -> str | None:
