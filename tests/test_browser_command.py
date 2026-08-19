@@ -8,6 +8,7 @@ from app.domain.browser_command import (
     DragVisualCommand,
     FillCommand,
     FillValueSource,
+    HoverVisualCommand,
     OpenUrlCommand,
     ZoomVisualCommand,
 )
@@ -58,6 +59,24 @@ def test_visual_click_is_bounded_to_inner_control_area() -> None:
             action="click_visual",
             control_id="control_7",
             x_ratio=1.0,
+            y_ratio=0.5,
+        )
+
+
+def test_visual_hover_is_bounded_to_inner_control_area() -> None:
+    command = HoverVisualCommand(
+        action="hover_visual",
+        control_id="control_7",
+        x_ratio=0.4,
+        y_ratio=0.6,
+    )
+
+    assert command.y_ratio == 0.6
+    with pytest.raises(ValidationError):
+        HoverVisualCommand(
+            action="hover_visual",
+            control_id="control_7",
+            x_ratio=0.01,
             y_ratio=0.5,
         )
 

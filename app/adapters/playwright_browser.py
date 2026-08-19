@@ -38,6 +38,7 @@ from app.domain.browser_command import (
     FillValueSource,
     FinishCommand,
     GoBackCommand,
+    HoverVisualCommand,
     OpenUrlCommand,
     ScrollCommand,
     SelectCommand,
@@ -591,6 +592,63 @@ class PlaywrightBrowserStepRunner:
                     page_snapshot=await self._snapshot_page(page),
                 )
             return await self._command_succeeded(page, "visual_control_zoomed")
+        if isinstance(command, HoverVisualCommand):
+            if control.kind not in {
+                BrowserControlKind.CANVAS,
+                BrowserControlKind.SVG,
+            }:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_required",
+                )
+            bounds = await locator.bounding_box()
+            if bounds is None or bounds["width"] < 24 or bounds["height"] < 24:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_not_actionable",
+                )
+            try:
+                before_image = await locator.screenshot(
+                    type="png",
+                    animations="disabled",
+                    timeout=self._timeout_ms,
+                )
+                x = bounds["x"] + bounds["width"] * command.x_ratio
+                y = bounds["y"] + bounds["height"] * command.y_ratio
+                await page.mouse.move(x, y)
+                await page.wait_for_timeout(400)
+                after_image = await locator.screenshot(
+                    type="png",
+                    animations="disabled",
+                    timeout=self._timeout_ms,
+                )
+            except PlaywrightError:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_not_actionable",
+                )
+            after_snapshot = await self._snapshot_page(page)
+            image_changed = _visual_region_changed(
+                before_image,
+                after_image,
+                x_ratio=command.x_ratio,
+                y_ratio=command.y_ratio,
+            )
+            page_context_changed = (
+                _snapshot_fingerprint(after_snapshot)
+                != _snapshot_fingerprint(snapshot)
+            )
+            if not image_changed and not page_context_changed:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_unchanged",
+                    page_snapshot=after_snapshot,
+                )
+            return CommandExecutionResult(
+                succeeded=True,
+                reason_code="visual_control_hovered",
+                page_snapshot=after_snapshot,
+            )
         if isinstance(command, SelectCommand):
             if control.kind is not BrowserControlKind.SELECT:
                 return CommandExecutionResult(

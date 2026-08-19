@@ -310,6 +310,62 @@ async def test_executor_restores_page_scroll_when_widget_does_not_zoom() -> None
 
 
 @pytest.mark.asyncio
+async def test_executor_hovers_visual_option_and_detects_tooltip() -> None:
+    page, control = _page_with_control(tag="canvas", label="Схема мест")
+    control.bounding_box = AsyncMock(
+        return_value={"x": 100, "y": 200, "width": 400, "height": 300}
+    )
+    control.screenshot = AsyncMock(side_effect=[b"before", b"after"])
+    page.mouse.move = AsyncMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "hover_visual",
+                "control_id": "control_1",
+                "x_ratio": 0.25,
+                "y_ratio": 0.75,
+            }
+        ),
+    )
+
+    assert result.succeeded
+    assert result.reason_code == "visual_control_hovered"
+    page.mouse.move.assert_awaited_once_with(200, 425)
+
+
+@pytest.mark.asyncio
+async def test_executor_reports_hover_without_visual_or_context_change() -> None:
+    page, control = _page_with_control(tag="svg", label="Схема мест")
+    control.bounding_box = AsyncMock(
+        return_value={"x": 0, "y": 0, "width": 400, "height": 300}
+    )
+    control.screenshot = AsyncMock(side_effect=[b"same", b"same"])
+    page.mouse.move = AsyncMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "hover_visual",
+                "control_id": "control_1",
+                "x_ratio": 0.5,
+                "y_ratio": 0.5,
+            }
+        ),
+    )
+
+    assert not result.succeeded
+    assert result.reason_code == "visual_control_unchanged"
+    assert result.page_snapshot is not None
+
+
+@pytest.mark.asyncio
 async def test_executor_reports_visual_click_that_does_not_change_canvas() -> None:
     page, control = _page_with_control(tag="canvas", label="Схема мест")
     control.bounding_box = AsyncMock(

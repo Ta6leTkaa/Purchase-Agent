@@ -38,6 +38,13 @@ class ClickVisualCommand(_Command):
     y_ratio: float = Field(ge=0.05, le=0.95)
 
 
+class HoverVisualCommand(_Command):
+    action: Literal["hover_visual"]
+    control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
+    x_ratio: float = Field(ge=0.05, le=0.95)
+    y_ratio: float = Field(ge=0.05, le=0.95)
+
+
 class DragVisualCommand(_Command):
     action: Literal["drag_visual"]
     control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
@@ -156,6 +163,7 @@ class FinishCommand(_Command):
 BrowserCommand = Annotated[
     ClickCommand
     | ClickVisualCommand
+    | HoverVisualCommand
     | DragVisualCommand
     | ZoomVisualCommand
     | FillCommand
