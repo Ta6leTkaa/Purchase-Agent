@@ -31,6 +31,13 @@ class ClickCommand(_Command):
     control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
 
 
+class ClickVisualCommand(_Command):
+    action: Literal["click_visual"]
+    control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
+    x_ratio: float = Field(ge=0.05, le=0.95)
+    y_ratio: float = Field(ge=0.05, le=0.95)
+
+
 class FillCommand(_Command):
     action: Literal["fill"]
     control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
@@ -123,6 +130,7 @@ class FinishCommand(_Command):
 
 BrowserCommand = Annotated[
     ClickCommand
+    | ClickVisualCommand
     | FillCommand
     | SelectCommand
     | ScrollCommand

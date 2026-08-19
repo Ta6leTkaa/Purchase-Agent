@@ -113,6 +113,87 @@ async def test_executor_clicks_custom_interactive_control() -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_clicks_bounded_point_inside_canvas() -> None:
+    page, control = _page_with_control(tag="canvas", label="Схема мест")
+    control.bounding_box = AsyncMock(
+        return_value={"x": 100, "y": 200, "width": 400, "height": 300}
+    )
+    page.mouse.click = AsyncMock()
+    page.on = MagicMock()
+    page.remove_listener = MagicMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "click_visual",
+                "control_id": "control_1",
+                "x_ratio": 0.25,
+                "y_ratio": 0.5,
+            }
+        ),
+    )
+
+    assert result.succeeded
+    assert result.reason_code == "visual_control_clicked"
+    page.mouse.click.assert_awaited_once_with(200, 350)
+    control.click.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_executor_rejects_visual_click_for_regular_control() -> None:
+    page, control = _page_with_control(tag="button", label="Выбрать")
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "click_visual",
+                "control_id": "control_1",
+                "x_ratio": 0.5,
+                "y_ratio": 0.5,
+            }
+        ),
+    )
+
+    assert not result.succeeded
+    assert result.reason_code == "visual_control_required"
+    control.click.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_executor_blocks_visual_click_on_payment_canvas() -> None:
+    page, control = _page_with_control(tag="canvas", label="Оплатить заказ")
+    control.bounding_box = AsyncMock(
+        return_value={"x": 0, "y": 0, "width": 400, "height": 300}
+    )
+    page.mouse.click = AsyncMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "click_visual",
+                "control_id": "control_1",
+                "x_ratio": 0.5,
+                "y_ratio": 0.5,
+            }
+        ),
+    )
+
+    assert not result.succeeded
+    assert result.requires_user
+    assert result.reason_code == "irreversible_click_requires_user"
+    page.mouse.click.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_executor_blocks_irreversible_click() -> None:
     page, control = _page_with_control(
         tag="button",

@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from app.domain.browser_command import (
     AgentDecision,
     ClickCommand,
+    ClickVisualCommand,
     FillCommand,
     FillValueSource,
     OpenUrlCommand,
@@ -38,6 +39,24 @@ def test_literal_fill_requires_bounded_explicit_value() -> None:
             action="fill",
             control_id="control_3",
             value_source=FillValueSource.LITERAL,
+        )
+
+
+def test_visual_click_is_bounded_to_inner_control_area() -> None:
+    command = ClickVisualCommand(
+        action="click_visual",
+        control_id="control_7",
+        x_ratio=0.5,
+        y_ratio=0.75,
+    )
+
+    assert command.x_ratio == 0.5
+    with pytest.raises(ValidationError):
+        ClickVisualCommand(
+            action="click_visual",
+            control_id="control_7",
+            x_ratio=1.0,
+            y_ratio=0.5,
         )
 
 

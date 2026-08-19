@@ -16,6 +16,7 @@ class BrowserControlKind(StrEnum):
     BUTTON = "button"
     LINK = "link"
     CLICKABLE = "clickable"
+    CANVAS = "canvas"
     OTHER = "other"
 
 

@@ -29,6 +29,7 @@ from app.domain.browser_command import (
     AgentDecision,
     AskUserCommand,
     ClickCommand,
+    ClickVisualCommand,
     CommandExecutionResult,
     FillCommand,
     FillValueSource,
@@ -343,6 +344,47 @@ class PlaywrightBrowserStepRunner:
                 previous_snapshot=snapshot,
                 require_progress=True,
             )
+        if isinstance(command, ClickVisualCommand):
+            if control.kind is not BrowserControlKind.CANVAS:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_required",
+                )
+            control_context = " ".join(
+                part for part in (control.label, control.nearby_text) if part
+            )
+            if any(
+                term in _normalize_option(control_context)
+                for term in _BLOCKED_BUTTON_TERMS
+            ):
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="irreversible_click_requires_user",
+                    page_snapshot=snapshot,
+                    requires_user=True,
+                )
+            bounds = await locator.bounding_box()
+            if bounds is None or bounds["width"] < 24 or bounds["height"] < 24:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_not_actionable",
+                )
+            x = bounds["x"] + bounds["width"] * command.x_ratio
+            y = bounds["y"] + bounds["height"] * command.y_ratio
+            popup = await self._point_click_and_capture_popup(page, x, y)
+            if popup is not None:
+                if not _same_origin(popup.url, task.target_url):
+                    await popup.close()
+                    return CommandExecutionResult(
+                        succeeded=False,
+                        reason_code="cross_origin_popup_blocked",
+                        page_snapshot=snapshot,
+                        requires_user=True,
+                    )
+                self._page = popup
+                page = popup
+            await page.wait_for_timeout(300)
+            return await self._command_succeeded(page, "visual_control_clicked")
         if isinstance(command, SelectCommand):
             if control.kind is not BrowserControlKind.SELECT:
                 return CommandExecutionResult(
@@ -404,6 +446,37 @@ class PlaywrightBrowserStepRunner:
         page.on("popup", capture_popup)
         try:
             await locator.click(timeout=self._timeout_ms)
+            await page.wait_for_timeout(300)
+        finally:
+            page.remove_listener("popup", capture_popup)
+        if not popups:
+            return None
+        popup = popups[-1]
+        for extra in popups[:-1]:
+            await extra.close()
+        try:
+            await popup.wait_for_load_state(
+                "domcontentloaded",
+                timeout=min(self._timeout_ms, 5_000),
+            )
+        except PlaywrightTimeoutError:
+            pass
+        return popup
+
+    async def _point_click_and_capture_popup(
+        self,
+        page: Page,
+        x: float,
+        y: float,
+    ) -> Page | None:
+        popups: list[Page] = []
+
+        def capture_popup(popup: Page) -> None:
+            popups.append(popup)
+
+        page.on("popup", capture_popup)
+        try:
+            await page.mouse.click(x, y)
             await page.wait_for_timeout(300)
         finally:
             page.remove_listener("popup", capture_popup)
@@ -976,6 +1049,8 @@ def _control_kind(item: dict[str, Any]) -> BrowserControlKind:
     tag = str(item.get("tag", "")).casefold()
     input_type = str(item.get("type", "")).casefold()
     role = str(item.get("role", "")).casefold()
+    if tag == "canvas":
+        return BrowserControlKind.CANVAS
     if tag == "select":
         return BrowserControlKind.SELECT
     if (
@@ -1254,7 +1329,9 @@ _CONTROL_INVENTORY_SCRIPT = """
     if (element.getClientRects().length === 0) return false;
     const tag = element.tagName.toLowerCase();
     const role = (element.getAttribute('role') || '').toLowerCase();
-    const native = ['input', 'select', 'textarea', 'button', 'a'].includes(tag);
+    const native = [
+      'input', 'select', 'textarea', 'button', 'a', 'canvas'
+    ].includes(tag);
     const semantic = [
       'button', 'link', 'tab', 'option', 'menuitem', 'switch'
     ].includes(role);
@@ -1277,7 +1354,8 @@ _CONTROL_INVENTORY_SCRIPT = """
       element.getAttribute('placeholder') ||
       element.innerText ||
       element.getAttribute('name') ||
-      element.id
+      element.id ||
+      (element.tagName === 'CANVAS' ? 'Visual canvas' : '')
     );
     const semanticContainer = element.closest(
       'article, li, tr, form, fieldset, [role="listitem"], [role="row"], section'
