@@ -9,6 +9,7 @@ from app.domain.browser_command import (
     FillCommand,
     FillValueSource,
     OpenUrlCommand,
+    ZoomVisualCommand,
 )
 
 
@@ -80,6 +81,24 @@ def test_visual_drag_requires_bounded_meaningful_distance() -> None:
             start_y_ratio=0.5,
             end_x_ratio=0.55,
             end_y_ratio=0.55,
+        )
+
+
+def test_visual_zoom_has_bounded_intensity() -> None:
+    command = ZoomVisualCommand(
+        action="zoom_visual",
+        control_id="control_7",
+        direction="in",
+        intensity=2,
+    )
+
+    assert command.direction == "in"
+    with pytest.raises(ValidationError):
+        ZoomVisualCommand(
+            action="zoom_visual",
+            control_id="control_7",
+            direction="in",
+            intensity=4,
         )
 
 

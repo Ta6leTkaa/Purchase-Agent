@@ -42,6 +42,7 @@ from app.domain.browser_command import (
     ScrollCommand,
     SelectCommand,
     WaitCommand,
+    ZoomVisualCommand,
 )
 from app.domain.browser_page import (
     BrowserControlKind,
@@ -508,6 +509,88 @@ class PlaywrightBrowserStepRunner:
                         page_snapshot=await self._snapshot_page(page),
                     )
             return await self._command_succeeded(page, "visual_control_dragged")
+        if isinstance(command, ZoomVisualCommand):
+            if control.kind not in {
+                BrowserControlKind.CANVAS,
+                BrowserControlKind.SVG,
+            }:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_required",
+                )
+            control_context = " ".join(
+                part for part in (control.label, control.nearby_text) if part
+            )
+            if any(
+                term in _normalize_option(control_context)
+                for term in _BLOCKED_BUTTON_TERMS
+            ):
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="irreversible_click_requires_user",
+                    page_snapshot=snapshot,
+                    requires_user=True,
+                )
+            bounds = await locator.bounding_box()
+            if bounds is None or bounds["width"] < 24 or bounds["height"] < 24:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_not_actionable",
+                )
+            try:
+                before_image = await locator.screenshot(
+                    type="png",
+                    animations="disabled",
+                    timeout=self._timeout_ms,
+                )
+                scroll_position = await page.evaluate(
+                    "() => ({ x: window.scrollX, y: window.scrollY })"
+                )
+                center_x = bounds["x"] + bounds["width"] * 0.5
+                center_y = bounds["y"] + bounds["height"] * 0.5
+                await page.mouse.move(center_x, center_y)
+                delta = 300 * command.intensity
+                await page.mouse.wheel(
+                    0,
+                    -delta if command.direction == "in" else delta,
+                )
+            except PlaywrightError:
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_not_actionable",
+                )
+            await page.wait_for_timeout(300)
+            if not _same_origin(page.url, task.target_url):
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="cross_origin_navigation_blocked",
+                    page_snapshot=snapshot,
+                    requires_user=True,
+                )
+            try:
+                after_image = await locator.screenshot(
+                    type="png",
+                    animations="disabled",
+                    timeout=self._timeout_ms,
+                )
+            except PlaywrightError:
+                after_image = None
+            if after_image is not None and not _visual_region_changed(
+                before_image,
+                after_image,
+                x_ratio=0.5,
+                y_ratio=0.5,
+            ):
+                await page.evaluate(
+                    "position => window.scrollTo(position.x, position.y)",
+                    scroll_position,
+                )
+                return CommandExecutionResult(
+                    succeeded=False,
+                    reason_code="visual_control_unchanged",
+                    page_snapshot=await self._snapshot_page(page),
+                )
+            return await self._command_succeeded(page, "visual_control_zoomed")
         if isinstance(command, SelectCommand):
             if control.kind is not BrowserControlKind.SELECT:
                 return CommandExecutionResult(

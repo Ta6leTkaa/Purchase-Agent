@@ -243,6 +243,73 @@ async def test_executor_reports_drag_that_does_not_change_visual_widget() -> Non
 
 
 @pytest.mark.asyncio
+async def test_executor_zooms_visual_widget_under_pointer() -> None:
+    page, control = _page_with_control(tag="canvas", label="Карта зала")
+    control.bounding_box = AsyncMock(
+        return_value={"x": 100, "y": 200, "width": 400, "height": 300}
+    )
+    control.screenshot = AsyncMock(side_effect=[b"before", b"after"])
+    page.evaluate = AsyncMock(return_value={"x": 0, "y": 120})
+    page.mouse.move = AsyncMock()
+    page.mouse.wheel = AsyncMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "zoom_visual",
+                "control_id": "control_1",
+                "direction": "in",
+                "intensity": 2,
+            }
+        ),
+    )
+
+    assert result.succeeded
+    assert result.reason_code == "visual_control_zoomed"
+    page.mouse.move.assert_awaited_once_with(300, 350)
+    page.mouse.wheel.assert_awaited_once_with(0, -600)
+    assert page.evaluate.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_executor_restores_page_scroll_when_widget_does_not_zoom() -> None:
+    page, control = _page_with_control(tag="svg", label="Карта зала")
+    control.bounding_box = AsyncMock(
+        return_value={"x": 0, "y": 100, "width": 400, "height": 300}
+    )
+    control.screenshot = AsyncMock(side_effect=[b"same", b"same"])
+    scroll_position = {"x": 0, "y": 400}
+    page.evaluate = AsyncMock(return_value=scroll_position)
+    page.mouse.move = AsyncMock()
+    page.mouse.wheel = AsyncMock()
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision(
+            {
+                "action": "zoom_visual",
+                "control_id": "control_1",
+                "direction": "out",
+                "intensity": 1,
+            }
+        ),
+    )
+
+    assert not result.succeeded
+    assert result.reason_code == "visual_control_unchanged"
+    page.mouse.wheel.assert_awaited_once_with(0, 300)
+    page.evaluate.assert_awaited_with(
+        "position => window.scrollTo(position.x, position.y)",
+        scroll_position,
+    )
+
+
+@pytest.mark.asyncio
 async def test_executor_reports_visual_click_that_does_not_change_canvas() -> None:
     page, control = _page_with_control(tag="canvas", label="Схема мест")
     control.bounding_box = AsyncMock(

@@ -56,6 +56,13 @@ class DragVisualCommand(_Command):
         return self
 
 
+class ZoomVisualCommand(_Command):
+    action: Literal["zoom_visual"]
+    control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
+    direction: Literal["in", "out"]
+    intensity: int = Field(default=1, ge=1, le=3)
+
+
 class FillCommand(_Command):
     action: Literal["fill"]
     control_id: str = Field(pattern=r"^control_[1-9][0-9]*$", max_length=32)
@@ -150,6 +157,7 @@ BrowserCommand = Annotated[
     ClickCommand
     | ClickVisualCommand
     | DragVisualCommand
+    | ZoomVisualCommand
     | FillCommand
     | SelectCommand
     | ScrollCommand

@@ -20,6 +20,8 @@ If a visual click reports visual_control_unchanged, inspect the new screenshot a
 choose a meaningfully different point or another control instead of repeating it.
 Use drag_visual only when the visual widget clearly requires panning, moving, or a
 drag selection. Keep both endpoints inside the same supplied canvas or SVG control.
+Use zoom_visual only when content inside a canvas or SVG is too small or the widget
+clearly supports map-style zooming. Start with intensity 1 and inspect the result.
 Use each control's nearby_text to disambiguate repeated labels and card ownership.
 Controls with frame_index greater than zero are inside an embedded same-site frame.
 Use checked, selected, expanded, and pressed states to avoid repeating
