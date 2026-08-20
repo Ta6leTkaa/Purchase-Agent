@@ -80,6 +80,7 @@ def test_context_contains_goal_and_controls_but_no_profile_values() -> None:
     assert context.page_stage is AgentPageStage.FORM_ENTRY
     assert context.controls[0].field_name is None
     assert context.controls[1].field_name == "first_name"
+    assert context.controls[0].goal_match_score < 0.1
     assert "18:00" in context.visible_text
     assert "first_name" in serialized
     assert "document_number" not in serialized
@@ -116,6 +117,29 @@ def test_page_stage_uses_generic_interaction_signals(
     )
 
     assert classify_agent_page_stage(snapshot) is expected
+
+
+def test_context_scores_partial_goal_match_in_control_card() -> None:
+    task = _task()
+    snapshot = BrowserPageSnapshot(
+        url=task.target_url,
+        title="Афиша",
+        captured_at=NOW,
+        controls=(
+            BrowserPageControl(
+                control_id="control_1",
+                kind=BrowserControlKind.LINK,
+                label="Подробнее",
+                nearby_text="Последний богатырь. Колобок",
+            ),
+        ),
+    )
+
+    context = build_agent_decision_context(
+        task.model_copy(update={"page_snapshot": snapshot})
+    )
+
+    assert context.controls[0].goal_match_score == 0.94
 
 
 def test_context_requires_observed_page() -> None:

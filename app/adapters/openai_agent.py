@@ -18,6 +18,11 @@ track progress. When an action advances the page, continue from the new stage ra
 than repeating the old objective. When it leaves the same page unchanged or fails,
 choose a different control, point, or interaction strategy.
 Use only control IDs present in the current page context.
+Use goal_match_score to rank candidate controls, but verify the surrounding text and
+all user constraints before acting. Scores ignore case and punctuation, tolerate
+extra title words and minor word-form differences, and are hints rather than proof.
+Prefer a clear best candidate; ask the user only when top candidates remain materially
+ambiguous after checking nearby_text, dates, times, prices, and availability.
 Use visible page text to understand headings, dates, options, and the current step.
 When a screenshot is supplied, use it to understand visual-only controls, canvas and
 SVG widgets, seat maps, spatial grouping, and the page's current state. Ground every

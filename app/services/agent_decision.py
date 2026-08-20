@@ -9,6 +9,7 @@ from app.domain.browser_page import (
     BrowserPageSnapshot,
 )
 from app.domain.task import AgentTask
+from app.services.fuzzy_matching import fuzzy_text_score
 
 
 class AgentPageStage(StrEnum):
@@ -30,6 +31,7 @@ class AgentVisibleControl(BaseModel):
     kind: BrowserControlKind
     label: str
     field_name: str | None = Field(default=None, max_length=200)
+    goal_match_score: float = Field(default=0.0, ge=0.0, le=1.0)
     role: str | None = None
     nearby_text: str | None = Field(default=None, max_length=600)
     disabled: bool = False
@@ -118,6 +120,11 @@ def build_agent_decision_context(
                 kind=control.kind,
                 label=control.label,
                 field_name=control.field_name,
+                goal_match_score=_control_goal_match_score(
+                    control.label,
+                    control.nearby_text,
+                    task.intent.search_terms if task.intent is not None else (),
+                ),
                 role=control.role,
                 nearby_text=control.nearby_text,
                 disabled=control.disabled,
@@ -203,3 +210,18 @@ _REVIEW_TERMS = (
     "подтвердить заказ",
     "подтвердить покупку",
 )
+
+
+def _control_goal_match_score(
+    label: str,
+    nearby_text: str | None,
+    search_terms: tuple[str, ...],
+) -> float:
+    candidate = " ".join(part for part in (label, nearby_text) if part)
+    return round(
+        max(
+            (fuzzy_text_score(term, candidate) for term in search_terms),
+            default=0.0,
+        ),
+        3,
+    )
