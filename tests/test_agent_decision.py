@@ -18,7 +18,11 @@ from app.domain.browser_page import (
 )
 from app.domain.task import AgentTask, TaskClarification
 from app.domain.task_intent import TaskIntent
-from app.services.agent_decision import build_agent_decision_context
+from app.services.agent_decision import (
+    AgentPageStage,
+    build_agent_decision_context,
+    classify_agent_page_stage,
+)
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 
@@ -73,9 +77,45 @@ def test_context_contains_goal_and_controls_but_no_profile_values() -> None:
     assert "18 августа" in (context.controls[0].nearby_text or "")
     assert context.controls[0].selected is True
     assert context.intent["search_terms"] == ["Колобок"]
+    assert context.page_stage is AgentPageStage.FORM_ENTRY
+    assert context.controls[0].field_name is None
+    assert context.controls[1].field_name == "first_name"
     assert "18:00" in context.visible_text
-    assert "first_name" not in serialized
+    assert "first_name" in serialized
     assert "document_number" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("kind", "label", "expected"),
+    [
+        (BrowserControlKind.TEXT, "Password", AgentPageStage.AUTHENTICATION),
+        (BrowserControlKind.BUTTON, "Оплатить", AgentPageStage.REVIEW),
+        (BrowserControlKind.CANVAS, "Схема мест", AgentPageStage.VISUAL_SELECTION),
+        (BrowserControlKind.DATE, "Дата", AgentPageStage.FORM_ENTRY),
+        (BrowserControlKind.SELECT, "Время", AgentPageStage.OPTION_SELECTION),
+        (BrowserControlKind.LINK, "Результат", AgentPageStage.BROWSING),
+        (BrowserControlKind.OTHER, "Информация", AgentPageStage.UNKNOWN),
+    ],
+)
+def test_page_stage_uses_generic_interaction_signals(
+    kind: BrowserControlKind,
+    label: str,
+    expected: AgentPageStage,
+) -> None:
+    snapshot = BrowserPageSnapshot(
+        url="https://example.com/flow",
+        title="Flow",
+        captured_at=NOW,
+        controls=(
+            BrowserPageControl(
+                control_id="control_1",
+                kind=kind,
+                label=label,
+            ),
+        ),
+    )
+
+    assert classify_agent_page_stage(snapshot) is expected
 
 
 def test_context_requires_observed_page() -> None:
@@ -158,6 +198,7 @@ async def test_openai_provider_requests_strict_structured_decision() -> None:
     assert payload["text"]["format"]["type"] == "json_schema"
     assert payload["text"]["format"]["strict"] is True
     assert payload["input"][0]["content"][0]["type"] == "input_text"
+    assert '"page_stage":"form_entry"' in payload["input"][0]["content"][0]["text"]
     assert "test-openai-key" not in json.dumps(payload)
     await client.aclose()
 

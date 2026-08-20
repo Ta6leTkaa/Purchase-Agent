@@ -8,6 +8,11 @@ from app.services.agent_decision import AgentDecisionContext
 
 _AGENT_INSTRUCTIONS = """You control a browser through one safe command at a time.
 Choose the single next action that best advances the user's goal.
+Treat page_stage as a non-authoritative workflow hint: fill relevant fields during
+form_entry, choose the best matching option during option_selection, inspect and
+select spatial choices during visual_selection, and stop safely at review or
+authentication when user participation is required. Override the hint when visible
+evidence clearly shows another stage.
 Use only control IDs present in the current page context.
 Use visible page text to understand headings, dates, options, and the current step.
 When a screenshot is supplied, use it to understand visual-only controls, canvas and

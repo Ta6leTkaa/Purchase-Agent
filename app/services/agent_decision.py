@@ -1,10 +1,24 @@
+from enum import StrEnum
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.browser_command import AgentDecision
-from app.domain.browser_page import BrowserControlKind
+from app.domain.browser_page import (
+    BrowserControlKind,
+    BrowserPageSnapshot,
+)
 from app.domain.task import AgentTask
+
+
+class AgentPageStage(StrEnum):
+    AUTHENTICATION = "authentication"
+    REVIEW = "review"
+    VISUAL_SELECTION = "visual_selection"
+    FORM_ENTRY = "form_entry"
+    OPTION_SELECTION = "option_selection"
+    BROWSING = "browsing"
+    UNKNOWN = "unknown"
 
 
 class AgentVisibleControl(BaseModel):
@@ -15,6 +29,7 @@ class AgentVisibleControl(BaseModel):
     frame_url: str | None = Field(default=None, max_length=2_048)
     kind: BrowserControlKind
     label: str
+    field_name: str | None = Field(default=None, max_length=200)
     role: str | None = None
     nearby_text: str | None = Field(default=None, max_length=600)
     disabled: bool = False
@@ -53,6 +68,7 @@ class AgentDecisionContext(BaseModel):
     goal: str
     current_url: str
     page_title: str
+    page_stage: AgentPageStage
     visible_text: str = Field(default="", max_length=12_000)
     intent: dict[str, object]
     controls: tuple[AgentVisibleControl, ...] = Field(max_length=200)
@@ -98,6 +114,7 @@ def build_agent_decision_context(
                 frame_url=control.frame_url,
                 kind=control.kind,
                 label=control.label,
+                field_name=control.field_name,
                 role=control.role,
                 nearby_text=control.nearby_text,
                 disabled=control.disabled,
@@ -118,4 +135,68 @@ def build_agent_decision_context(
             for item in task.clarifications[-20:]
         ),
         screenshot_data_url=screenshot_data_url,
+        page_stage=classify_agent_page_stage(snapshot),
     )
+
+
+def classify_agent_page_stage(snapshot: BrowserPageSnapshot) -> AgentPageStage:
+    """Return a non-authoritative workflow hint from generic page affordances."""
+    controls = tuple(control for control in snapshot.controls if not control.disabled)
+    searchable = " ".join(
+        " ".join(
+            part
+            for part in (control.label, control.field_name, control.nearby_text)
+            if part
+        ).casefold()
+        for control in controls
+    )
+    if any(term in searchable for term in _AUTHENTICATION_TERMS):
+        return AgentPageStage.AUTHENTICATION
+    if any(term in searchable for term in _REVIEW_TERMS):
+        return AgentPageStage.REVIEW
+    if any(
+        control.kind in {BrowserControlKind.CANVAS, BrowserControlKind.SVG}
+        for control in controls
+    ):
+        return AgentPageStage.VISUAL_SELECTION
+    if any(control.kind in _FORM_CONTROL_KINDS for control in controls):
+        return AgentPageStage.FORM_ENTRY
+    if any(control.kind in _OPTION_CONTROL_KINDS for control in controls):
+        return AgentPageStage.OPTION_SELECTION
+    if any(
+        control.kind in {BrowserControlKind.LINK, BrowserControlKind.CLICKABLE}
+        for control in controls
+    ):
+        return AgentPageStage.BROWSING
+    return AgentPageStage.UNKNOWN
+
+
+_FORM_CONTROL_KINDS = {
+    BrowserControlKind.TEXT,
+    BrowserControlKind.DATE,
+    BrowserControlKind.EMAIL,
+    BrowserControlKind.TEL,
+    BrowserControlKind.NUMBER,
+}
+_OPTION_CONTROL_KINDS = {
+    BrowserControlKind.SELECT,
+    BrowserControlKind.RADIO,
+    BrowserControlKind.CHECKBOX,
+    BrowserControlKind.BUTTON,
+}
+_AUTHENTICATION_TERMS = (
+    "password",
+    "passcode",
+    "парол",
+    "код подтверждения",
+    "verification code",
+)
+_REVIEW_TERMS = (
+    "confirm order",
+    "confirm purchase",
+    "pay now",
+    "payment",
+    "оплатить",
+    "подтвердить заказ",
+    "подтвердить покупку",
+)
