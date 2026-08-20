@@ -18,6 +18,7 @@ from app.services.agent_decision import (
     AgentActionObservation,
     AgentDecisionProvider,
     build_agent_decision_context,
+    classify_agent_page_stage,
 )
 
 
@@ -88,7 +89,7 @@ async def run_agent_loop(
         steps.append(AgentLoopStep(sequence=sequence, decision=decision, result=result))
         observations = (
             *observations,
-            _action_observation(decision, result.reason_code),
+            _action_observation(decision, result, before_snapshot=snapshot),
         )[-20:]
         if result.page_snapshot is not None:
             snapshot = result.page_snapshot
@@ -160,8 +161,14 @@ def _command_target(decision: AgentDecision) -> str | None:
     return None
 
 
-def _action_observation(decision: AgentDecision, result: str) -> AgentActionObservation:
+def _action_observation(
+    decision: AgentDecision,
+    result: CommandExecutionResult,
+    *,
+    before_snapshot: BrowserPageSnapshot | None = None,
+) -> AgentActionObservation:
     command = decision.command
+    result_snapshot = result.page_snapshot
     visual_point: tuple[float, float] | None = None
     visual_end_point: tuple[float, float] | None = None
     zoom_direction: str | None = None
@@ -183,7 +190,18 @@ def _action_observation(decision: AgentDecision, result: str) -> AgentActionObse
     return AgentActionObservation(
         action=command.action,
         target=_command_target(decision),
-        result=result,
+        result=result.reason_code,
+        result_url=result_snapshot.url if result_snapshot is not None else None,
+        result_page_stage=(
+            classify_agent_page_stage(result_snapshot)
+            if result_snapshot is not None
+            else None
+        ),
+        page_changed=(
+            _page_semantically_changed(before_snapshot, result_snapshot)
+            if before_snapshot is not None and result_snapshot is not None
+            else None
+        ),
         visual_point=visual_point,
         visual_end_point=visual_end_point,
         zoom_direction=zoom_direction,
@@ -194,7 +212,33 @@ def _action_observation(decision: AgentDecision, result: str) -> AgentActionObse
 def _previous_observations(task: AgentTask) -> tuple[AgentActionObservation, ...]:
     if task.agent_run is None:
         return ()
-    return tuple(
-        _action_observation(step.decision, step.result.reason_code)
-        for step in task.agent_run.steps[-20:]
+    observations: list[AgentActionObservation] = []
+    before_snapshot: BrowserPageSnapshot | None = None
+    for step in task.agent_run.steps[-20:]:
+        observations.append(
+            _action_observation(
+                step.decision,
+                step.result,
+                before_snapshot=before_snapshot,
+            )
+        )
+        if step.result.page_snapshot is not None:
+            before_snapshot = step.result.page_snapshot
+    return tuple(observations)
+
+
+def _page_semantically_changed(
+    before: BrowserPageSnapshot,
+    after: BrowserPageSnapshot,
+) -> bool:
+    return (
+        before.url,
+        before.title,
+        before.visible_text,
+        before.controls,
+    ) != (
+        after.url,
+        after.title,
+        after.visible_text,
+        after.controls,
     )

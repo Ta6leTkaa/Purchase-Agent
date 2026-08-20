@@ -115,7 +115,10 @@ def test_hover_observation_exposes_structured_visual_point() -> None:
                 y_ratio=0.7,
             )
         ),
-        "visual_control_hovered",
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="visual_control_hovered",
+        ),
     )
 
     assert observation.visual_point == (0.3, 0.7)
@@ -135,7 +138,10 @@ def test_drag_and_zoom_observations_expose_structured_details() -> None:
                 end_y_ratio=0.6,
             )
         ),
-        "visual_control_dragged",
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="visual_control_dragged",
+        ),
     )
     zoom = _action_observation(
         _decision(
@@ -146,7 +152,10 @@ def test_drag_and_zoom_observations_expose_structured_details() -> None:
                 intensity=2,
             )
         ),
-        "visual_control_zoomed",
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="visual_control_zoomed",
+        ),
     )
 
     assert drag.visual_point == (0.2, 0.4)
@@ -223,6 +232,8 @@ async def test_loop_observes_executes_and_finishes() -> None:
     assert runtime.visual_context_calls == 2
     assert provider.contexts[0].screenshot_data_url is not None
     assert provider.contexts[1].previous_actions[0].result == "control_clicked"
+    assert provider.contexts[1].previous_actions[0].page_changed is True
+    assert provider.contexts[1].previous_actions[0].result_url.endswith("/films")
 
 
 @pytest.mark.asyncio
@@ -297,6 +308,9 @@ async def test_loop_passes_hover_point_to_the_following_decision() -> None:
     assert hover.action == "hover_visual"
     assert hover.visual_point == (0.35, 0.65)
     assert hover.result == "visual_control_hovered"
+    assert hover.result_url == "https://cinema.example.com/films"
+    assert hover.result_page_stage == "unknown"
+    assert hover.page_changed is False
 
 
 @pytest.mark.asyncio

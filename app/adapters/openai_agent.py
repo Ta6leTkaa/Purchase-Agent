@@ -13,6 +13,10 @@ form_entry, choose the best matching option during option_selection, inspect and
 select spatial choices during visual_selection, and stop safely at review or
 authentication when user participation is required. Override the hint when visible
 evidence clearly shows another stage.
+Use each previous action's result_page_stage, result_url, and page_changed fields to
+track progress. When an action advances the page, continue from the new stage rather
+than repeating the old objective. When it leaves the same page unchanged or fails,
+choose a different control, point, or interaction strategy.
 Use only control IDs present in the current page context.
 Use visible page text to understand headings, dates, options, and the current step.
 When a screenshot is supplied, use it to understand visual-only controls, canvas and
