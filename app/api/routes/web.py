@@ -46,3 +46,12 @@ async def demo_cinema() -> FileResponse:
         media_type="text/html",
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.get("/demo/hotel", response_class=FileResponse)
+async def demo_hotel() -> FileResponse:
+    return FileResponse(
+        _WEB_ROOT / "demo_hotel.html",
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )

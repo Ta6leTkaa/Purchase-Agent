@@ -57,6 +57,8 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert "performMissionAction" in script.text
     assert "loadActivity" in script.text
     assert "`${location.origin}/demo/cinema`" in script.text
+    assert "fillHotelDemo" in script.text
+    assert "`${location.origin}/demo/hotel`" in script.text
 
 
 def test_demo_cinema_is_available_for_safe_manual_testing() -> None:
@@ -72,6 +74,19 @@ def test_demo_cinema_is_available_for_safe_manual_testing() -> None:
     assert "Купить билет" in response.text
 
 
+def test_demo_hotel_is_available_for_safe_manual_testing() -> None:
+    response = TestClient(app).get("/demo/hotel")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers["cache-control"] == "no-store"
+    assert "Demo Hotels" in response.text
+    assert 'name="hotel"' in response.text
+    assert 'name="check_in"' in response.text
+    assert "Показать доступные номера" in response.text
+    assert "Подтвердить бронирование" in response.text
+
+
 def test_hidden_web_states_cannot_be_overridden_by_component_layout() -> None:
     styles = TestClient(app).get("/app/app.css").text
 
@@ -84,3 +99,4 @@ def test_web_routes_are_not_exposed_in_openapi() -> None:
     assert "/app/app.css" not in paths
     assert "/app/app.js" not in paths
     assert "/demo/cinema" not in paths
+    assert "/demo/hotel" not in paths

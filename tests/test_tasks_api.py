@@ -58,8 +58,10 @@ def _create_person(client: TestClient) -> str:
     [
         ("http://localhost:8000/demo/cinema", True),
         ("http://127.0.0.1:8000/demo/cinema", True),
+        ("http://localhost:8000/demo/hotel", True),
         ("http://localhost:8000/ready", False),
         ("http://localhost:8000/demo/cinema?redirect=/admin", False),
+        ("http://localhost:8000/demo/hotel?redirect=/admin", False),
         ("https://example.com/demo/cinema", False),
     ],
 )

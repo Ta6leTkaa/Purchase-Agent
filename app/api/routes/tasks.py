@@ -433,7 +433,7 @@ def _is_builtin_demo_url(url: str) -> bool:
     return (
         parsed.scheme == "http"
         and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
-        and parsed.path == "/demo/cinema"
+        and parsed.path in {"/demo/cinema", "/demo/hotel"}
         and not parsed.query
         and not parsed.fragment
     )
