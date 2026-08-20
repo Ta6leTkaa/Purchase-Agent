@@ -17,7 +17,11 @@ from app.dependencies import (
     get_current_time,
     get_identity_repository,
 )
-from app.domain.agent_run import AgentLoopResult, AgentLoopStatus
+from app.domain.agent_run import (
+    AgentLoopResult,
+    AgentLoopStatus,
+    merge_agent_loop_results,
+)
 from app.domain.browser_command import AskUserCommand
 from app.domain.identity import Identity
 from app.domain.task import AgentTask, TaskClarification, TaskStatus, UserActionReason
@@ -123,7 +127,6 @@ async def prepare_task_plan(
                 "approvals": (),
                 "page_snapshot": None,
                 "page_fill_plan": None,
-                "agent_run": None,
                 "inferred_kind": preview.inferred_kind,
                 "intent": preview.intent,
                 "status": TaskStatus.READY,
@@ -392,13 +395,14 @@ def _apply_agent_result(task: AgentTask, result: AgentLoopResult) -> AgentTask:
     else:
         status = TaskStatus.FAILED
         waiting_reason = None
+    persisted_result = merge_agent_loop_results(task.agent_run, result)
     return task.model_copy(
         update={
             "status": status,
             "waiting_reason": waiting_reason,
             "page_snapshot": result.page_snapshot,
             "page_fill_plan": None,
-            "agent_run": result,
+            "agent_run": persisted_result,
         }
     )
 

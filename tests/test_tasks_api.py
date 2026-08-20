@@ -434,6 +434,63 @@ def test_enabled_llm_agent_requires_api_key(
     assert response.json()["detail"]["code"] == "agent_llm_not_configured"
 
 
+def test_replanning_failed_task_preserves_agent_action_history() -> None:
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+    task = asyncio.run(agent_task_repository.get(UUID(created["id"])))
+    assert task is not None
+    snapshot = BrowserPageSnapshot(
+        url=task.target_url,
+        title="Cinema",
+        captured_at=task.created_at,
+        controls=(),
+    )
+    decision = AgentDecision(
+        command=AskUserCommand(action="ask_user", question="Какой сеанс выбрать?"),
+        rationale="Several sessions are available",
+        expected_result="The user selects a session",
+    )
+    failed = task.model_copy(
+        update={
+            "status": TaskStatus.FAILED,
+            "page_snapshot": snapshot,
+            "agent_run": AgentLoopResult(
+                status=AgentLoopStatus.STALLED,
+                reason_code="repeated_command_limit",
+                page_snapshot=snapshot,
+                steps=(
+                    AgentLoopStep(
+                        sequence=1,
+                        decision=decision,
+                        result=CommandExecutionResult(
+                            succeeded=False,
+                            reason_code="control_not_found",
+                        ),
+                    ),
+                ),
+            ),
+        }
+    )
+    asyncio.run(agent_task_repository.update(failed, task.version))
+
+    response = client.post(f"/tasks/{task.id}/plan")
+
+    assert response.status_code == 200
+    stored = client.get(f"/tasks/{task.id}").json()
+    assert stored["status"] == "ready"
+    assert stored["agent_run"]["steps"][0]["result"]["reason_code"] == (
+        "control_not_found"
+    )
+
+
 def test_user_can_answer_agent_clarification() -> None:
     client = TestClient(app)
     person_id = _create_person(client)
