@@ -468,6 +468,49 @@ async def test_executor_blocks_irreversible_click() -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_allows_ticket_purchase_entry_before_checkout() -> None:
+    page, control = _page_with_control(
+        tag="button",
+        label="Купить билет",
+    )
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision({"action": "click", "control_id": "control_1"}),
+    )
+
+    assert result.succeeded
+    assert result.reason_code == "control_clicked"
+    control.click.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_executor_blocks_ticket_purchase_entry_on_checkout_page() -> None:
+    page, control = _page_with_control(
+        tag="button",
+        label="Купить билет",
+    )
+    page.locator(
+        "body"
+    ).inner_text.return_value = "Подтверждение заказа\nИтого 750 рублей\nКупить билет"
+    page.title.return_value = "Оформление"
+    runner = PlaywrightBrowserStepRunner()
+    runner._page = page
+
+    result = await runner.execute_command(
+        _task(),
+        _decision({"action": "click", "control_id": "control_1"}),
+    )
+
+    assert not result.succeeded
+    assert result.requires_user
+    assert result.reason_code == "irreversible_click_requires_user"
+    control.click.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_executor_reports_click_that_does_not_change_page() -> None:
     page, control = _page_with_control(tag="button", label="Показать сеансы")
     control.click = AsyncMock()

@@ -312,10 +312,7 @@ class PlaywrightBrowserStepRunner:
                     succeeded=False,
                     reason_code="control_not_clickable",
                 )
-            if any(
-                term in _normalize_option(control.label)
-                for term in _BLOCKED_BUTTON_TERMS
-            ):
+            if _is_irreversible_click(control.label, snapshot):
                 return CommandExecutionResult(
                     succeeded=False,
                     reason_code="irreversible_click_requires_user",
@@ -361,10 +358,7 @@ class PlaywrightBrowserStepRunner:
             control_context = " ".join(
                 part for part in (control.label, control.nearby_text) if part
             )
-            if any(
-                term in _normalize_option(control_context)
-                for term in _BLOCKED_BUTTON_TERMS
-            ):
+            if _is_irreversible_click(control_context, snapshot):
                 return CommandExecutionResult(
                     succeeded=False,
                     reason_code="irreversible_click_requires_user",
@@ -433,19 +427,6 @@ class PlaywrightBrowserStepRunner:
                 return CommandExecutionResult(
                     succeeded=False,
                     reason_code="visual_control_required",
-                )
-            control_context = " ".join(
-                part for part in (control.label, control.nearby_text) if part
-            )
-            if any(
-                term in _normalize_option(control_context)
-                for term in _BLOCKED_BUTTON_TERMS
-            ):
-                return CommandExecutionResult(
-                    succeeded=False,
-                    reason_code="irreversible_click_requires_user",
-                    page_snapshot=snapshot,
-                    requires_user=True,
                 )
             bounds = await locator.bounding_box()
             if bounds is None or bounds["width"] < 24 or bounds["height"] < 24:
@@ -518,19 +499,6 @@ class PlaywrightBrowserStepRunner:
                 return CommandExecutionResult(
                     succeeded=False,
                     reason_code="visual_control_required",
-                )
-            control_context = " ".join(
-                part for part in (control.label, control.nearby_text) if part
-            )
-            if any(
-                term in _normalize_option(control_context)
-                for term in _BLOCKED_BUTTON_TERMS
-            ):
-                return CommandExecutionResult(
-                    succeeded=False,
-                    reason_code="irreversible_click_requires_user",
-                    page_snapshot=snapshot,
-                    requires_user=True,
                 )
             bounds = await locator.bounding_box()
             if bounds is None or bounds["width"] < 24 or bounds["height"] < 24:
@@ -1548,6 +1516,22 @@ def _is_safe_review_button(label: str) -> bool:
     return any(term in normalized for term in _SAFE_REVIEW_BUTTON_TERMS)
 
 
+def _is_irreversible_click(
+    control_context: str,
+    snapshot: BrowserPageSnapshot,
+) -> bool:
+    normalized_control = _normalize_option(control_context)
+    if not any(term in normalized_control for term in _BLOCKED_BUTTON_TERMS):
+        return False
+    is_navigation_entry = any(
+        term in normalized_control for term in _PURCHASE_ENTRY_TERMS
+    )
+    if not is_navigation_entry:
+        return True
+    page_context = _normalize_option(f"{snapshot.title} {snapshot.visible_text}")
+    return any(term in page_context for term in _FINALIZATION_CONTEXT_TERMS)
+
+
 def _same_origin(left: str, right: str) -> bool:
     left_url = urlsplit(left)
     right_url = urlsplit(right)
@@ -1585,6 +1569,26 @@ _BLOCKED_BUTTON_TERMS = (
     "подтвердить",
     "заказать",
     "оформить заказ",
+)
+_PURCHASE_ENTRY_TERMS = (
+    "buy ticket",
+    "buy tickets",
+    "purchase ticket",
+    "purchase tickets",
+    "book ticket",
+    "book tickets",
+    "купить билет",
+    "купить билеты",
+)
+_FINALIZATION_CONTEXT_TERMS = (
+    "order total",
+    "review order",
+    "payment method",
+    "card number",
+    "итого",
+    "подтверждение заказа",
+    "способ оплаты",
+    "номер карты",
 )
 _FORM_TARGET_SCRIPT = """
 element => {
