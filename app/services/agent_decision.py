@@ -31,6 +31,10 @@ class AgentActionObservation(BaseModel):
     action: str = Field(min_length=1, max_length=32)
     target: str | None = Field(default=None, max_length=200)
     result: str = Field(min_length=1, max_length=100)
+    visual_point: tuple[float, float] | None = None
+    visual_end_point: tuple[float, float] | None = None
+    zoom_direction: str | None = Field(default=None, pattern=r"^(in|out)$")
+    zoom_intensity: int | None = Field(default=None, ge=1, le=3)
 
 
 class AgentClarification(BaseModel):

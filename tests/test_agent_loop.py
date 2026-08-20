@@ -20,7 +20,11 @@ from app.domain.browser_command import (
 from app.domain.browser_page import BrowserPageSnapshot
 from app.domain.task import AgentTask
 from app.services.agent_decision import AgentDecisionContext
-from app.services.agent_loop import _command_target, run_agent_loop
+from app.services.agent_loop import (
+    _action_observation,
+    _command_target,
+    run_agent_loop,
+)
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 
@@ -99,6 +103,56 @@ def test_visual_command_target_preserves_spatial_details(
     command: object, target: str
 ) -> None:
     assert _command_target(_decision(command)) == target
+
+
+def test_hover_observation_exposes_structured_visual_point() -> None:
+    observation = _action_observation(
+        _decision(
+            HoverVisualCommand(
+                action="hover_visual",
+                control_id="control_2",
+                x_ratio=0.3,
+                y_ratio=0.7,
+            )
+        ),
+        "visual_control_hovered",
+    )
+
+    assert observation.visual_point == (0.3, 0.7)
+    assert observation.visual_end_point is None
+    assert observation.result == "visual_control_hovered"
+
+
+def test_drag_and_zoom_observations_expose_structured_details() -> None:
+    drag = _action_observation(
+        _decision(
+            DragVisualCommand(
+                action="drag_visual",
+                control_id="control_3",
+                start_x_ratio=0.2,
+                start_y_ratio=0.4,
+                end_x_ratio=0.8,
+                end_y_ratio=0.6,
+            )
+        ),
+        "visual_control_dragged",
+    )
+    zoom = _action_observation(
+        _decision(
+            ZoomVisualCommand(
+                action="zoom_visual",
+                control_id="control_3",
+                direction="in",
+                intensity=2,
+            )
+        ),
+        "visual_control_zoomed",
+    )
+
+    assert drag.visual_point == (0.2, 0.4)
+    assert drag.visual_end_point == (0.8, 0.6)
+    assert zoom.zoom_direction == "in"
+    assert zoom.zoom_intensity == 2
 
 
 class ScriptedProvider:
@@ -203,6 +257,46 @@ async def test_loop_allows_model_to_recover_from_failed_action() -> None:
     assert result.status is AgentLoopStatus.NO_MATCH
     assert len(result.steps) == 3
     assert provider.contexts[1].previous_actions[-1].result == "control_not_found"
+
+
+@pytest.mark.asyncio
+async def test_loop_passes_hover_point_to_the_following_decision() -> None:
+    provider = ScriptedProvider(
+        _decision(
+            HoverVisualCommand(
+                action="hover_visual",
+                control_id="control_1",
+                x_ratio=0.35,
+                y_ratio=0.65,
+            )
+        ),
+        _decision(
+            FinishCommand(
+                action="finish",
+                outcome=AgentFinishOutcome.READY_FOR_USER,
+                summary="Matching visual option found",
+            )
+        ),
+    )
+    runtime = ScriptedRuntime(
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="visual_control_hovered",
+            page_snapshot=_snapshot(),
+        ),
+        CommandExecutionResult(
+            succeeded=True,
+            reason_code="finished_ready_for_user",
+            page_snapshot=_snapshot(),
+        ),
+    )
+
+    await run_agent_loop(_task(), provider=provider, runtime=runtime)
+
+    hover = provider.contexts[1].previous_actions[-1]
+    assert hover.action == "hover_visual"
+    assert hover.visual_point == (0.35, 0.65)
+    assert hover.result == "visual_control_hovered"
 
 
 @pytest.mark.asyncio

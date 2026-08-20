@@ -88,11 +88,7 @@ async def run_agent_loop(
         steps.append(AgentLoopStep(sequence=sequence, decision=decision, result=result))
         observations = (
             *observations,
-            AgentActionObservation(
-                action=decision.command.action,
-                target=_command_target(decision),
-                result=result.reason_code,
-            ),
+            _action_observation(decision, result.reason_code),
         )[-20:]
         if result.page_snapshot is not None:
             snapshot = result.page_snapshot
@@ -164,14 +160,41 @@ def _command_target(decision: AgentDecision) -> str | None:
     return None
 
 
+def _action_observation(decision: AgentDecision, result: str) -> AgentActionObservation:
+    command = decision.command
+    visual_point: tuple[float, float] | None = None
+    visual_end_point: tuple[float, float] | None = None
+    zoom_direction: str | None = None
+    zoom_intensity: int | None = None
+    if isinstance(command, (ClickVisualCommand, HoverVisualCommand)):
+        visual_point = (command.x_ratio, command.y_ratio)
+    elif isinstance(command, DragVisualCommand):
+        visual_point = (
+            command.start_x_ratio,
+            command.start_y_ratio,
+        )
+        visual_end_point = (
+            command.end_x_ratio,
+            command.end_y_ratio,
+        )
+    elif isinstance(command, ZoomVisualCommand):
+        zoom_direction = command.direction
+        zoom_intensity = command.intensity
+    return AgentActionObservation(
+        action=command.action,
+        target=_command_target(decision),
+        result=result,
+        visual_point=visual_point,
+        visual_end_point=visual_end_point,
+        zoom_direction=zoom_direction,
+        zoom_intensity=zoom_intensity,
+    )
+
+
 def _previous_observations(task: AgentTask) -> tuple[AgentActionObservation, ...]:
     if task.agent_run is None:
         return ()
     return tuple(
-        AgentActionObservation(
-            action=step.decision.command.action,
-            target=_command_target(step.decision),
-            result=step.result.reason_code,
-        )
+        _action_observation(step.decision, step.result.reason_code)
         for step in task.agent_run.steps[-20:]
     )
