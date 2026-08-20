@@ -52,12 +52,19 @@ demo. The key is kept in the current browser tab only. The UI is included in
 the production image; public API documentation remains disabled independently.
 
 For a self-contained manual check, add one person, create a new agent task, and
-click **Заполнить демонстрационный пример**. The form points to the bundled
-`/demo/cinema` page and supplies a cinema-ticket request. After launch, the
-agent should fill the movie, date, earliest time, and quantity, open the review
-state, and stop with `confirmation_required`; it must not activate the disabled
-purchase button. The local-network exception is restricted to this exact demo
-path, including in the production Compose profile.
+choose either **Демо: билет в кино** or **Демо: номер в отеле**. Both examples
+use the same site-agnostic agent. It should fill the relevant fields, open the
+review state, and stop before the disabled purchase or booking-confirmation
+button. The local-network exception is restricted to the exact `/demo/cinema`
+and `/demo/hotel` paths, including in the production Compose profile.
+
+Run the safe browser-level MVP 0.1 acceptance check against the local Compose
+service. It launches headless Chromium, completes both demo forms, and verifies
+that both irreversible final actions remain disabled:
+
+```bash
+python -m app.mvp_smoke --base-url http://localhost:8000
+```
 
 After deployment, run the non-mutating smoke check. It verifies liveness,
 readiness, client authentication, admin authentication, and that the instance
