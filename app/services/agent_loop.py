@@ -1,6 +1,11 @@
 from typing import Protocol
 
-from app.domain.agent_run import AgentLoopResult, AgentLoopStatus, AgentLoopStep
+from app.domain.agent_run import (
+    AgentDecisionMetadata,
+    AgentLoopResult,
+    AgentLoopStatus,
+    AgentLoopStep,
+)
 from app.domain.browser_command import (
     AgentDecision,
     AgentFinishOutcome,
@@ -86,7 +91,14 @@ async def run_agent_loop(
             decision,
             approved_sensitive=approved_sensitive,
         )
-        steps.append(AgentLoopStep(sequence=sequence, decision=decision, result=result))
+        steps.append(
+            AgentLoopStep(
+                sequence=sequence,
+                decision=decision,
+                decision_metadata=_provider_decision_metadata(provider),
+                result=result,
+            )
+        )
         observations = (
             *observations,
             _action_observation(decision, result, before_snapshot=snapshot),
@@ -129,6 +141,13 @@ async def _capture_visual_context(
     if result is None or isinstance(result, str):
         return result
     raise TypeError("visual context capture must return a data URL or None")
+
+
+def _provider_decision_metadata(
+    provider: AgentDecisionProvider,
+) -> AgentDecisionMetadata | None:
+    metadata = getattr(provider, "last_decision_metadata", None)
+    return metadata if isinstance(metadata, AgentDecisionMetadata) else None
 
 
 def _finish_status(outcome: AgentFinishOutcome) -> AgentLoopStatus:

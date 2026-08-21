@@ -1,8 +1,10 @@
 import json
+from time import monotonic
 
 import httpx
 from pydantic import SecretStr, ValidationError
 
+from app.domain.agent_run import AgentDecisionMetadata
 from app.domain.browser_command import AgentDecision
 from app.services.agent_decision import AgentDecisionContext
 
@@ -77,6 +79,7 @@ class OpenAIAgentDecisionProvider:
         self._api_key = api_key
         self._model = model
         self._reasoning_effort = reasoning_effort
+        self.last_decision_metadata: AgentDecisionMetadata | None = None
         self._owned_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url="https://api.openai.com/v1",
@@ -91,6 +94,7 @@ class OpenAIAgentDecisionProvider:
             await self._client.aclose()
 
     async def decide(self, context: AgentDecisionContext) -> AgentDecision:
+        started = monotonic()
         context_json = json.dumps(
             context.model_dump(mode="json"),
             ensure_ascii=False,
@@ -141,11 +145,18 @@ class OpenAIAgentDecisionProvider:
         payload = response.json()
         output_text = _extract_output_text(payload)
         try:
-            return AgentDecision.model_validate_json(output_text)
+            decision = AgentDecision.model_validate_json(output_text)
         except ValidationError as exc:
             raise AgentDecisionProviderError(
                 "OpenAI response did not match the browser decision schema"
             ) from exc
+        self.last_decision_metadata = AgentDecisionMetadata(
+            provider="openai",
+            model=self._model,
+            duration_ms=round((monotonic() - started) * 1000),
+            attempted_models=(self._model,),
+        )
+        return decision
 
 
 def _extract_output_text(payload: object) -> str:

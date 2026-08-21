@@ -1,10 +1,12 @@
 import base64
 import json
+from time import monotonic
 
 import httpx
 from pydantic import ValidationError
 
 from app.adapters.openai_agent import _AGENT_INSTRUCTIONS, AgentDecisionProviderError
+from app.domain.agent_run import AgentDecisionMetadata
 from app.domain.browser_command import AgentDecision
 from app.services.agent_decision import AgentDecisionContext, AgentPageStage
 
@@ -25,6 +27,7 @@ class OllamaAgentDecisionProvider:
         self._model = model
         self._fast_model = fast_model
         self._context_window = context_window
+        self.last_decision_metadata: AgentDecisionMetadata | None = None
         self._owned_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url=base_url,
@@ -39,14 +42,36 @@ class OllamaAgentDecisionProvider:
             await self._client.aclose()
 
     async def decide(self, context: AgentDecisionContext) -> AgentDecision:
+        started = monotonic()
+        attempted_models: list[str] = []
         if self._should_use_fast_model(context):
+            fast_model = self._fast_model or self._model
+            attempted_models.append(fast_model)
             try:
-                return await self._request_decision(
-                    context, self._fast_model or self._model
-                )
+                decision = await self._request_decision(context, fast_model)
             except AgentDecisionProviderError:
                 pass
-        return await self._request_decision(context, self._model)
+            else:
+                self._record_metadata(fast_model, attempted_models, started)
+                return decision
+        attempted_models.append(self._model)
+        decision = await self._request_decision(context, self._model)
+        self._record_metadata(self._model, attempted_models, started)
+        return decision
+
+    def _record_metadata(
+        self,
+        model: str,
+        attempted_models: list[str],
+        started: float,
+    ) -> None:
+        self.last_decision_metadata = AgentDecisionMetadata(
+            provider="ollama",
+            model=model,
+            duration_ms=round((monotonic() - started) * 1000),
+            fallback_used=len(attempted_models) > 1,
+            attempted_models=tuple(attempted_models),
+        )
 
     def _should_use_fast_model(self, context: AgentDecisionContext) -> bool:
         if self._fast_model is None or self._fast_model == self._model:

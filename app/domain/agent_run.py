@@ -14,11 +14,24 @@ class AgentLoopStatus(StrEnum):
     STALLED = "stalled"
 
 
+class AgentDecisionMetadata(BaseModel):
+    """Operational decision data without prompts or hidden model reasoning."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]*$", max_length=32)
+    model: str = Field(min_length=1, max_length=100)
+    duration_ms: int = Field(ge=0, le=600_000)
+    fallback_used: bool = False
+    attempted_models: tuple[str, ...] = Field(default=(), max_length=3)
+
+
 class AgentLoopStep(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     sequence: int = Field(ge=1)
     decision: AgentDecision
+    decision_metadata: AgentDecisionMetadata | None = None
     result: CommandExecutionResult
 
 

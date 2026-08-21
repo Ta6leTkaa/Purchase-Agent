@@ -281,6 +281,9 @@ async def test_openai_provider_requests_strict_structured_decision() -> None:
     decision = await provider.decide(build_agent_decision_context(_task()))
 
     assert isinstance(decision.command, ClickCommand)
+    assert provider.last_decision_metadata is not None
+    assert provider.last_decision_metadata.provider == "openai"
+    assert provider.last_decision_metadata.model == "test-model"
     assert captured["authorization"] == "Bearer test-openai-key"
     payload = captured["payload"]
     assert isinstance(payload, dict)
@@ -427,6 +430,12 @@ async def test_ollama_provider_retries_invalid_fast_model_on_primary() -> None:
 
     assert isinstance(decision.command, ClickCommand)
     assert requested_models == ["qwen3-vl:2b", "qwen3-vl:4b"]
+    assert provider.last_decision_metadata is not None
+    assert provider.last_decision_metadata.fallback_used is True
+    assert provider.last_decision_metadata.attempted_models == (
+        "qwen3-vl:2b",
+        "qwen3-vl:4b",
+    )
     await client.aclose()
 
 
@@ -472,6 +481,8 @@ async def test_ollama_provider_uses_primary_model_for_review_page() -> None:
     await provider.decide(context)
 
     assert requested_models == ["qwen3-vl:4b"]
+    assert provider.last_decision_metadata is not None
+    assert provider.last_decision_metadata.model == "qwen3-vl:4b"
     await client.aclose()
 
 

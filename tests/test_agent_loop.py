@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.agent_run import AgentLoopStatus
+from app.domain.agent_run import AgentDecisionMetadata, AgentLoopStatus
 from app.domain.browser_command import (
     AgentDecision,
     AgentFinishOutcome,
@@ -168,6 +168,12 @@ class ScriptedProvider:
     def __init__(self, *decisions: AgentDecision) -> None:
         self.decisions = list(decisions)
         self.contexts: list[AgentDecisionContext] = []
+        self.last_decision_metadata = AgentDecisionMetadata(
+            provider="test",
+            model="scripted",
+            duration_ms=12,
+            attempted_models=("scripted",),
+        )
 
     async def decide(self, context: AgentDecisionContext) -> AgentDecision:
         self.contexts.append(context)
@@ -229,6 +235,9 @@ async def test_loop_observes_executes_and_finishes() -> None:
     assert result.status is AgentLoopStatus.COMPLETED
     assert result.page_snapshot.title == "Checkout"
     assert len(result.steps) == 2
+    assert result.steps[0].decision_metadata is not None
+    assert result.steps[0].decision_metadata.model == "scripted"
+    assert result.steps[0].decision_metadata.duration_ms == 12
     assert runtime.visual_context_calls == 2
     assert provider.contexts[0].screenshot_data_url is not None
     assert provider.contexts[1].previous_actions[0].result == "control_clicked"
