@@ -10,11 +10,11 @@ WORKDIR /app
 RUN addgroup --system purchase-agent \
     && adduser --system --ingroup purchase-agent purchase-agent
 
-COPY pyproject.toml README.md alembic.ini ./
 RUN python -m pip install "playwright>=1.55.0" \
     && python -m playwright install --with-deps chromium \
     && chown -R purchase-agent:purchase-agent /ms-playwright
 
+COPY pyproject.toml README.md alembic.ini ./
 COPY app ./app
 COPY alembic ./alembic
 

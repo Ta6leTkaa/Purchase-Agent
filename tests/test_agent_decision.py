@@ -386,6 +386,96 @@ async def test_ollama_provider_accepts_structured_output_in_thinking_field() -> 
 
 
 @pytest.mark.asyncio
+async def test_ollama_provider_retries_invalid_fast_model_on_primary() -> None:
+    requested_models: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        requested_models.append(payload["model"])
+        if payload["model"] == "qwen3-vl:2b":
+            return httpx.Response(200, json={"message": {"content": "{}"}})
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "command": {
+                                "action": "click",
+                                "control_id": "control_1",
+                            },
+                            "rationale": "Use the requested date",
+                            "expected_result": "Schedule updates",
+                        }
+                    )
+                }
+            },
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="http://localhost:11434",
+    )
+    provider = OllamaAgentDecisionProvider(
+        base_url="http://localhost:11434",
+        model="qwen3-vl:4b",
+        fast_model="qwen3-vl:2b",
+        client=client,
+    )
+
+    decision = await provider.decide(build_agent_decision_context(_task()))
+
+    assert isinstance(decision.command, ClickCommand)
+    assert requested_models == ["qwen3-vl:2b", "qwen3-vl:4b"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_ollama_provider_uses_primary_model_for_review_page() -> None:
+    requested_models: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        requested_models.append(payload["model"])
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "command": {
+                                "action": "click",
+                                "control_id": "control_1",
+                            },
+                            "rationale": "Inspect the review page",
+                            "expected_result": "Review remains safe",
+                        }
+                    )
+                }
+            },
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="http://localhost:11434",
+    )
+    provider = OllamaAgentDecisionProvider(
+        base_url="http://localhost:11434",
+        model="qwen3-vl:4b",
+        fast_model="qwen3-vl:2b",
+        client=client,
+    )
+    context = build_agent_decision_context(_task()).model_copy(
+        update={"page_stage": AgentPageStage.REVIEW}
+    )
+
+    await provider.decide(context)
+
+    assert requested_models == ["qwen3-vl:4b"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_openai_provider_sends_transient_visual_context() -> None:
     captured: dict[str, object] = {}
 

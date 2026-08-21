@@ -90,6 +90,7 @@ AGENT_LLM_ENABLED=true
 AGENT_LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://host.docker.internal:11434
 OLLAMA_MODEL=qwen3-vl:4b
+OLLAMA_FAST_MODEL=qwen3-vl:2b
 OLLAMA_CONTEXT_WINDOW=32768
 ```
 
@@ -98,6 +99,8 @@ of gigabytes of memory for Ollama's maximum context. The task context and
 transient screenshot then stay on the local machine. The
 same structured command schema and browser safety boundaries apply to both
 providers. OpenAI remains available with `AGENT_LLM_PROVIDER=openai`.
+Simple browsing and form pages use the faster 2B model. Sensitive, visual, or
+stalled steps stay on 4B, and an invalid 2B response is retried on 4B.
 
 For a self-contained manual check, add one person, create a new agent task, and
 choose either **Демо: билет в кино** or **Демо: номер в отеле**. Both examples

@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from app.adapters.openai_agent import _AGENT_INSTRUCTIONS, AgentDecisionProviderError
 from app.domain.browser_command import AgentDecision
-from app.services.agent_decision import AgentDecisionContext
+from app.services.agent_decision import AgentDecisionContext, AgentPageStage
 
 
 class OllamaAgentDecisionProvider:
@@ -17,11 +17,13 @@ class OllamaAgentDecisionProvider:
         *,
         base_url: str,
         model: str,
+        fast_model: str | None = None,
         context_window: int = 32768,
         timeout_seconds: float = 120.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._model = model
+        self._fast_model = fast_model
         self._context_window = context_window
         self._owned_client = client is None
         self._client = client or httpx.AsyncClient(
@@ -37,6 +39,36 @@ class OllamaAgentDecisionProvider:
             await self._client.aclose()
 
     async def decide(self, context: AgentDecisionContext) -> AgentDecision:
+        if self._should_use_fast_model(context):
+            try:
+                return await self._request_decision(
+                    context, self._fast_model or self._model
+                )
+            except AgentDecisionProviderError:
+                pass
+        return await self._request_decision(context, self._model)
+
+    def _should_use_fast_model(self, context: AgentDecisionContext) -> bool:
+        if self._fast_model is None or self._fast_model == self._model:
+            return False
+        if context.page_stage in {
+            AgentPageStage.AUTHENTICATION,
+            AgentPageStage.REVIEW,
+            AgentPageStage.VISUAL_SELECTION,
+        }:
+            return False
+        if (
+            context.previous_actions
+            and context.previous_actions[-1].page_changed is False
+        ):
+            return False
+        return True
+
+    async def _request_decision(
+        self,
+        context: AgentDecisionContext,
+        model: str,
+    ) -> AgentDecision:
         message: dict[str, object] = {
             "role": "user",
             "content": json.dumps(
@@ -51,7 +83,7 @@ class OllamaAgentDecisionProvider:
             response = await self._client.post(
                 "/api/chat",
                 json={
-                    "model": self._model,
+                    "model": model,
                     "stream": False,
                     "think": False,
                     "format": AgentDecision.model_json_schema(),

@@ -122,6 +122,7 @@ def test_local_ollama_provider_does_not_require_openai_key() -> None:
     assert configured.agent_llm_provider == "ollama"
     assert configured.ollama_base_url == "http://host.docker.internal:11434"
     assert configured.ollama_model == "qwen3-vl:4b"
+    assert configured.ollama_fast_model == "qwen3-vl:2b"
 
 
 def test_unknown_environment_is_rejected() -> None:

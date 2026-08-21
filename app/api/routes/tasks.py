@@ -413,6 +413,7 @@ async def _agent_decision_provider() -> AsyncIterator[AgentDecisionProvider]:
         async with OllamaAgentDecisionProvider(
             base_url=settings.ollama_base_url,
             model=settings.ollama_model,
+            fast_model=settings.ollama_fast_model,
             context_window=settings.ollama_context_window,
             timeout_seconds=settings.agent_llm_timeout_seconds,
         ) as provider:

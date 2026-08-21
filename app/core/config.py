@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     agent_llm_max_steps: int = Field(default=12, ge=1, le=50)
     ollama_base_url: str = "http://host.docker.internal:11434"
     ollama_model: str = Field(default="qwen3-vl:4b", min_length=1, max_length=100)
+    ollama_fast_model: str | None = Field(
+        default="qwen3-vl:2b",
+        min_length=1,
+        max_length=100,
+    )
     ollama_context_window: int = Field(default=32768, ge=4096, le=131072)
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
@@ -233,6 +238,13 @@ class Settings(BaseSettings):
         if parsed.query is not None or parsed.fragment is not None:
             raise ValueError("ollama_base_url must not contain query or fragment")
         return normalized
+
+    @field_validator("ollama_fast_model", mode="before")
+    @classmethod
+    def normalize_optional_model(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     @field_validator("worker_instance_id")
     @classmethod
