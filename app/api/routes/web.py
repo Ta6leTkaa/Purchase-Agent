@@ -1,10 +1,42 @@
+import secrets
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import FileResponse, RedirectResponse
+from pydantic import BaseModel, Field
+
+from app.core.config import settings
 
 router = APIRouter(include_in_schema=False)
 _WEB_ROOT = Path(__file__).resolve().parents[2] / "web"
+_SESSION_COOKIE = "purchase_agent_session"
+
+
+class WebSessionRequest(BaseModel):
+    api_key: str = Field(min_length=1, max_length=4096)
+
+
+@router.post("/app/session", status_code=204)
+async def create_web_session(payload: WebSessionRequest, response: Response) -> None:
+    expected = settings.api_key
+    if expected is not None and not secrets.compare_digest(
+        payload.api_key,
+        expected.get_secret_value(),
+    ):
+        raise HTTPException(status_code=403, detail="Invalid API key")
+    response.set_cookie(
+        key=_SESSION_COOKIE,
+        value=payload.api_key,
+        httponly=True,
+        samesite="strict",
+        secure=settings.environment == "production",
+        path="/",
+    )
+
+
+@router.delete("/app/session", status_code=204)
+async def delete_web_session(response: Response) -> None:
+    response.delete_cookie(key=_SESSION_COOKIE, path="/")
 
 
 @router.get("/", response_class=RedirectResponse)

@@ -1,7 +1,7 @@
 import secrets
 from typing import Annotated
 
-from fastapi import HTTPException, Security
+from fastapi import Cookie, HTTPException, Security
 from fastapi.security import APIKeyHeader
 
 from app.core.config import settings
@@ -20,21 +20,29 @@ admin_api_key_scheme = APIKeyHeader(
 )
 AdminApiKeyHeader = Annotated[str | None, Security(admin_api_key_scheme)]
 ApiKeyHeader = Annotated[str | None, Security(client_api_key_scheme)]
+ApiKeyCookie = Annotated[
+    str | None,
+    Cookie(alias="purchase_agent_session"),
+]
 
 
-async def require_api_key(provided_key: ApiKeyHeader) -> None:
+async def require_api_key(
+    provided_key: ApiKeyHeader,
+    session_key: ApiKeyCookie = None,
+) -> None:
     """Protect client-facing resources when an API key is configured."""
     expected_key = settings.api_key
     if expected_key is None:
         return
-    if provided_key is None:
+    candidate = provided_key if provided_key is not None else session_key
+    if candidate is None:
         raise HTTPException(
             status_code=401,
             detail="API key is required",
             headers={"WWW-Authenticate": 'ApiKey realm="client"'},
         )
     if not secrets.compare_digest(
-        provided_key,
+        candidate,
         expected_key.get_secret_value(),
     ):
         raise HTTPException(status_code=403, detail="Invalid API key")

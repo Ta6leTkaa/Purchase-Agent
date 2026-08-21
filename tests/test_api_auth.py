@@ -69,6 +69,30 @@ def test_client_endpoint_accepts_valid_api_key(endpoint: str) -> None:
     assert response.status_code == 200
 
 
+def test_web_session_authenticates_browser_without_custom_header() -> None:
+    settings.api_key = SecretStr(API_KEY)
+    client = TestClient(app)
+
+    login = client.post("/app/session", json={"api_key": API_KEY})
+
+    assert login.status_code == 204
+    assert "HttpOnly" in login.headers["set-cookie"]
+    assert "SameSite=strict" in login.headers["set-cookie"]
+    assert client.get("/providers").status_code == 200
+
+
+def test_web_session_rejects_invalid_key() -> None:
+    settings.api_key = SecretStr(API_KEY)
+
+    response = TestClient(app).post(
+        "/app/session",
+        json={"api_key": "wrong-key"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Invalid API key"
+
+
 @pytest.mark.parametrize("endpoint", ["/health", "/ready"])
 def test_service_probes_remain_public(endpoint: str) -> None:
     settings.api_key = SecretStr(API_KEY)
