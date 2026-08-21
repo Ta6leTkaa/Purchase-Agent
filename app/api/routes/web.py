@@ -27,7 +27,7 @@ async def create_web_session(payload: WebSessionRequest, response: Response) -> 
             status_code=403,
             detail=(
                 "Неверный API-ключ. Скопируйте актуальное значение API_KEY "
-                f"из .env; сейчас оно содержит "
+                f"из .env: получено {len(payload.api_key)} из "
                 f"{len(expected.get_secret_value())} символов."
             ),
         )

@@ -23,10 +23,11 @@ def test_web_app_is_available() -> None:
     assert "taskForm" in response.text
     assert "fillTaskDemo" in response.text
     assert "runDemo" in response.text
-    assert "/app/app.css?v=20260817-3" in response.text
+    assert "/app/app.css?v=20260821-4" in response.text
     assert "Вставьте ключ или всю строку API_KEY=…" in response.text
     assert "data-1p-ignore" in response.text
-    assert "/app/app.js?v=20260821-6" in response.text
+    assert "Введено: 0 из 64 символов" in response.text
+    assert "/app/app.js?v=20260821-7" in response.text
 
 
 def test_web_assets_are_served_with_explicit_types() -> None:
@@ -41,6 +42,7 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert script.headers["cache-control"] == "no-store"
     assert 'api("/app/session"' in script.text
     assert "normalizeApiKey" in script.text
+    assert "updateApiKeyLength" in script.text
     assert "export\\s+" in script.text
     assert 'credentials:"same-origin"' in script.text
     assert "X-API-Key" not in script.text

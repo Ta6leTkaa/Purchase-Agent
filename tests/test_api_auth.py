@@ -92,7 +92,7 @@ def test_web_session_rejects_invalid_key() -> None:
     assert response.status_code == 403
     assert response.json()["detail"] == (
         "Неверный API-ключ. Скопируйте актуальное значение API_KEY "
-        "из .env; сейчас оно содержит 19 символов."
+        "из .env: получено 9 из 19 символов."
     )
 
 
