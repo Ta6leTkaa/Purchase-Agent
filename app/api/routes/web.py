@@ -16,8 +16,11 @@ class WebSessionRequest(BaseModel):
     api_key: str = Field(min_length=1, max_length=4096)
 
 
-@router.post("/app/session", status_code=204)
-async def create_web_session(payload: WebSessionRequest, response: Response) -> None:
+@router.post("/app/session")
+async def create_web_session(
+    payload: WebSessionRequest,
+    response: Response,
+) -> dict[str, bool]:
     expected = settings.api_key
     if expected is not None and not secrets.compare_digest(
         payload.api_key.encode("utf-8"),
@@ -39,6 +42,7 @@ async def create_web_session(payload: WebSessionRequest, response: Response) -> 
         secure=settings.environment == "production",
         path="/",
     )
+    return {"authenticated": True}
 
 
 @router.delete("/app/session", status_code=204)

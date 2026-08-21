@@ -75,7 +75,8 @@ def test_web_session_authenticates_browser_without_custom_header() -> None:
 
     login = client.post("/app/session", json={"api_key": API_KEY})
 
-    assert login.status_code == 204
+    assert login.status_code == 200
+    assert login.json() == {"authenticated": True}
     assert "HttpOnly" in login.headers["set-cookie"]
     assert "SameSite=strict" in login.headers["set-cookie"]
     assert client.get("/providers").status_code == 200
