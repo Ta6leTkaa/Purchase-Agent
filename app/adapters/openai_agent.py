@@ -107,28 +107,33 @@ class OpenAIAgentDecisionProvider:
                     "detail": "low",
                 }
             )
-        response = await self._client.post(
-            "/responses",
-            headers={
-                "Authorization": f"Bearer {self._api_key.get_secret_value()}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": self._model,
-                "instructions": _AGENT_INSTRUCTIONS,
-                "input": [{"role": "user", "content": input_content}],
-                "reasoning": {"effort": self._reasoning_effort},
-                "text": {
-                    "format": {
-                        "type": "json_schema",
-                        "name": "browser_agent_decision",
-                        "strict": True,
-                        "schema": AgentDecision.model_json_schema(),
-                    }
+        try:
+            response = await self._client.post(
+                "/responses",
+                headers={
+                    "Authorization": f"Bearer {self._api_key.get_secret_value()}",
+                    "Content-Type": "application/json",
                 },
-                "store": False,
-            },
-        )
+                json={
+                    "model": self._model,
+                    "instructions": _AGENT_INSTRUCTIONS,
+                    "input": [{"role": "user", "content": input_content}],
+                    "reasoning": {"effort": self._reasoning_effort},
+                    "text": {
+                        "format": {
+                            "type": "json_schema",
+                            "name": "browser_agent_decision",
+                            "strict": True,
+                            "schema": AgentDecision.model_json_schema(),
+                        }
+                    },
+                    "store": False,
+                },
+            )
+        except httpx.HTTPError as exc:
+            raise AgentDecisionProviderError(
+                "OpenAI Responses API request failed"
+            ) from exc
         if response.is_error:
             raise AgentDecisionProviderError(
                 f"OpenAI Responses API returned HTTP {response.status_code}"

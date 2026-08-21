@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlsplit
@@ -43,6 +44,8 @@ from app.services.clock import utc_now
 from app.services.page_field_mapper import build_page_fill_plan
 from app.services.task_executor import TaskExecutionError, execute_task_plan
 from app.services.task_planner import build_task_plan
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/tasks", tags=["tasks"], dependencies=[Depends(require_api_key)]
@@ -318,6 +321,7 @@ async def execute_task(
     except VisibleBrowserUnavailableError as exc:
         raise _visible_browser_unavailable() from exc
     except Exception as exc:
+        logger.exception("Browser plan execution failed for task %s", task.id)
         raise HTTPException(
             status_code=503,
             detail={
@@ -386,6 +390,7 @@ async def _execute_llm_agent(
     except VisibleBrowserUnavailableError as exc:
         raise _visible_browser_unavailable() from exc
     except Exception as exc:
+        logger.exception("LLM browser execution failed for task %s", task.id)
         raise HTTPException(
             status_code=503,
             detail={

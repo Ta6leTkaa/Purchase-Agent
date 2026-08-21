@@ -206,6 +206,17 @@ class Settings(BaseSettings):
             raise ValueError("browser_cdp_url must not contain a path or credentials")
         return normalized
 
+    @field_validator("openai_api_key", mode="before")
+    @classmethod
+    def normalize_openai_api_key(cls, value: object) -> object | None:
+        if value is None:
+            return None
+        if isinstance(value, SecretStr):
+            return value if value.get_secret_value().strip() else None
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
     @field_validator("worker_instance_id")
     @classmethod
     def normalize_worker_instance_id(cls, value: str) -> str:

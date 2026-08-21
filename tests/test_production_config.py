@@ -104,6 +104,14 @@ def test_enabled_llm_requires_openai_key_in_production() -> None:
     assert configured.agent_llm_enabled
 
 
+def test_blank_openai_key_is_treated_as_missing() -> None:
+    with pytest.raises(ValidationError, match="OPENAI_API_KEY is required"):
+        production_settings(
+            agent_llm_enabled=True,
+            openai_api_key=SecretStr("   "),
+        )
+
+
 def test_unknown_environment_is_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings.model_validate({"environment": "staging"})
