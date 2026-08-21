@@ -21,12 +21,14 @@ class OllamaAgentDecisionProvider:
         model: str,
         fast_model: str | None = None,
         context_window: int = 32768,
+        max_output_tokens: int = 256,
         timeout_seconds: float = 120.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._model = model
         self._fast_model = fast_model
         self._context_window = context_window
+        self._max_output_tokens = max_output_tokens
         self.last_decision_metadata: AgentDecisionMetadata | None = None
         self._owned_client = client is None
         self._client = client or httpx.AsyncClient(
@@ -102,7 +104,7 @@ class OllamaAgentDecisionProvider:
                 separators=(",", ":"),
             ),
         }
-        if context.screenshot_data_url is not None:
+        if context.screenshot_data_url is not None and _needs_screenshot(context):
             message["images"] = [_image_base64(context.screenshot_data_url)]
         try:
             response = await self._client.post(
@@ -119,6 +121,7 @@ class OllamaAgentDecisionProvider:
                     "options": {
                         "temperature": 0,
                         "num_ctx": self._context_window,
+                        "num_predict": self._max_output_tokens,
                     },
                 },
             )
@@ -155,3 +158,10 @@ def _image_base64(data_url: str) -> str:
     except ValueError as exc:
         raise AgentDecisionProviderError("Screenshot contains invalid base64") from exc
     return encoded
+
+
+def _needs_screenshot(context: AgentDecisionContext) -> bool:
+    return (
+        context.page_stage in {AgentPageStage.VISUAL_SELECTION, AgentPageStage.UNKNOWN}
+        or not context.controls
+    )

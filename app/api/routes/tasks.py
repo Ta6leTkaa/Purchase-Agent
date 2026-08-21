@@ -415,6 +415,7 @@ async def _agent_decision_provider() -> AsyncIterator[AgentDecisionProvider]:
             model=settings.ollama_model,
             fast_model=settings.ollama_fast_model,
             context_window=settings.ollama_context_window,
+            max_output_tokens=settings.ollama_max_output_tokens,
             timeout_seconds=settings.agent_llm_timeout_seconds,
         ) as provider:
             yield provider

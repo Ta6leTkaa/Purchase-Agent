@@ -92,6 +92,7 @@ OLLAMA_BASE_URL=http://host.docker.internal:11434
 OLLAMA_MODEL=qwen3-vl:4b
 OLLAMA_FAST_MODEL=qwen3-vl:2b
 OLLAMA_CONTEXT_WINDOW=32768
+OLLAMA_MAX_OUTPUT_TOKENS=256
 ```
 
 The context window is deliberately bounded so the model does not reserve tens

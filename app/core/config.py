@@ -60,6 +60,7 @@ class Settings(BaseSettings):
         max_length=100,
     )
     ollama_context_window: int = Field(default=32768, ge=4096, le=131072)
+    ollama_max_output_tokens: int = Field(default=256, ge=128, le=4096)
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
     worker_claim_timeout_seconds: int = Field(default=900, ge=1, le=86400)

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domain.browser_command import AgentDecision
 from app.domain.browser_page import (
     BrowserControlKind,
+    BrowserPageControl,
     BrowserPageSnapshot,
 )
 from app.domain.task import AgentTask
@@ -136,20 +137,28 @@ def build_agent_decision_context(
 def classify_agent_page_stage(snapshot: BrowserPageSnapshot) -> AgentPageStage:
     """Return a non-authoritative workflow hint from generic page affordances."""
     controls = tuple(control for control in snapshot.controls if not control.disabled)
-    searchable = " ".join(
-        " ".join(
-            part
-            for part in (control.label, control.field_name, control.nearby_text)
-            if part
-        ).casefold()
-        for control in controls
-    )
-    if any(term in searchable for term in _AUTHENTICATION_TERMS):
+    if _controls_contain_terms(
+        controls,
+        _AUTHENTICATION_TERMS,
+        kinds=_FORM_CONTROL_KINDS | {BrowserControlKind.BUTTON},
+    ):
         return AgentPageStage.AUTHENTICATION
-    if any(term in searchable for term in _REVIEW_TERMS):
+    if _controls_contain_terms(
+        controls,
+        _REVIEW_TERMS,
+        kinds={
+            BrowserControlKind.BUTTON,
+            BrowserControlKind.CLICKABLE,
+            BrowserControlKind.LINK,
+        },
+    ):
         return AgentPageStage.REVIEW
     if any(
-        control.kind in {BrowserControlKind.CANVAS, BrowserControlKind.SVG}
+        control.kind is BrowserControlKind.CANVAS
+        or (
+            control.kind is BrowserControlKind.SVG
+            and not _is_uninformative_visual(control.kind, control.label)
+        )
         for control in controls
     ):
         return AgentPageStage.VISUAL_SELECTION
@@ -163,6 +172,25 @@ def classify_agent_page_stage(snapshot: BrowserPageSnapshot) -> AgentPageStage:
     ):
         return AgentPageStage.BROWSING
     return AgentPageStage.UNKNOWN
+
+
+def _controls_contain_terms(
+    controls: tuple[BrowserPageControl, ...],
+    terms: tuple[str, ...],
+    *,
+    kinds: set[BrowserControlKind],
+) -> bool:
+    return any(
+        control.kind in kinds
+        and any(
+            term
+            in " ".join(
+                part for part in (control.label, control.field_name) if part
+            ).casefold()
+            for term in terms
+        )
+        for control in controls
+    )
 
 
 _FORM_CONTROL_KINDS = {

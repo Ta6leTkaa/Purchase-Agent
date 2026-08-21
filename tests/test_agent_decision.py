@@ -6,7 +6,10 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from app.adapters.ollama_agent import OllamaAgentDecisionProvider
+from app.adapters.ollama_agent import (
+    OllamaAgentDecisionProvider,
+    _needs_screenshot,
+)
 from app.adapters.openai_agent import (
     AgentDecisionProviderError,
     OpenAIAgentDecisionProvider,
@@ -120,6 +123,46 @@ def test_page_stage_uses_generic_interaction_signals(
     assert classify_agent_page_stage(snapshot) is expected
 
 
+def test_page_stage_ignores_payment_words_in_unrelated_nearby_text() -> None:
+    snapshot = BrowserPageSnapshot(
+        url="https://cinema.example.com/schedule",
+        title="Расписание",
+        captured_at=NOW,
+        controls=(
+            BrowserPageControl(
+                control_id="control_1",
+                kind=BrowserControlKind.BUTTON,
+                label="Выбрать дату",
+                nearby_text="Расписание и условия покупки билетов, payment methods",
+            ),
+        ),
+    )
+
+    assert classify_agent_page_stage(snapshot) is AgentPageStage.OPTION_SELECTION
+
+
+def test_page_stage_ignores_decorative_svg_icons() -> None:
+    snapshot = BrowserPageSnapshot(
+        url="https://cinema.example.com/schedule",
+        title="Расписание",
+        captured_at=NOW,
+        controls=(
+            BrowserPageControl(
+                control_id="control_1",
+                kind=BrowserControlKind.SVG,
+                label="Visual SVG",
+            ),
+            BrowserPageControl(
+                control_id="control_2",
+                kind=BrowserControlKind.BUTTON,
+                label="25 августа",
+            ),
+        ),
+    )
+
+    assert classify_agent_page_stage(snapshot) is AgentPageStage.OPTION_SELECTION
+
+
 def test_context_scores_partial_goal_match_in_control_card() -> None:
     task = _task()
     snapshot = BrowserPageSnapshot(
@@ -207,6 +250,21 @@ def test_context_deduplicates_equivalent_controls() -> None:
     )
 
     assert [control.control_id for control in context.controls] == ["control_1"]
+
+
+def test_local_model_uses_screenshot_only_for_visual_page() -> None:
+    context = build_agent_decision_context(
+        _task(),
+        screenshot_data_url="data:image/jpeg;base64,aW1hZ2U=",
+    )
+
+    assert _needs_screenshot(context) is False
+    assert (
+        _needs_screenshot(
+            context.model_copy(update={"page_stage": AgentPageStage.VISUAL_SELECTION})
+        )
+        is True
+    )
 
 
 def test_context_requires_observed_page() -> None:
@@ -331,7 +389,10 @@ async def test_ollama_provider_requests_local_structured_visual_decision() -> No
         client=client,
     )
     context = build_agent_decision_context(_task()).model_copy(
-        update={"screenshot_data_url": "data:image/jpeg;base64,aW1hZ2U="}
+        update={
+            "screenshot_data_url": "data:image/jpeg;base64,aW1hZ2U=",
+            "page_stage": AgentPageStage.VISUAL_SELECTION,
+        }
     )
 
     decision = await provider.decide(context)
@@ -343,6 +404,7 @@ async def test_ollama_provider_requests_local_structured_visual_decision() -> No
     assert payload["stream"] is False
     assert payload["think"] is False
     assert payload["options"]["num_ctx"] == 32768
+    assert payload["options"]["num_predict"] == 256
     assert payload["format"]["type"] == "object"
     assert payload["messages"][1]["images"] == ["aW1hZ2U="]
     assert "screenshot_data_url" not in payload["messages"][1]["content"]
