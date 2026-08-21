@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from PIL import Image, ImageDraw
 from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from app.adapters.playwright_browser import (
     PlaywrightBrowserStepRunner,
@@ -160,8 +161,32 @@ async def test_visual_context_masks_editable_values_and_is_transient() -> None:
         full_page=False,
         animations="disabled",
         mask=[masked_fields],
+        timeout=3_000,
     )
     assert task.page_snapshot is None
+
+
+@pytest.mark.asyncio
+async def test_visual_context_timeout_does_not_fail_agent_run() -> None:
+    runner = PlaywrightBrowserStepRunner()
+    page_mock = MagicMock()
+    page_mock.url = "https://cinema.example.com/schedule"
+    page_mock.locator.return_value = MagicMock()
+    page_mock.screenshot = AsyncMock(
+        side_effect=PlaywrightTimeoutError("screenshot timed out")
+    )
+    runner._page = cast(Page, page_mock)
+    task = AgentTask(
+        id=uuid4(),
+        instruction="Найди вечерний сеанс",
+        target_url="https://cinema.example.com/schedule",
+        person_ids=(uuid4(),),
+        created_at=NOW,
+    )
+
+    result = await runner.capture_visual_context(task)
+
+    assert result is None
 
 
 def test_agent_screenshot_is_downscaled_for_visual_model() -> None:

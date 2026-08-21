@@ -255,13 +255,20 @@ class PlaywrightBrowserStepRunner:
         masked_fields = page.locator(
             "input, textarea, select, [contenteditable='true']"
         )
-        image = await page.screenshot(
-            type="jpeg",
-            quality=55,
-            full_page=False,
-            animations="disabled",
-            mask=[masked_fields],
-        )
+        try:
+            image = await page.screenshot(
+                type="jpeg",
+                quality=55,
+                full_page=False,
+                animations="disabled",
+                mask=[masked_fields],
+                timeout=3_000,
+            )
+        except PlaywrightTimeoutError:
+            # A visual snapshot is supplemental context. Some pages keep fonts or
+            # rendering work alive indefinitely; their accessible DOM snapshot is
+            # still sufficient for the agent to continue instead of failing the run.
+            return None
         image = _resize_agent_screenshot(image)
         if len(image) > 2_000_000:
             return None
