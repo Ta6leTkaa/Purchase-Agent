@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Iterator
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -19,7 +20,7 @@ from app.domain.browser_page import (
     BrowserPageControl,
     BrowserPageSnapshot,
 )
-from app.domain.task import TaskStatus, UserActionReason
+from app.domain.task import AgentTask, TaskStatus, UserActionReason
 from app.domain.task_intent import TaskIntent
 from app.domain.task_plan import TaskExecutionJournal, TaskJournalOutcome
 from app.main import app
@@ -44,9 +45,7 @@ def _create_person(client: TestClient) -> str:
             "first_name": "Ivan",
             "last_name": "Petrov",
             "birth_date": "1990-01-01",
-            "documents": [
-                {"type": "internal_passport", "number": "1234567890"}
-            ],
+            "documents": [{"type": "internal_passport", "number": "1234567890"}],
         },
     )
     assert response.status_code == 200
@@ -222,8 +221,7 @@ def test_prepare_task_plan_persists_safe_preview() -> None:
     assert stored["plan"] == response.json()["plan"]
     assert stored["version"] == 1
     decisions = {
-        item["step_id"]: item["decision"]
-        for item in response.json()["permissions"]
+        item["step_id"]: item["decision"] for item in response.json()["permissions"]
     }
     assert decisions["fill_documents"]["requires_user"] is True
     assert decisions["open_review"]["allowed"] is True
@@ -371,7 +369,17 @@ def test_llm_agent_execution_persists_auditable_run(
             return None
 
     async def fake_agent_loop(*args: object, **kwargs: object) -> AgentLoopResult:
-        task = args[0]
+        task = cast(AgentTask, args[0])
+        if task.agent_run is not None:
+            assert task.status is TaskStatus.READY
+            assert task.waiting_reason is None
+            assert task.page_snapshot is not None
+            return AgentLoopResult(
+                status=AgentLoopStatus.COMPLETED,
+                reason_code="task_completed",
+                page_snapshot=task.page_snapshot,
+                steps=(),
+            )
         return AgentLoopResult(
             status=AgentLoopStatus.WAITING_FOR_USER,
             reason_code="finished_ready_for_user",
@@ -412,6 +420,12 @@ def test_llm_agent_execution_persists_auditable_run(
     assert response.json()["waiting_reason"] == "confirmation_required"
     assert response.json()["agent_run"]["status"] == "waiting_for_user"
     assert stored["agent_run"] == response.json()["agent_run"]
+
+    resumed = client.post(f"/tasks/{created['id']}/execute")
+
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "completed"
+    assert resumed.json()["waiting_reason"] is None
 
 
 def test_enabled_llm_agent_requires_api_key(

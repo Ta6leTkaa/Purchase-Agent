@@ -51,6 +51,35 @@ original train-trip dashboard remains available as a separate mock-provider
 demo. The key is kept in the current browser tab only. The UI is included in
 the production image; public API documentation remains disabled independently.
 
+### Shared visible browser
+
+For local supervised automation on macOS, the agent can connect to a real
+Chrome window instead of creating a disposable headless browser. The user and
+agent then share the same tab, cookies, navigation state, and form values. Start
+the dedicated browser profile:
+
+```bash
+./scripts/start-visible-browser.sh
+```
+
+Set the following value in `.env`, then recreate the API container:
+
+```dotenv
+BROWSER_CDP_URL=http://host.docker.internal:9222
+```
+
+```bash
+docker compose up -d --build api
+```
+
+Keep the opened Chrome window visible while running a task. When a site asks
+for CAPTCHA, authentication, a disputed choice, confirmation, or payment,
+complete that action in this window and press **Продолжить выполнение** in the
+Purchase Agent UI. Both sides remain on the same browser session. Leave
+`BROWSER_CDP_URL` empty to retain isolated headless execution. The debugging
+browser uses `.runtime/visible-browser`, which is excluded from Git and should
+not be used as a normal browsing profile.
+
 For a self-contained manual check, add one person, create a new agent task, and
 choose either **Демо: билет в кино** or **Демо: номер в отеле**. Both examples
 use the same site-agnostic agent. It should fill the relevant fields, open the

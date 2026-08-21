@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     train_provider_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
     browser_automation_enabled: bool = True
     browser_navigation_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    browser_cdp_url: str | None = None
     agent_llm_enabled: bool = False
     openai_api_key: SecretStr | None = None
     agent_llm_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=100)
@@ -117,9 +118,7 @@ class Settings(BaseSettings):
                 "::1",
                 "[::1]",
             }:
-                raise ValueError(
-                    "CORS origins must use HTTPS for non-local hosts"
-                )
+                raise ValueError("CORS origins must use HTTPS for non-local hosts")
             if normalized in normalized_origins:
                 raise ValueError("cors_allowed_origins must not contain duplicates")
             normalized_origins.append(normalized)
@@ -184,6 +183,29 @@ class Settings(BaseSettings):
             )
         return normalized
 
+    @field_validator("browser_cdp_url", mode="before")
+    @classmethod
+    def validate_browser_cdp_url(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("browser_cdp_url must be a string")
+        normalized = value.strip().rstrip("/")
+        if not normalized:
+            return None
+        parsed = TypeAdapter(AnyHttpUrl).validate_python(normalized)
+        if parsed.host not in {"localhost", "127.0.0.1", "host.docker.internal"}:
+            raise ValueError("browser_cdp_url must point to a local browser")
+        if (
+            parsed.path not in {None, "", "/"}
+            or parsed.query is not None
+            or parsed.fragment is not None
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("browser_cdp_url must not contain a path or credentials")
+        return normalized
+
     @field_validator("worker_instance_id")
     @classmethod
     def normalize_worker_instance_id(cls, value: str) -> str:
@@ -207,8 +229,7 @@ class Settings(BaseSettings):
             self.notification_worker_poll_interval_seconds,
         ):
             raise ValueError(
-                "worker_heartbeat_max_age_seconds must exceed all worker poll "
-                "intervals"
+                "worker_heartbeat_max_age_seconds must exceed all worker poll intervals"
             )
         return self
 
@@ -225,9 +246,7 @@ class Settings(BaseSettings):
             violations.append("API_DOCS_ENABLED must be false")
         if not self.api_rate_limit_enabled:
             violations.append("API_RATE_LIMIT_ENABLED must be true")
-        client_key = (
-            self.api_key.get_secret_value() if self.api_key is not None else ""
-        )
+        client_key = self.api_key.get_secret_value() if self.api_key is not None else ""
         admin_key = (
             self.admin_api_key.get_secret_value()
             if self.admin_api_key is not None

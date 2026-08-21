@@ -9,9 +9,11 @@ from types import TracebackType
 from typing import Any
 from urllib.parse import urlsplit
 
+import httpx
 from PIL import Image, ImageChops, UnidentifiedImageError
 from playwright.async_api import (
     Browser,
+    BrowserContext,
     Frame,
     Page,
     Playwright,
@@ -63,6 +65,32 @@ IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 HostResolver = Callable[[str, int], Awaitable[set[IPAddress]]]
 
 
+async def _resolve_cdp_endpoint(
+    cdp_url: str,
+) -> tuple[str, dict[str, str] | None]:
+    """Resolve Docker Desktop's host alias without losing Chrome's CDP port."""
+    parsed = urlsplit(cdp_url)
+    if parsed.hostname != "host.docker.internal":
+        return cdp_url, None
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.get(
+            f"{cdp_url}/json/version",
+            headers={"Host": "localhost"},
+        )
+        response.raise_for_status()
+    websocket_url = response.json().get("webSocketDebuggerUrl")
+    if not isinstance(websocket_url, str):
+        raise RuntimeError("Visible browser did not publish a CDP WebSocket URL")
+    websocket = urlsplit(websocket_url)
+    if websocket.scheme not in {"ws", "wss"} or not websocket.path.startswith(
+        "/devtools/browser/"
+    ):
+        raise RuntimeError("Visible browser returned an invalid CDP WebSocket URL")
+    port = parsed.port or 9222
+    endpoint = f"ws://host.docker.internal:{port}{websocket.path}"
+    return endpoint, {"Host": "localhost"}
+
+
 class PlaywrightBrowserStepRunner:
     """A minimal real browser driver; ambiguous form actions fail closed."""
 
@@ -72,24 +100,50 @@ class PlaywrightBrowserStepRunner:
         timeout_seconds: float = 30.0,
         allow_local_network: bool = False,
         identities: tuple[Identity, ...] = (),
+        cdp_url: str | None = None,
     ) -> None:
         self._timeout_ms = timeout_seconds * 1_000
         self._allow_local_network = allow_local_network
         self._identities = identities
+        self._cdp_url = cdp_url
+        self._owns_browser = cdp_url is None
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._page: Page | None = None
+        self._context: BrowserContext | None = None
         self._allowed_origin: str | None = None
 
     async def __aenter__(self) -> "PlaywrightBrowserStepRunner":
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=True)
-        context = await self._browser.new_context(
-            accept_downloads=False,
-            java_script_enabled=True,
-        )
-        await context.route("**/*", self._guard_request)
-        self._page = await context.new_page()
+        if self._cdp_url is not None:
+            endpoint, headers = await _resolve_cdp_endpoint(self._cdp_url)
+            self._browser = await self._playwright.chromium.connect_over_cdp(
+                endpoint,
+                headers=headers,
+                timeout=self._timeout_ms,
+            )
+            self._context = (
+                self._browser.contexts[0]
+                if self._browser.contexts
+                else await self._browser.new_context()
+            )
+            self._page = next(
+                (
+                    page
+                    for page in reversed(self._context.pages)
+                    if page.url != "about:blank"
+                ),
+                None,
+            )
+        else:
+            self._browser = await self._playwright.chromium.launch(headless=True)
+            self._context = await self._browser.new_context(
+                accept_downloads=False,
+                java_script_enabled=True,
+            )
+        await self._context.route("**/*", self._guard_request)
+        if self._page is None:
+            self._page = await self._context.new_page()
         return self
 
     async def __aexit__(
@@ -98,7 +152,9 @@ class PlaywrightBrowserStepRunner:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if self._browser is not None:
+        if self._context is not None:
+            await self._context.unroute_all(behavior="ignoreErrors")
+        if self._browser is not None and self._owns_browser:
             await self._browser.close()
         if self._playwright is not None:
             await self._playwright.stop()
@@ -222,7 +278,8 @@ class PlaywrightBrowserStepRunner:
                     if page.url != "about:blank"
                     else None
                 ),
-                requires_user=command.outcome.value in {
+                requires_user=command.outcome.value
+                in {
                     "ready_for_user",
                     "needs_user",
                 },
@@ -292,9 +349,7 @@ class PlaywrightBrowserStepRunner:
                 succeeded=False,
                 reason_code="control_frame_not_found",
             )
-        locator = control_frame.locator(
-            f'[data-purchase-agent-control="{control_id}"]'
-        )
+        locator = control_frame.locator(f'[data-purchase-agent-control="{control_id}"]')
         if await locator.count() != 1 or not await locator.is_visible():
             return CommandExecutionResult(
                 succeeded=False,
@@ -602,10 +657,9 @@ class PlaywrightBrowserStepRunner:
                 x_ratio=command.x_ratio,
                 y_ratio=command.y_ratio,
             )
-            page_context_changed = (
-                _snapshot_fingerprint(after_snapshot)
-                != _snapshot_fingerprint(snapshot)
-            )
+            page_context_changed = _snapshot_fingerprint(
+                after_snapshot
+            ) != _snapshot_fingerprint(snapshot)
             if not image_changed and not page_context_changed:
                 return CommandExecutionResult(
                     succeeded=False,
@@ -819,15 +873,14 @@ class PlaywrightBrowserStepRunner:
                 ),
                 kind=_control_kind(item),
                 label=str(
-                    item.get("label")
-                    or f"Unlabelled {item.get('tag', 'control')}"
+                    item.get("label") or f"Unlabelled {item.get('tag', 'control')}"
                 ),
                 field_name=(str(item["name"]) if item.get("name") else None),
                 role=(str(item["role"]) if item.get("role") else None),
                 nearby_text=(
-                    _redact_profile_values(
-                        str(item["nearbyText"]), self._identities
-                    )[:600]
+                    _redact_profile_values(str(item["nearbyText"]), self._identities)[
+                        :600
+                    ]
                     if item.get("nearbyText")
                     else None
                 ),
@@ -1168,9 +1221,7 @@ class PlaywrightBrowserStepRunner:
     ) -> BrowserStepResult:
         identity_by_id = {identity.id: identity for identity in self._identities}
         bindings = tuple(
-            binding
-            for binding in fill_plan.bindings
-            if binding.sensitive is sensitive
+            binding for binding in fill_plan.bindings if binding.sensitive is sensitive
         )
         if not bindings:
             return BrowserStepResult(
@@ -1212,9 +1263,7 @@ class PlaywrightBrowserStepRunner:
         return BrowserStepResult(
             succeeded=True,
             reason_code=(
-                "sensitive_profile_filled"
-                if sensitive
-                else "basic_profile_filled"
+                "sensitive_profile_filled" if sensitive else "basic_profile_filled"
             ),
             page_fill_plan=fill_plan,
         )
@@ -1402,9 +1451,7 @@ def _intent_value(
 def _unique_matching_option(options: tuple[str, ...], desired: str) -> str | None:
     normalized_desired = _normalize_option(desired)
     exact = [
-        option
-        for option in options
-        if _normalize_option(option) == normalized_desired
+        option for option in options if _normalize_option(option) == normalized_desired
     ]
     if len(exact) == 1:
         return exact[0]
@@ -1474,9 +1521,7 @@ def _snapshot_fingerprint(snapshot: BrowserPageSnapshot) -> tuple[object, ...]:
         snapshot.url,
         snapshot.title,
         snapshot.visible_text,
-        tuple(
-            control.model_dump(mode="json") for control in snapshot.controls
-        ),
+        tuple(control.model_dump(mode="json") for control in snapshot.controls),
     )
 
 

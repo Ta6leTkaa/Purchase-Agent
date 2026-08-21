@@ -279,6 +279,15 @@ async def execute_task(
                 "message": "Task is in plan-only mode.",
             },
         )
+    if task.status is TaskStatus.WAITING_FOR_USER and task.waiting_reason in {
+        UserActionReason.AUTHENTICATION_REQUIRED,
+        UserActionReason.CAPTCHA_REQUIRED,
+        UserActionReason.CONFIRMATION_REQUIRED,
+        UserActionReason.PAYMENT_REQUIRED,
+    }:
+        task = task.model_copy(
+            update={"status": TaskStatus.READY, "waiting_reason": None}
+        )
     people = await _load_task_people(task, identities)
     if settings.agent_llm_enabled:
         return await _execute_llm_agent(task, tasks, people)
@@ -290,6 +299,7 @@ async def execute_task(
                 or _is_builtin_demo_url(task.target_url)
             ),
             identities=tuple(people),
+            cdp_url=settings.browser_cdp_url,
         ) as runner:
             executed = await execute_task_plan(
                 task,
@@ -342,6 +352,7 @@ async def _execute_llm_agent(
                 or _is_builtin_demo_url(task.target_url)
             ),
             identities=tuple(people),
+            cdp_url=settings.browser_cdp_url,
         ) as runner:
             async with OpenAIAgentDecisionProvider(
                 api_key=settings.openai_api_key,

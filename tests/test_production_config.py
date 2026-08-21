@@ -71,6 +71,26 @@ def test_local_environment_keeps_development_defaults() -> None:
     assert not configured.agent_llm_enabled
     assert configured.agent_llm_model == "gpt-5.6-terra"
     assert configured.agent_llm_max_steps == 12
+    assert configured.browser_cdp_url is None
+
+
+def test_local_visible_browser_endpoint_is_accepted() -> None:
+    configured = Settings(browser_cdp_url="http://host.docker.internal:9222/")
+
+    assert configured.browser_cdp_url == "http://host.docker.internal:9222"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://browser.example.com:9222",
+        "http://user:secret@localhost:9222",
+        "http://localhost:9222/json/version",
+    ],
+)
+def test_visible_browser_endpoint_must_be_local_and_unprivileged(url: str) -> None:
+    with pytest.raises(ValidationError, match="browser_cdp_url"):
+        Settings(browser_cdp_url=url)
 
 
 def test_enabled_llm_requires_openai_key_in_production() -> None:
