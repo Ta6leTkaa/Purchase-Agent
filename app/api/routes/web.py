@@ -20,10 +20,17 @@ class WebSessionRequest(BaseModel):
 async def create_web_session(payload: WebSessionRequest, response: Response) -> None:
     expected = settings.api_key
     if expected is not None and not secrets.compare_digest(
-        payload.api_key,
-        expected.get_secret_value(),
+        payload.api_key.encode("utf-8"),
+        expected.get_secret_value().encode("utf-8"),
     ):
-        raise HTTPException(status_code=403, detail="Invalid API key")
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Неверный API-ключ. Скопируйте актуальное значение API_KEY "
+                f"из .env; сейчас оно содержит "
+                f"{len(expected.get_secret_value())} символов."
+            ),
+        )
     response.set_cookie(
         key=_SESSION_COOKIE,
         value=payload.api_key,

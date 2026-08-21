@@ -90,7 +90,22 @@ def test_web_session_rejects_invalid_key() -> None:
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Invalid API key"
+    assert response.json()["detail"] == (
+        "Неверный API-ключ. Скопируйте актуальное значение API_KEY "
+        "из .env; сейчас оно содержит 19 символов."
+    )
+
+
+def test_web_session_rejects_non_ascii_key_without_server_error() -> None:
+    settings.api_key = SecretStr(API_KEY)
+
+    response = TestClient(app).post(
+        "/app/session",
+        json={"api_key": "неверный-ключ-пользователя"},
+    )
+
+    assert response.status_code == 403
+    assert "Неверный API-ключ" in response.json()["detail"]
 
 
 @pytest.mark.parametrize("endpoint", ["/health", "/ready"])
