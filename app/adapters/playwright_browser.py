@@ -237,7 +237,9 @@ class PlaywrightBrowserStepRunner:
         """Open the task page when needed and return a fresh bounded snapshot."""
         self._allowed_origin = task.target_origin
         page = self._require_page()
-        if page.url == "about:blank":
+        if page.url == "about:blank" or (
+            task.page_snapshot is None and page.url != task.target_url
+        ):
             await page.goto(
                 task.page_snapshot.url if task.page_snapshot else task.target_url,
                 wait_until="domcontentloaded",

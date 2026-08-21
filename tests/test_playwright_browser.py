@@ -101,6 +101,37 @@ async def test_local_development_can_explicitly_allow_local_address() -> None:
 
 
 @pytest.mark.asyncio
+async def test_new_task_navigates_away_from_previous_task_page() -> None:
+    runner = PlaywrightBrowserStepRunner()
+    page_mock = MagicMock()
+    page_mock.url = "https://old.example.com/previous-task"
+    page_mock.goto = AsyncMock()
+    runner._page = cast(Page, page_mock)
+    snapshot = BrowserPageSnapshot(
+        url="https://cinema.example.com/schedule",
+        title="Schedule",
+        captured_at=NOW,
+    )
+    runner._snapshot_page = AsyncMock(return_value=snapshot)  # type: ignore[method-assign]
+    task = AgentTask(
+        id=uuid4(),
+        instruction="Найди сеанс",
+        target_url="https://cinema.example.com/schedule",
+        person_ids=(uuid4(),),
+        created_at=NOW,
+    )
+
+    result = await runner.observe(task)
+
+    assert result == snapshot
+    page_mock.goto.assert_awaited_once_with(
+        task.target_url,
+        wait_until="domcontentloaded",
+        timeout=30_000,
+    )
+
+
+@pytest.mark.asyncio
 async def test_visual_context_masks_editable_values_and_is_transient() -> None:
     runner = PlaywrightBrowserStepRunner()
     page_mock = MagicMock()
