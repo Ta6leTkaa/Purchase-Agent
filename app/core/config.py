@@ -46,11 +46,15 @@ class Settings(BaseSettings):
     browser_navigation_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     browser_cdp_url: str | None = None
     agent_llm_enabled: bool = False
+    agent_llm_provider: Literal["openai", "ollama"] = "openai"
     openai_api_key: SecretStr | None = None
     agent_llm_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=100)
     agent_llm_reasoning_effort: Literal["low", "medium", "high"] = "medium"
     agent_llm_timeout_seconds: float = Field(default=45.0, gt=0, le=120)
     agent_llm_max_steps: int = Field(default=12, ge=1, le=50)
+    ollama_base_url: str = "http://host.docker.internal:11434"
+    ollama_model: str = Field(default="qwen3-vl:4b", min_length=1, max_length=100)
+    ollama_context_window: int = Field(default=32768, ge=4096, le=131072)
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     worker_batch_size: int = Field(default=100, ge=1, le=500)
     worker_claim_timeout_seconds: int = Field(default=900, ge=1, le=86400)
@@ -217,6 +221,19 @@ class Settings(BaseSettings):
             return value.strip() or None
         return value
 
+    @field_validator("ollama_base_url", mode="before")
+    @classmethod
+    def validate_ollama_base_url(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("ollama_base_url must be a string")
+        normalized = value.strip().rstrip("/")
+        parsed = TypeAdapter(AnyHttpUrl).validate_python(normalized)
+        if parsed.host not in {"localhost", "127.0.0.1", "host.docker.internal"}:
+            raise ValueError("ollama_base_url must point to a local service")
+        if parsed.query is not None or parsed.fragment is not None:
+            raise ValueError("ollama_base_url must not contain query or fragment")
+        return normalized
+
     @field_validator("worker_instance_id")
     @classmethod
     def normalize_worker_instance_id(cls, value: str) -> str:
@@ -269,7 +286,11 @@ class Settings(BaseSettings):
             violations.append("ADMIN_API_KEY must contain at least 32 characters")
         if client_key and admin_key and client_key == admin_key:
             violations.append("API_KEY and ADMIN_API_KEY must be different")
-        if self.agent_llm_enabled and self.openai_api_key is None:
+        if (
+            self.agent_llm_enabled
+            and self.agent_llm_provider == "openai"
+            and self.openai_api_key is None
+        ):
             violations.append("OPENAI_API_KEY is required when AGENT_LLM_ENABLED=true")
         if violations:
             raise ValueError(

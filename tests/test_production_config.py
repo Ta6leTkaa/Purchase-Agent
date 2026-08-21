@@ -112,6 +112,18 @@ def test_blank_openai_key_is_treated_as_missing() -> None:
         )
 
 
+def test_local_ollama_provider_does_not_require_openai_key() -> None:
+    configured = production_settings(
+        agent_llm_enabled=True,
+        agent_llm_provider="ollama",
+        openai_api_key=None,
+    )
+
+    assert configured.agent_llm_provider == "ollama"
+    assert configured.ollama_base_url == "http://host.docker.internal:11434"
+    assert configured.ollama_model == "qwen3-vl:4b"
+
+
 def test_unknown_environment_is_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings.model_validate({"environment": "staging"})

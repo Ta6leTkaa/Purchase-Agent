@@ -1,4 +1,6 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlsplit
@@ -6,6 +8,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
+from app.adapters.ollama_agent import OllamaAgentDecisionProvider
 from app.adapters.openai_agent import (
     AgentDecisionProviderError,
     OpenAIAgentDecisionProvider,
@@ -39,6 +42,7 @@ from app.schemas.task import (
     TaskPlanStepPreview,
     TaskStepApprovalCreate,
 )
+from app.services.agent_decision import AgentDecisionProvider
 from app.services.agent_loop import run_agent_loop
 from app.services.clock import utc_now
 from app.services.page_field_mapper import build_page_fill_plan
@@ -345,7 +349,7 @@ async def _execute_llm_agent(
                 "message": f"Task in {task.status.value} state cannot be executed.",
             },
         )
-    if settings.openai_api_key is None:
+    if settings.agent_llm_provider == "openai" and settings.openai_api_key is None:
         raise HTTPException(
             status_code=503,
             detail={
@@ -363,12 +367,7 @@ async def _execute_llm_agent(
             identities=tuple(people),
             cdp_url=settings.browser_cdp_url,
         ) as runner:
-            async with OpenAIAgentDecisionProvider(
-                api_key=settings.openai_api_key,
-                model=settings.agent_llm_model,
-                reasoning_effort=settings.agent_llm_reasoning_effort,
-                timeout_seconds=settings.agent_llm_timeout_seconds,
-            ) as provider:
+            async with _agent_decision_provider() as provider:
                 result = await run_agent_loop(
                     task,
                     provider=provider,
@@ -380,6 +379,12 @@ async def _execute_llm_agent(
                     ),
                 )
     except AgentDecisionProviderError as exc:
+        logger.warning(
+            "LLM decision provider failed for task %s: %s",
+            task.id,
+            exc,
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=503,
             detail={
@@ -400,6 +405,28 @@ async def _execute_llm_agent(
         ) from exc
     changed = _apply_agent_result(task, result)
     return await _update_task(tasks, task, changed)
+
+
+@asynccontextmanager
+async def _agent_decision_provider() -> AsyncIterator[AgentDecisionProvider]:
+    if settings.agent_llm_provider == "ollama":
+        async with OllamaAgentDecisionProvider(
+            base_url=settings.ollama_base_url,
+            model=settings.ollama_model,
+            context_window=settings.ollama_context_window,
+            timeout_seconds=settings.agent_llm_timeout_seconds,
+        ) as provider:
+            yield provider
+        return
+    if settings.openai_api_key is None:
+        raise AgentDecisionProviderError("OpenAI API key is missing")
+    async with OpenAIAgentDecisionProvider(
+        api_key=settings.openai_api_key,
+        model=settings.agent_llm_model,
+        reasoning_effort=settings.agent_llm_reasoning_effort,
+        timeout_seconds=settings.agent_llm_timeout_seconds,
+    ) as provider:
+        yield provider
 
 
 def _visible_browser_unavailable() -> HTTPException:

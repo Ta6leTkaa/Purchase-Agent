@@ -80,6 +80,25 @@ Purchase Agent UI. Both sides remain on the same browser session. Leave
 browser uses `.runtime/visible-browser`, which is excluded from Git and should
 not be used as a normal browsing profile.
 
+### Local Ollama decisions
+
+The browser agent can use a local multimodal Ollama model instead of the paid
+OpenAI API. Install Ollama on the host, pull `qwen3-vl:4b`, and configure:
+
+```dotenv
+AGENT_LLM_ENABLED=true
+AGENT_LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=qwen3-vl:4b
+OLLAMA_CONTEXT_WINDOW=32768
+```
+
+The context window is deliberately bounded so the model does not reserve tens
+of gigabytes of memory for Ollama's maximum context. The task context and
+transient screenshot then stay on the local machine. The
+same structured command schema and browser safety boundaries apply to both
+providers. OpenAI remains available with `AGENT_LLM_PROVIDER=openai`.
+
 For a self-contained manual check, add one person, create a new agent task, and
 choose either **Демо: билет в кино** or **Демо: номер в отеле**. Both examples
 use the same site-agnostic agent. It should fill the relevant fields, open the

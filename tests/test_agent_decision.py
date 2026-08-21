@@ -6,6 +6,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from app.adapters.ollama_agent import OllamaAgentDecisionProvider
 from app.adapters.openai_agent import (
     AgentDecisionProviderError,
     OpenAIAgentDecisionProvider,
@@ -224,6 +225,97 @@ async def test_openai_provider_requests_strict_structured_decision() -> None:
     assert payload["input"][0]["content"][0]["type"] == "input_text"
     assert '"page_stage":"form_entry"' in payload["input"][0]["content"][0]["text"]
     assert "test-openai-key" not in json.dumps(payload)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_ollama_provider_requests_local_structured_visual_decision() -> None:
+    captured: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "command": {
+                                "action": "click",
+                                "control_id": "control_1",
+                            },
+                            "rationale": "Select requested date",
+                            "expected_result": "Sessions update",
+                        }
+                    )
+                }
+            },
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="http://localhost:11434",
+    )
+    provider = OllamaAgentDecisionProvider(
+        base_url="http://localhost:11434",
+        model="qwen3-vl:4b",
+        client=client,
+    )
+    context = build_agent_decision_context(_task()).model_copy(
+        update={"screenshot_data_url": "data:image/jpeg;base64,aW1hZ2U="}
+    )
+
+    decision = await provider.decide(context)
+
+    assert isinstance(decision.command, ClickCommand)
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload["model"] == "qwen3-vl:4b"
+    assert payload["stream"] is False
+    assert payload["think"] is False
+    assert payload["options"]["num_ctx"] == 32768
+    assert payload["format"]["type"] == "object"
+    assert payload["messages"][1]["images"] == ["aW1hZ2U="]
+    assert "screenshot_data_url" not in payload["messages"][1]["content"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_ollama_provider_accepts_structured_output_in_thinking_field() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "thinking": json.dumps(
+                        {
+                            "command": {
+                                "action": "click",
+                                "control_id": "control_1",
+                            },
+                            "rationale": "Continue the task",
+                            "expected_result": "The next page opens",
+                        }
+                    ),
+                }
+            },
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="http://localhost:11434",
+    )
+    provider = OllamaAgentDecisionProvider(
+        base_url="http://localhost:11434",
+        model="qwen3-vl:4b",
+        client=client,
+    )
+
+    decision = await provider.decide(build_agent_decision_context(_task()))
+
+    assert isinstance(decision.command, ClickCommand)
     await client.aclose()
 
 
