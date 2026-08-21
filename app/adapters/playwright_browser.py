@@ -260,6 +260,7 @@ class PlaywrightBrowserStepRunner:
             animations="disabled",
             mask=[masked_fields],
         )
+        image = _resize_agent_screenshot(image)
         if len(image) > 2_000_000:
             return None
         encoded = base64.b64encode(image).decode("ascii")
@@ -1376,6 +1377,28 @@ def _control_kind(item: dict[str, Any]) -> BrowserControlKind:
     if role in {"tab", "option", "menuitem", "switch"} or item.get("clickable"):
         return BrowserControlKind.CLICKABLE
     return BrowserControlKind.OTHER
+
+
+def _resize_agent_screenshot(
+    image: bytes,
+    *,
+    max_dimension: int = 1280,
+) -> bytes:
+    """Bound visual tokens while preserving enough detail for GUI decisions."""
+    try:
+        with Image.open(BytesIO(image)) as source:
+            if max(source.size) <= max_dimension:
+                return image
+            resized = source.convert("RGB")
+            resized.thumbnail(
+                (max_dimension, max_dimension),
+                Image.Resampling.LANCZOS,
+            )
+            output = BytesIO()
+            resized.save(output, format="JPEG", quality=50, optimize=True)
+            return output.getvalue()
+    except (UnidentifiedImageError, OSError):
+        return image
 
 
 def _visual_region_changed(

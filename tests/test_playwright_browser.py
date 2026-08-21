@@ -16,6 +16,7 @@ from app.adapters.playwright_browser import (
     _fuzzy_label_score,
     _is_safe_review_button,
     _redact_profile_values,
+    _resize_agent_screenshot,
     _unique_matching_option,
     _visual_region_changed,
     validate_browser_url,
@@ -130,6 +131,18 @@ async def test_visual_context_masks_editable_values_and_is_transient() -> None:
         mask=[masked_fields],
     )
     assert task.page_snapshot is None
+
+
+def test_agent_screenshot_is_downscaled_for_visual_model() -> None:
+    source = Image.new("RGB", (2400, 1600), "white")
+    payload = BytesIO()
+    source.save(payload, format="JPEG")
+
+    resized = _resize_agent_screenshot(payload.getvalue())
+
+    with Image.open(BytesIO(resized)) as image:
+        assert image.size == (1280, 853)
+    assert len(resized) < len(payload.getvalue())
 
 
 def test_visual_change_detection_ignores_animation_away_from_click() -> None:

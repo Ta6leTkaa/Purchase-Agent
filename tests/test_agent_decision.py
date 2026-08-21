@@ -81,7 +81,7 @@ def test_context_contains_goal_and_controls_but_no_profile_values() -> None:
     assert context.page_stage is AgentPageStage.FORM_ENTRY
     assert context.controls[0].field_name is None
     assert context.controls[1].field_name == "first_name"
-    assert context.controls[0].goal_match_score < 0.1
+    assert context.controls[0].goal_match_score >= 0.9
     assert "18:00" in context.visible_text
     assert "first_name" in serialized
     assert "document_number" not in serialized
@@ -141,6 +141,72 @@ def test_context_scores_partial_goal_match_in_control_card() -> None:
     )
 
     assert context.controls[0].goal_match_score == 0.94
+
+
+def test_context_keeps_relevant_late_controls_and_drops_visual_noise() -> None:
+    task = _task()
+    controls = tuple(
+        BrowserPageControl(
+            control_id=f"control_{index}",
+            kind=BrowserControlKind.LINK,
+            label=f"Служебная ссылка {index}",
+        )
+        for index in range(1, 81)
+    ) + (
+        BrowserPageControl(
+            control_id="control_81",
+            kind=BrowserControlKind.SVG,
+            label="Visual SVG",
+        ),
+        BrowserPageControl(
+            control_id="control_82",
+            kind=BrowserControlKind.BUTTON,
+            label="Колобок — выбрать сеанс",
+        ),
+    )
+    snapshot = BrowserPageSnapshot(
+        url=task.target_url,
+        title="Афиша",
+        captured_at=NOW,
+        controls=controls,
+    )
+
+    context = build_agent_decision_context(
+        task.model_copy(update={"page_snapshot": snapshot})
+    )
+
+    assert len(context.controls) == 60
+    assert context.total_control_count == 82
+    assert context.controls_truncated is True
+    assert any(control.control_id == "control_82" for control in context.controls)
+    assert all(control.control_id != "control_81" for control in context.controls)
+
+
+def test_context_deduplicates_equivalent_controls() -> None:
+    task = _task()
+    snapshot = BrowserPageSnapshot(
+        url=task.target_url,
+        title="Афиша",
+        captured_at=NOW,
+        controls=(
+            BrowserPageControl(
+                control_id="control_1",
+                kind=BrowserControlKind.LINK,
+                label="Кинотеатры",
+            ),
+            BrowserPageControl(
+                control_id="control_2",
+                kind=BrowserControlKind.CLICKABLE,
+                label="Кинотеатры",
+            ),
+        ),
+    )
+
+    context = build_agent_decision_context(
+        task.model_copy(update={"page_snapshot": snapshot})
+    )
+
+    assert [control.control_id for control in context.controls] == ["control_1"]
 
 
 def test_context_requires_observed_page() -> None:
