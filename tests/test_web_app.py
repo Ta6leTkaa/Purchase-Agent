@@ -24,7 +24,9 @@ def test_web_app_is_available() -> None:
     assert "fillTaskDemo" in response.text
     assert "runDemo" in response.text
     assert "/app/app.css?v=20260817-3" in response.text
-    assert "/app/app.js?v=20260821-3" in response.text
+    assert "Вставьте ключ или всю строку API_KEY=…" in response.text
+    assert "data-1p-ignore" in response.text
+    assert "/app/app.js?v=20260821-4" in response.text
 
 
 def test_web_assets_are_served_with_explicit_types() -> None:
@@ -39,6 +41,7 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert script.headers["cache-control"] == "no-store"
     assert "X-API-Key" in script.text
     assert "normalizeApiKey" in script.text
+    assert "export\\s+" in script.text
     assert "new Headers" in script.text
     assert 'api("/missions?limit=100")' in script.text
     assert 'api("/identities?limit=100")' in script.text
