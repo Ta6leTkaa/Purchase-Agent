@@ -9,7 +9,10 @@ from app.adapters.openai_agent import (
     AgentDecisionProviderError,
     OpenAIAgentDecisionProvider,
 )
-from app.adapters.playwright_browser import PlaywrightBrowserStepRunner
+from app.adapters.playwright_browser import (
+    PlaywrightBrowserStepRunner,
+    VisibleBrowserUnavailableError,
+)
 from app.api.dependencies.auth import require_api_key
 from app.core.config import settings
 from app.dependencies import (
@@ -312,6 +315,8 @@ async def execute_task(
             status_code=409,
             detail={"code": "task_not_executable", "message": str(exc)},
         ) from exc
+    except VisibleBrowserUnavailableError as exc:
+        raise _visible_browser_unavailable() from exc
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -378,6 +383,8 @@ async def _execute_llm_agent(
                 "message": "The LLM agent could not choose its next action.",
             },
         ) from exc
+    except VisibleBrowserUnavailableError as exc:
+        raise _visible_browser_unavailable() from exc
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -388,6 +395,18 @@ async def _execute_llm_agent(
         ) from exc
     changed = _apply_agent_result(task, result)
     return await _update_task(tasks, task, changed)
+
+
+def _visible_browser_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": "visible_browser_unavailable",
+            "message": (
+                "Окно агента закрыто. Запустите видимый Chromium и повторите шаг."
+            ),
+        },
+    )
 
 
 def _apply_agent_result(task: AgentTask, result: AgentLoopResult) -> AgentTask:

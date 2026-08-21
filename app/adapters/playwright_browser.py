@@ -65,6 +65,10 @@ IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 HostResolver = Callable[[str, int], Awaitable[set[IPAddress]]]
 
 
+class VisibleBrowserUnavailableError(RuntimeError):
+    """The supervised browser window is not running or cannot be reached."""
+
+
 async def _resolve_cdp_endpoint(
     cdp_url: str,
 ) -> tuple[str, dict[str, str] | None]:
@@ -72,20 +76,29 @@ async def _resolve_cdp_endpoint(
     parsed = urlsplit(cdp_url)
     if parsed.hostname != "host.docker.internal":
         return cdp_url, None
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        response = await client.get(
-            f"{cdp_url}/json/version",
-            headers={"Host": "localhost"},
-        )
-        response.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{cdp_url}/json/version",
+                headers={"Host": "localhost"},
+            )
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise VisibleBrowserUnavailableError(
+            "The visible browser window is closed or unavailable"
+        ) from exc
     websocket_url = response.json().get("webSocketDebuggerUrl")
     if not isinstance(websocket_url, str):
-        raise RuntimeError("Visible browser did not publish a CDP WebSocket URL")
+        raise VisibleBrowserUnavailableError(
+            "The visible browser did not publish a CDP WebSocket URL"
+        )
     websocket = urlsplit(websocket_url)
     if websocket.scheme not in {"ws", "wss"} or not websocket.path.startswith(
         "/devtools/browser/"
     ):
-        raise RuntimeError("Visible browser returned an invalid CDP WebSocket URL")
+        raise VisibleBrowserUnavailableError(
+            "The visible browser returned an invalid CDP WebSocket URL"
+        )
     port = parsed.port or 9222
     endpoint = f"ws://host.docker.internal:{port}{websocket.path}"
     return endpoint, {"Host": "localhost"}

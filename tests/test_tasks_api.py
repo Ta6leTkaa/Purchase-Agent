@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
+from app.adapters.playwright_browser import VisibleBrowserUnavailableError
 from app.api.routes.tasks import _is_builtin_demo_url
 from app.core.config import settings
 from app.dependencies import agent_task_repository, identity_repository
@@ -448,6 +449,42 @@ def test_enabled_llm_agent_requires_api_key(
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "agent_llm_not_configured"
+
+
+def test_closed_visible_browser_returns_actionable_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ClosedBrowserRunner:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "ClosedBrowserRunner":
+            raise VisibleBrowserUnavailableError("closed")
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+    monkeypatch.setattr(settings, "agent_llm_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(
+        "app.api.routes.tasks.PlaywrightBrowserStepRunner", ClosedBrowserRunner
+    )
+    client = TestClient(app)
+    person_id = _create_person(client)
+    created = client.post(
+        "/tasks",
+        json={
+            "instruction": "Купить билет",
+            "target_url": "https://cinema.example.com/",
+            "person_ids": [person_id],
+        },
+    ).json()
+
+    response = client.post(f"/tasks/{created['id']}/execute")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "visible_browser_unavailable"
+    assert "Окно агента закрыто" in response.json()["detail"]["message"]
 
 
 def test_replanning_failed_task_preserves_agent_action_history() -> None:
