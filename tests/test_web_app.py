@@ -26,7 +26,7 @@ def test_web_app_is_available() -> None:
     assert "/app/app.css?v=20260817-3" in response.text
     assert "Вставьте ключ или всю строку API_KEY=…" in response.text
     assert "data-1p-ignore" in response.text
-    assert "/app/app.js?v=20260821-4" in response.text
+    assert "/app/app.js?v=20260821-5" in response.text
 
 
 def test_web_assets_are_served_with_explicit_types() -> None:
@@ -43,6 +43,8 @@ def test_web_assets_are_served_with_explicit_types() -> None:
     assert "normalizeApiKey" in script.text
     assert "export\\s+" in script.text
     assert "new Headers" in script.text
+    assert "new Headers()" in script.text
+    assert "new Headers(options.headers||undefined)" not in script.text
     assert 'api("/missions?limit=100")' in script.text
     assert 'api("/identities?limit=100")' in script.text
     assert 'api("/tasks?limit=100")' in script.text
